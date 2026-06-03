@@ -11,8 +11,11 @@ Construir una plataforma integral que reciba datos transaccionales de órdenes d
 
 El proyecto se estructura en **4 fases secuenciales**:
 
-###  Fase 1 — Data Pipeline (Limpieza y Validación) 📍 [ESTADO ACTUAL]
-*"Step zero is data cleaning."* Procesamiento de un dataset inicial de 400 filas y 39 columnas que incluye anomalías intencionales (~10% nulos en `TRAILER_ARRIVE_DT`, ~5% timestamps invertidos y ~20% de desajustes en códigos de razón).
+###  Fase 1 — Data Pipeline (Limpieza y Validación) `[ESTADO ACTUAL]`
+
+* Procesamiento de un dataset inicial de 400 filas y 39 columnas que incluye anomalías intencionales.
+* "Cargar el CSV, limpiar timestamps, validar datos. EDA: cuantos POs tienen delay? Distribucion por vendor/DC."
+
 * **Carga y Parseo**: Uso de `pandas` con `errors='coerce'` para evitar rupturas por valores nulos (dejándolos como `NaT`).
 * **Auditoría de Calidad**: Detección de tiempos invertidos (ej. `CHECKIN_DT` < `TRAILER_ARRIVE_DT`) marcados bajo la flag `_TIMESTAMP_ISSUE` sin eliminar registros.
 * **Cálculo de Métricas Clave (Lead Times)**:
@@ -22,27 +25,17 @@ El proyecto se estructura en **4 fases secuenciales**:
 * **Output**: DataFrame limpio, con deltas calculados y banderas de calidad, listo como entrada para las siguientes fases.
 
 ###  Fase 2 — Clasificación por Etapa (Reglas de Negocio)
-Implementación de un clasificador probabilístico basado en prioridades operativas para resolver la multicausalidad en órdenes retrasadas. Las reglas se evalúan de forma independiente y se consolidan según el ciclo de vida del PO:
-1. **Reagendamiento**: Modificación de citas (`CURRENT_APPROVED` != `FIRST_APPROVED`).
-2. **Carrier Miss**: Retraso del transportista (`TRAILER_ARRIVE` > `APPROVED_DT` + threshold).
-3. **Vendor Delay**: Demora del proveedor (`APPROVED_DT` > `STA_DT`).
-4. **Yard Congestion**: Cuello de botella en patio (`yard_wait` > 4h).
-5. **Dock Backlog**: Retraso en andén (`dock_time` > 6h).
-* **Validación**: Contraste de las banderas frente a las alertas reales (165 POs con `IS_LATE = Y`) para auditar el 20% de error/mismatch en el campo manual `REASON_DSC`.
+Implementación de un clasificador probabilístico basado en prioridades operativas para resolver la multicausalidad en órdenes retrasadas. Las reglas se evalúan de forma independiente y se consolidan según el ciclo de vida del PO. 
+"Implementar reglas que asignan vendor/carrier/DC a cada PO. Comparar con REASON_DSC. Documentar matches vs mismatches".
 
-###  Fase 3 — LLM Root Cause (Integración con Claude API)
+###  Fase 3 — LLM Root Cause (Integración con API)
 Auditoría cognitiva de cada orden retrasada mediante el consumo dinámico de LLMs.
-* **Prompt Engineering**: Construcción de un prompt enriquecido por fila con los hitos temporales, deltas de la Fase 1 y clasificaciones de la Fase 2.
-* **Tratamiento de Urgencias**: Inyección de criticidad explícita para órdenes marcadas con `HOT_PO_FLAG = 1`.
-* **Generación de Variables IA**: El LLM añade al dataset final las columnas:
-  * `ai_explanation`: Explicación en lenguaje natural del fallo.
-  * `ai_action`: Recomendación operativa concreta.
-  * *Análisis de Discrepancia*: Diagnóstico de consistencia entre el `REASON_DSC` manual y la lógica de los datos.
+* **Prompt Engineering**: Construcción de un prompt enriquecido por fila con los hitos temporales de las fases 1 y 2.
+"Disenar prompt, generar root cause explanations para todos los POs delayed. Asignar severidad. Primera evaluacion".
 
-###  Fase 4 — Demo Interactiva
+###  Fase 4 — Demo Interactiva + Evaluación Final
 Construcción de una interfaz de usuario para el consumo de resultados del negocio.
-* **Consulta Individual**: Selector por `PO_NBR` que renderiza el ciclo de vida completo de la orden, resaltando visualmente la etapa del delay, las conclusiones de la IA y el match/mismatch del código manual.
-* **Módulo Agregado**: Tableros de control analíticos organizados por Proveedor (`VENDOR_NAME`) o Centro de Distribución (`DC_FACILITY_CD_ABBREV`) para identificar a los actores con mayor impacto negativo en la operación.
+"Construir notebook/app demo: seleccionar PO > ver timeline, causa, explicacion. Medir metricas. Presentar hallazgos."
 
 ---
 
