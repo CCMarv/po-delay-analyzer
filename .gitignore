@@ -1,0 +1,25 @@
+# == DATOS Y ALMACENAMIENTO ==
+# Bloquea los archivos dentro de la carpeta pero permite rastrear la estructura
+data/**
+# Excepciones: NO ignores las carpetas ni los archivos .gitkeep
+!data/
+!data/**/
+!**/.gitkeep
+
+# Extensiones globales que no se subirán
+*.csv
+*.xlsx
+*.json
+
+# == CREDENCIALES Y SECRETOS ==
+.env
+*.env
+
+# == RESPALDOS DE PYTHON Y JUPYTER ==
+.ipynb_checkpoints/
+__pycache__/
+*.pyc
+
+# == SISTEMA OPERATIVO ==
+.DS_Store
+Thumbs.db
