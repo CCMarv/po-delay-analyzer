@@ -7,6 +7,36 @@ Construir una plataforma integral que reciba datos transaccionales de órdenes d
 
 ---
 
+##  Estructura del Proyecto
+
+El repositorio está organizado siguiendo el orden cronológico de las cuatro etapas del ciclo de vida del proyecto, facilitando el seguimiento del progreso desde la investigación hasta el despliegue:
+
+```text
+├── documentation/            # Archivos de texto, PDFs y requerimientos
+│   └── requirements.txt      # Dependencias y librerías del proyecto
+│   └──kickoff_po_root_cause  # Especificaciones del proyecto
+├── 01_data_pipeline_and_eda/ # Etapa 1: Análisis exploratorio y limpieza de datos
+│   └── data_pipeline.ipynb   # Notebook de data pipeline
+│   └── eda_analysis.ipynb    # Notebook de Análisis Exploratorio de Datos
+├── 02_clasif_reglas_negocio/ # Etapa 2: Clasificación por etapa (reglas de negocio)
+│   ├── clasif_etapa.ipynb    # Experimentación del flujo de datos
+│   └── rules_config.json     # Definición de reglas aplicadas
+├── 03_llm_integration/       # Etapa 3: Orquestación del modelo de lenguaje
+│   ├── llm_testing.ipynb     # Notebook de pruebas de prompts y embeddings
+│   └── prompt_templates/     # Plantillas de prompts utilizadas
+├── 04_app/                   # Etapa 4: Aplicación funcional de producción
+│   ├── src/                  # Módulos de código estables
+│   │   ├── pipeline_core.py  # Pipeline migrado a producción
+│   │   ├── llm_core.py       # Conector del LLM migrado a producción
+│   │   └── utils/            # Herramientas de soporte
+│   └── main.py               # Punto de entrada de la aplicación final
+└── README.md                 # Descripción general del repositorio
+```
+
+
+
+---
+
 ##  Plan de Desarrollo del Proyecto
 
 El proyecto se estructura en **4 fases secuenciales**:
@@ -42,8 +72,8 @@ Construcción de una interfaz de usuario para el consumo de resultados del negoc
 ##  Tecnologías y Variables Principales
 
 * **Lenguaje principal**: Python 3.x
-* **Librerías Core**: `pandas`, `numpy` (Próximamente: `Streamlit`/`ipywidgets`, `anthropic`).
-* **Variables Críticas de Control**: `PO_NBR`, `VENDOR_NAME`, `CARRIER_PARTY_NAME`, `DC_FACILITY_CD_ABBREV`, `REASON_DSC`, `HOT_PO_FLAG`.
+* **Librerías Core**: `pandas`, `numpy` (Próximamente: `Streamlit`/`ipywidgets`, `API del LLM`).
+* **Variables Críticas de Control**: `IS_LATE`, `VENDOR_NAME`, `DELAY_DAYS`, `REQUESTED_DT`, `RECPT_DT`, `REASON_DSC`, `HOT_PO_FLAG`.
 
 ---
 *Nota: Este documento refleja el progreso en tiempo real del desarrollo. Actualmente ejecutando tareas de ingeniería de datos en la Fase 1.*

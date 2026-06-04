@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<title>Kickoff — PO Root Cause Analyzer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', sans-serif; background: #0f1117; color: #e2e8f0; }
+  .slide { max-width: 1100px; margin: 0 auto 3px; padding: 56px 72px; min-height: 520px; display: flex; flex-direction: column; justify-content: center; border-bottom: 2px solid #161b22; position: relative; }
+  .slide-num { position: absolute; top: 24px; right: 36px; font-size: 0.7rem; color: #2d3748; letter-spacing: 1px; font-weight: 700; }
+  .slide-label { font-size: 0.68rem; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase; color: #6a1b9a; margin-bottom: 14px; }
+  .cover { background: linear-gradient(135deg, #1a0a2e 0%, #2d1b69 40%, #4a1942 100%); min-height: 580px; padding: 72px; border-bottom: 3px solid #9c27b0; }
+  .cover .eyebrow { font-size: 0.75rem; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: #ce93d8; margin-bottom: 20px; }
+  .cover h1 { font-size: 3rem; font-weight: 800; letter-spacing: -1px; line-height: 1.1; color: #f8fafc; margin-bottom: 12px; }
+  .cover h1 span { color: #ce93d8; }
+  .cover .subtitle { font-size: 1.1rem; color: #90a4ae; max-width: 620px; line-height: 1.6; margin-bottom: 40px; }
+  .cover-pills { display: flex; gap: 10px; flex-wrap: wrap; }
+  .cover-pill { background: rgba(206,147,216,0.12); border: 1px solid rgba(206,147,216,0.3); border-radius: 20px; padding: 5px 16px; font-size: 0.8rem; color: #ce93d8; }
+  .cover-meta { position: absolute; bottom: 40px; right: 72px; text-align: right; font-size: 0.78rem; color: #37474f; }
+  h2.slide-title { font-size: 1.8rem; font-weight: 800; color: #f8fafc; margin-bottom: 28px; letter-spacing: -0.3px; }
+  h2.slide-title span { color: #ce93d8; }
+  h3.sub { font-size: 1rem; font-weight: 700; color: #e2e8f0; margin-bottom: 10px; }
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; }
+  .three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+  .body-text { font-size: 0.88rem; color: #90a4ae; line-height: 1.7; }
+  .card { background: #161b22; border: 1px solid #1c2a38; border-radius: 12px; padding: 22px 24px; }
+  .card.accent-purple { border-top: 3px solid #9c27b0; }
+  .card.accent-amber  { border-top: 3px solid #ffa726; }
+  .card.accent-red    { border-top: 3px solid #ef5350; }
+  .card.accent-green  { border-top: 3px solid #4caf50; }
+  .card.accent-blue   { border-top: 3px solid #29b6f6; }
+  .card.accent-teal   { border-top: 3px solid #26a69a; }
+  .stat-big { text-align: center; }
+  .stat-big .num { font-size: 3rem; font-weight: 800; color: #ce93d8; line-height: 1; margin-bottom: 6px; }
+  .stat-big .lbl { font-size: 0.78rem; color: #546e7a; text-transform: uppercase; letter-spacing: 1px; }
+  .stat-big .desc { font-size: 0.82rem; color: #607d8b; margin-top: 4px; }
+  .blist { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+  .blist li { font-size: 0.87rem; color: #90a4ae; padding-left: 20px; position: relative; line-height: 1.5; }
+  .blist li::before { content: '>'; position: absolute; left: 0; color: #9c27b0; font-weight: 700; }
+  .blist li strong { color: #e2e8f0; }
+  .clist { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+  .clist li { font-size: 0.85rem; color: #90a4ae; padding-left: 22px; position: relative; line-height: 1.5; }
+  .clist li::before { content: 'v'; position: absolute; left: 0; color: #4caf50; font-weight: 700; font-family: monospace; }
+  .flow-row { display: flex; align-items: center; gap: 0; background: #161b22; border: 1px solid #1c2a38; border-radius: 12px; padding: 24px 28px; overflow-x: auto; }
+  .fn { flex-shrink: 0; text-align: center; min-width: 100px; }
+  .fn .fi { font-size: 1.6rem; display: block; margin-bottom: 6px; }
+  .fn .fl { font-size: 0.72rem; color: #546e7a; line-height: 1.3; }
+  .fn .fn2 { font-size: 0.82rem; font-weight: 700; color: #e2e8f0; }
+  .fn.hl .fn2 { color: #ce93d8; }
+  .fn.hl .fn-box { background: rgba(156,39,176,0.1); border: 1px solid rgba(156,39,176,0.3); border-radius: 10px; padding: 8px 12px; display: inline-block; }
+  .arr { flex: 1; text-align: center; color: #263238; font-size: 1.3rem; min-width: 24px; }
+  .field-grid { display: flex; flex-direction: column; gap: 5px; }
+  .field-row { display: flex; align-items: baseline; gap: 8px; background: #0d1117; border: 1px solid #1c2a38; border-radius: 6px; padding: 6px 10px; }
+  .fn-name { font-family: 'Consolas', monospace; font-size: 0.72rem; white-space: nowrap; flex-shrink: 0; }
+  .fn-name.k { color: #ffb74d; } .fn-name.m { color: #4fc3f7; } .fn-name.f { color: #f48fb1; } .fn-name.o { color: #a5d6a7; } .fn-name.t { color: #ce93d8; }
+  .fn-desc { font-size: 0.71rem; color: #546e7a; line-height: 1.3; }
+  .rule-box { background: #0d1117; border: 1px solid #263238; border-radius: 10px; padding: 14px 18px; margin-bottom: 10px; }
+  .rule-box .rule-title { font-size: 0.73rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; margin-bottom: 8px; }
+  .rule-box.vendor .rule-title { color: #ffa726; }
+  .rule-box.carrier .rule-title { color: #29b6f6; }
+  .rule-box.dc .rule-title { color: #ef5350; }
+  .rule-box.cross .rule-title { color: #ab47bc; }
+  .rule-cond { font-family: 'Consolas', monospace; font-size: 0.76rem; color: #80cbc4; margin-bottom: 6px; }
+  .rule-action { font-size: 0.78rem; color: #607d8b; }
+  .rule-action span { color: #e2e8f0; font-weight: 600; }
+  .timeline { display: flex; flex-direction: column; gap: 0; }
+  .tl-item { display: grid; grid-template-columns: 90px 1fr; gap: 0; }
+  .tl-left { border-right: 2px solid #1c2a38; padding-right: 20px; text-align: right; padding-top: 2px; padding-bottom: 24px; }
+  .tl-week { font-size: 0.7rem; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #6a1b9a; }
+  .tl-right { padding-left: 20px; padding-bottom: 24px; position: relative; }
+  .tl-right::before { content: ''; position: absolute; left: -5px; top: 5px; width: 8px; height: 8px; border-radius: 50%; background: #9c27b0; }
+  .tl-right h4 { font-size: 0.88rem; font-weight: 700; color: #e2e8f0; margin-bottom: 4px; }
+  .tl-right p { font-size: 0.8rem; color: #607d8b; line-height: 1.5; }
+  .deliv-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .deliv-item { background: #0d1117; border: 1px solid #1c2a38; border-radius: 10px; padding: 16px 18px; }
+  .deliv-item .d-icon { font-size: 1.4rem; margin-bottom: 8px; }
+  .deliv-item h4 { font-size: 0.85rem; font-weight: 700; color: #e2e8f0; margin-bottom: 4px; }
+  .deliv-item p { font-size: 0.76rem; color: #607d8b; line-height: 1.4; }
+  .eval-table { width: 100%; border-collapse: collapse; font-size: 0.83rem; }
+  .eval-table th { text-align: left; padding: 10px 16px; font-size: 0.68rem; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: #546e7a; background: #0d1117; border-bottom: 2px solid #1c2a38; }
+  .eval-table td { padding: 10px 16px; border-bottom: 1px solid #161b22; color: #90a4ae; }
+  .eval-table tr:last-child td { border-bottom: none; }
+  .eval-table tr:hover td { background: #161b22; }
+  .tag { display: inline-block; font-size: 0.68rem; font-weight: 700; padding: 2px 8px; border-radius: 4px; letter-spacing: 0.5px; }
+  .tag-required { background: #1b3a2d; color: #4caf50; }
+  .tag-stretch { background: #1a1a2e; color: #ab47bc; }
+  .callout { border-left: 3px solid; border-radius: 0 10px 10px 0; padding: 14px 18px; margin-top: 16px; font-size: 0.85rem; line-height: 1.6; color: #90a4ae; }
+  .callout.purple { border-color: #9c27b0; background: rgba(156,39,176,0.06); }
+  .callout.amber { border-color: #ffa726; background: rgba(255,167,38,0.06); }
+  .callout strong { color: #e2e8f0; }
+  .prompt-box { background: #0d1117; border: 1px solid #263238; border-radius: 10px; padding: 20px 22px; font-family: 'Consolas', monospace; font-size: 0.76rem; color: #80cbc4; line-height: 1.8; white-space: pre-wrap; }
+  .prompt-box .ph { color: #f9a825; }
+  .prompt-box .cm { color: #546e7a; font-style: italic; }
+  .lifecycle { display: flex; align-items: stretch; gap: 2px; margin-bottom: 20px; }
+  .lc-stage { flex: 1; background: #161b22; border: 1px solid #1c2a38; border-radius: 8px; padding: 12px 10px; text-align: center; position: relative; }
+  .lc-stage .lc-icon { font-size: 1.2rem; display: block; margin-bottom: 4px; }
+  .lc-stage .lc-name { font-size: 0.72rem; font-weight: 700; color: #e2e8f0; margin-bottom: 2px; }
+  .lc-stage .lc-fields { font-family: 'Consolas', monospace; font-size: 0.64rem; color: #546e7a; }
+  .lc-stage.vendor { border-top: 3px solid #ffa726; }
+  .lc-stage.carrier { border-top: 3px solid #29b6f6; }
+  .lc-stage.dc { border-top: 3px solid #ef5350; }
+  .lc-stage.receipt { border-top: 3px solid #4caf50; }
+  .lc-arr { color: #263238; display: flex; align-items: center; font-size: 1.2rem; padding: 0 2px; }
+  .deck-footer { background: #0d1117; border-top: 2px solid #161b22; padding: 24px 72px; display: flex; justify-content: space-between; align-items: center; }
+  .deck-footer span { font-size: 0.76rem; color: #37474f; }
+</style>
+</head>
+<body>
+
+<!-- SLIDE 1 — COVER -->
+<div class="slide cover">
+  <div class="eyebrow">MAS Mentor Project - Kickoff</div>
+  <h1>PO Delay<br><span>Root Cause Analyzer</span></h1>
+  <p class="subtitle">Construir una herramienta AI que analiza Purchase Orders retrasados, identifica la etapa exacta del delay y genera explicaciones + acciones usando un LLM.</p>
+  <div class="cover-pills">
+    <span class="cover-pill">Supply Chain AI</span>
+    <span class="cover-pill">Reglas + LLM</span>
+    <span class="cover-pill">PO Lifecycle completo</span>
+    <span class="cover-pill">Python - pandas - Claude API</span>
+  </div>
+  <div class="cover-meta">Supply Chain AI - MAS Team<br>Mayo 2026</div>
+</div>
+
+
+<!-- SLIDE 2 — EL PROBLEMA -->
+<div class="slide" style="background:#0f1117;">
+  <div class="slide-num">02</div>
+  <div class="slide-label">El Problema</div>
+  <h2 class="slide-title">Por que existe este proyecto?</h2>
+  <div class="two-col">
+    <div>
+      <p class="body-text" style="margin-bottom:22px;">
+        Los equipos de supply chain revisan <strong style="color:#e2e8f0">cientos de Purchase Orders</strong> manualmente buscando retrasos y sus causas. El proceso es lento, inconsistente y propenso a errores humanos.
+      </p>
+      <ul class="blist">
+        <li>Un PO puede retrasarse por <strong>5+ razones diferentes</strong> (vendor, carrier, DC, scheduling)</li>
+        <li>La causa real esta escondida en <strong>multiples timestamps del lifecycle</strong></li>
+        <li>El DC staff ingresa <strong>reason codes manualmente</strong> — a veces no coinciden con lo que paso</li>
+        <li>Nadie genera una <strong>explicacion clara y accionable</strong> para cada caso</li>
+        <li>El equipo necesita <strong>priorizar</strong>: cuales POs arreglar primero?</li>
+      </ul>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:14px;">
+      <div class="card accent-purple">
+        <div class="stat-big">
+          <div class="num">3</div>
+          <div class="lbl">Tablas</div>
+          <div class="desc">PO + Appointment Line + Appointment Header forman el lifecycle completo</div>
+        </div>
+      </div>
+      <div class="card accent-red">
+        <div class="stat-big">
+          <div class="num" style="color:#ef5350;">7+</div>
+          <div class="lbl">Tipos de Delay</div>
+          <div class="desc">Vendor loading, carrier miss, yard congestion, dock processing, y mas</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- SLIDE 3 — EL LIFECYCLE -->
+<div class="slide" style="background:#0a0e17;">
+  <div class="slide-num">03</div>
+  <div class="slide-label">PO Lifecycle</div>
+  <h2 class="slide-title">El viaje completo de un <span>Purchase Order</span></h2>
+  <div class="lifecycle">
+    <div class="lc-stage vendor"><div class="lc-icon">📝</div><div class="lc-name">PO Placed</div><div class="lc-fields">PO_DT</div></div>
+    <div class="lc-arr">></div>
+    <div class="lc-stage vendor"><div class="lc-icon">📦</div><div class="lc-name">STA Assigned</div><div class="lc-fields">STA_DT</div></div>
+    <div class="lc-arr">></div>
+    <div class="lc-stage carrier"><div class="lc-icon">📅</div><div class="lc-name">Appt Approved</div><div class="lc-fields">APPROVED_DT</div></div>
+    <div class="lc-arr">></div>
+    <div class="lc-stage carrier"><div class="lc-icon">🚛</div><div class="lc-name">Trailer Arrives</div><div class="lc-fields">TRAILER_ARRIVE_DT</div></div>
+    <div class="lc-arr">></div>
+    <div class="lc-stage dc"><div class="lc-icon">🏭</div><div class="lc-name">Check-In</div><div class="lc-fields">CHECKIN_DT</div></div>
+    <div class="lc-arr">></div>
+    <div class="lc-stage dc"><div class="lc-icon">📋</div><div class="lc-name">Dock Processing</div><div class="lc-fields">CHECKOUT_DT</div></div>
+    <div class="lc-arr">></div>
+    <div class="lc-stage receipt"><div class="lc-icon">✅</div><div class="lc-name">Receipt Posted</div><div class="lc-fields">RECPT_DT</div></div>
+  </div>
+  <div class="two-col">
+    <div>
+      <h3 class="sub">Responsabilidades por etapa</h3>
+      <div class="field-grid">
+        <div class="field-row"><span class="fn-name" style="color:#ffa726;">VENDOR</span><span class="fn-desc">PO_DT a STA_DT: lead time. Vendor load/ship dates</span></div>
+        <div class="field-row"><span class="fn-name" style="color:#29b6f6;">CARRIER</span><span class="fn-desc">APPROVED_DT a TRAILER_ARRIVE_DT: transporte. Carrier miss si llega tarde</span></div>
+        <div class="field-row"><span class="fn-name" style="color:#ef5350;">DC</span><span class="fn-desc">TRAILER_ARRIVE a CHECKOUT: yard congestion + dock processing</span></div>
+        <div class="field-row"><span class="fn-name" style="color:#4caf50;">RECEIPT</span><span class="fn-desc">RECPT_DT vs STA_DT = veredicto final de on-time</span></div>
+      </div>
+    </div>
+    <div>
+      <div class="callout purple">
+        <strong>Dato clave:</strong> Las tablas de Appointment son <strong>ingresadas manualmente</strong> por el staff del DC. Esperan nulls, timestamps fuera de orden, y typos. La limpieza de datos es el <strong>paso cero</strong> del proyecto.
+      </div>
+      <div class="callout amber" style="margin-top:12px;">
+        <strong>Un PO puede tener multiples appointments</strong> (split shipments) y un appointment puede llevar multiples POs. Siempre agregar a nivel <code style="background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:3px;font-size:0.82rem;">DISTINCT PO_NBR</code>.
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- SLIDE 4 — LO QUE VAN A CONSTRUIR -->
+<div class="slide" style="background:#0f1117;">
+  <div class="slide-num">04</div>
+  <div class="slide-label">El Proyecto</div>
+  <h2 class="slide-title">Que van a <span>construir</span>?</h2>
+  <div style="margin-bottom:28px;">
+    <div class="flow-row">
+      <div class="fn"><span class="fi">CSV</span><div class="fn2">PO Dataset</div><div class="fl">300 registros, 38 cols</div></div>
+      <div class="arr">></div>
+      <div class="fn hl"><div class="fn-box"><span class="fi">CLN</span></div><div class="fn2">Data Cleaning</div><div class="fl">nulls + timestamps + validate</div></div>
+      <div class="arr">></div>
+      <div class="fn hl"><div class="fn-box"><span class="fi">?!</span></div><div class="fn2">Clasificacion</div><div class="fl">reglas por etapa</div></div>
+      <div class="arr">></div>
+      <div class="fn hl"><div class="fn-box"><span class="fi">AI</span></div><div class="fn2">LLM</div><div class="fl">root cause + accion</div></div>
+      <div class="arr">></div>
+      <div class="fn"><span class="fi">[=]</span><div class="fn2">Demo</div><div class="fl">select PO > ver causa</div></div>
+    </div>
+  </div>
+  <div class="three-col">
+    <div class="card accent-purple">
+      <h3 class="sub">1. Data Pipeline</h3>
+      <p class="body-text">Cargar el CSV, limpiar timestamps (nulls, orden incorrecto), validar datos. <strong>Step zero: data cleaning.</strong></p>
+    </div>
+    <div class="card accent-amber">
+      <h3 class="sub">2. Clasificacion por Etapa</h3>
+      <p class="body-text">Implementar reglas que calculan en que etapa del lifecycle ocurrio el delay: vendor, carrier, o DC. Asignar tipo y severidad.</p>
+    </div>
+    <div class="card accent-green">
+      <h3 class="sub">3. LLM Root Cause</h3>
+      <p class="body-text">Pasar los timestamps y la clasificacion al LLM para que genere una explicacion en lenguaje natural del por que se retraso y que hacer.</p>
+    </div>
+  </div>
+</div>
+
+
+<!-- SLIDE 5 — LA DATA -->
+<div class="slide" style="background:#0a0e17;">
+  <div class="slide-num">05</div>
+  <div class="slide-label">El Dataset</div>
+  <h2 class="slide-title">La data con la que van a trabajar</h2>
+  <div class="two-col">
+    <div>
+      <div style="margin-bottom:16px;">
+        <div style="font-size:0.7rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#546e7a;margin-bottom:8px;">Archivo</div>
+        <div style="font-family:'Consolas',monospace;font-size:0.85rem;color:#ce93d8;background:#0d1117;border:1px solid #1c2a38;border-radius:6px;padding:10px 14px;">
+          po_root_cause_synthetic.csv
+        </div>
+      </div>
+      <div style="display:flex;gap:20px;margin-bottom:20px;">
+        <div class="stat-big"><div class="num" style="font-size:2rem;">300</div><div class="lbl">POs</div></div>
+        <div class="stat-big"><div class="num" style="font-size:2rem;">38</div><div class="lbl">Columnas</div></div>
+        <div class="stat-big"><div class="num" style="font-size:2rem;">10</div><div class="lbl">Vendors</div></div>
+        <div class="stat-big"><div class="num" style="font-size:2rem;">8</div><div class="lbl">DCs</div></div>
+      </div>
+      <div style="font-size:0.7rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#546e7a;margin-bottom:8px;">Mix de escenarios</div>
+      <div style="display:flex;flex-direction:column;gap:6px;">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="background:#4caf50;height:10px;border-radius:2px;width:30%;"></div>
+          <span style="font-size:0.78rem;color:#90a4ae;">~30% — On-time (sin delay)</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="background:#ffa726;height:10px;border-radius:2px;width:20%;"></div>
+          <span style="font-size:0.78rem;color:#90a4ae;">~20% — Vendor delay (carga/envio tarde)</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="background:#29b6f6;height:10px;border-radius:2px;width:15%;"></div>
+          <span style="font-size:0.78rem;color:#90a4ae;">~15% — Carrier miss (trailer llega tarde)</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="background:#ef5350;height:10px;border-radius:2px;width:12%;"></div>
+          <span style="font-size:0.78rem;color:#90a4ae;">~12% — DC yard congestion</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="background:#ab47bc;height:10px;border-radius:2px;width:8%;"></div>
+          <span style="font-size:0.78rem;color:#90a4ae;">~8% — DC dock processing lento</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;">
+          <div style="background:#78909c;height:10px;border-radius:2px;width:15%;"></div>
+          <span style="font-size:0.78rem;color:#90a4ae;">~15% — Appointment rescheduled</span>
+        </div>
+      </div>
+      <div class="callout purple" style="margin-top:16px;">
+        <strong>Data quality issues incluidos:</strong> ~10% nulls en TRAILER_ARRIVE_DT, ~5% timestamps invertidos, ~20% reason codes incorrectos (mismatch intencional para analisis).
+      </div>
+    </div>
+    <div>
+      <div style="font-size:0.7rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#546e7a;margin-bottom:10px;">Campos clave (una tabla plana, todo pre-joined)</div>
+      <div class="field-grid">
+        <div class="field-row"><span class="fn-name k">PO_NBR</span><span class="fn-desc">Identificador del Purchase Order</span></div>
+        <div class="field-row"><span class="fn-name k">VENDOR_NBR - VENDOR_NAME</span><span class="fn-desc">Vendor que suplica</span></div>
+        <div class="field-row"><span class="fn-name k">DC_ID - DC_LOC_NAME</span><span class="fn-desc">Distribution Center destino</span></div>
+        <div class="field-row"><span class="fn-name t">PO_DT</span><span class="fn-desc">Fecha en que se creo el PO</span></div>
+        <div class="field-row"><span class="fn-name t">STA_DT</span><span class="fn-desc">Fecha prometida de llegada (Ship-To-Arrive)</span></div>
+        <div class="field-row"><span class="fn-name t">APPROVED_DT</span><span class="fn-desc">Cuando se aprobo el appointment en el DC</span></div>
+        <div class="field-row"><span class="fn-name t">TRAILER_ARRIVE_DT</span><span class="fn-desc">Cuando el trailer llego fisicamente al DC</span></div>
+        <div class="field-row"><span class="fn-name t">CHECKIN_DT - CHECKOUT_DT</span><span class="fn-desc">Inicio y fin del procesamiento en dock</span></div>
+        <div class="field-row"><span class="fn-name t">RECPT_DT</span><span class="fn-desc">Cuando se registro el recibo — veredicto final</span></div>
+        <div class="field-row"><span class="fn-name m">TOT_ORG_QTY - TOT_RCVD_QTY</span><span class="fn-desc">Cantidad ordenada vs recibida</span></div>
+        <div class="field-row"><span class="fn-name m">NUM_CASES_ORDERED - SHIPPED</span><span class="fn-desc">Cases para detectar short ship</span></div>
+        <div class="field-row"><span class="fn-name m">CARRIER_PARTY_NAME</span><span class="fn-desc">Nombre del carrier que transporto</span></div>
+        <div class="field-row"><span class="fn-name f">HOT_PO_FLAG - HOT_APPT_FL</span><span class="fn-desc">PO/appointment urgente</span></div>
+        <div class="field-row"><span class="fn-name o">REASON_CD - REASON_DSC</span><span class="fn-desc">Causa ingresada por DC staff (manual, a veces incorrecta)</span></div>
+        <div class="field-row"><span class="fn-name o">IS_LATE</span><span class="fn-desc">Y/N — el PO llego despues del STA?</span></div>
+        <div class="field-row"><span class="fn-name o">DELAY_DAYS - YARD_WAIT_HRS - DOCK_HRS</span><span class="fn-desc">Metricas de delay pre-calculadas</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- SLIDE 6 — LAS REGLAS -->
+<div class="slide" style="background:#0f1117;">
+  <div class="slide-num">06</div>
+  <div class="slide-label">Logica de Clasificacion</div>
+  <h2 class="slide-title">Reglas de delay por <span>etapa</span></h2>
+  <div class="two-col">
+    <div>
+      <div class="rule-box vendor">
+        <div class="rule-title">Stage 1: Pre-Arrival (Vendor / Carrier)</div>
+        <div class="rule-cond">STA Push:       APPROVED_DT > STA_DT
+Late Shipment:  VENDOR_SHIP_DT > STA_DT
+Carrier Miss:   TRAILER_ARRIVE > APPROVED_DT + threshold
+Rescheduled:    CURRENT_APPROVED != FIRST_APPROVED</div>
+        <div class="rule-action">Responsable: <span>Vendor</span> o <span>Carrier</span> segun campo que exceda umbral</div>
+      </div>
+      <div class="rule-box dc">
+        <div class="rule-title">Stage 2: At the DC (DC Controlled)</div>
+        <div class="rule-cond">Yard Congestion: CHECKIN_DT - TRAILER_ARRIVE > 4 hrs
+Long Dock:       CHECKOUT_DT - CHECKIN_DT > 6 hrs</div>
+        <div class="rule-action">Responsable: <span>DC Operations</span> — el trailer ya llego pero la recepcion se retraso</div>
+      </div>
+      <div class="rule-box cross">
+        <div class="rule-title">Cross-Stage / Prioridad</div>
+        <div class="rule-cond">Late Receipt:    RECPT_DT > STA_DT (KPI principal)
+Short Ship:      CASES_SHIPPED / CASES_ORDERED < 0.9
+Hot PO Delayed:  HOT_PO_FLAG = 1 + any delay
+Short Lead Time: STA_DT - PO_DT < 3 days</div>
+        <div class="rule-action">Estos se superponen — un PO puede tener <span>multiple causas</span></div>
+      </div>
+    </div>
+    <div>
+      <h3 class="sub" style="margin-bottom:14px;">El valor del REASON_CODE</h3>
+      <div class="card" style="margin-bottom:14px;">
+        <p class="body-text" style="margin-bottom:12px;">
+          <code style="font-size:0.82rem;background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:3px;">REASON_DSC</code> es la anotacion <strong style="color:#e2e8f0">humana</strong> del staff del DC. El equipo puede:
+        </p>
+        <ul class="blist">
+          <li><strong>Computar</strong> la etapa de delay con timestamps (logica)</li>
+          <li><strong>Comparar</strong> con el reason code humano</li>
+          <li><strong>Matches</strong> = validacion de que la regla funciona</li>
+          <li><strong>Mismatches</strong> = donde el AI agrega valor real sobre la anotacion manual</li>
+          <li>Usar ambos como <strong>few-shot examples</strong> para el LLM</li>
+        </ul>
+      </div>
+      <div class="callout purple">
+        <strong>Tip:</strong> El KPI principal es <code style="background:rgba(255,255,255,0.08);padding:1px 5px;border-radius:3px;font-size:0.82rem;">RECPT_DT > STA_DT</code>. Si el receipt fue a tiempo, el PO no tiene delay — independientemente de lo que paso en el camino.
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- SLIDE 7 — EL PROMPT -->
+<div class="slide" style="background:#0a0e17;">
+  <div class="slide-num">07</div>
+  <div class="slide-label">Prompt Engineering</div>
+  <h2 class="slide-title">Como estructurar el prompt del <span>LLM</span></h2>
+  <div class="two-col">
+    <div>
+      <div style="font-size:0.7rem;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:#546e7a;margin-bottom:10px;">Template de referencia</div>
+      <div class="prompt-box">
+<span class="cm">### System</span>
+You are a supply chain analyst that
+investigates Purchase Order delays.
+You explain root causes clearly and
+recommend specific actions.
+
+<span class="cm">### User</span>
+Analyze this delayed PO:
+
+PO: <span class="ph">{PO_NBR}</span> | Vendor: <span class="ph">{VENDOR_NAME}</span>
+DC: <span class="ph">{DC_ID}</span> | Carrier: <span class="ph">{CARRIER_NAME}</span>
+
+Timeline:
+  PO Placed:       <span class="ph">{PO_DT}</span>
+  STA (promised):  <span class="ph">{STA_DT}</span>
+  Appt Approved:   <span class="ph">{APPROVED_DT}</span>
+  Trailer Arrived: <span class="ph">{TRAILER_ARRIVE_DT}</span>
+  Check-In:        <span class="ph">{CHECKIN_DT}</span>
+  Check-Out:       <span class="ph">{CHECKOUT_DT}</span>
+  Receipt Posted:  <span class="ph">{RECPT_DT}</span>
+
+Computed delays:
+  STA to Arrival: <span class="ph">{days_late}</span> days late
+  Yard wait: <span class="ph">{yard_hours}</span> hrs
+  Dock time: <span class="ph">{dock_hours}</span> hrs
+  Classified stage: <span class="ph">{STAGE}</span>
+
+DC Reason Code: <span class="ph">{REASON_DSC}</span>
+Hot PO: <span class="ph">{HOT_PO_FLAG}</span>
+Short Ship: <span class="ph">{short_ship_pct}</span>%
+
+Generate: (1) root cause explanation in
+2-3 sentences, (2) recommended action,
+(3) severity: HIGH/MEDIUM/LOW</div>
+    </div>
+    <div>
+      <h3 class="sub" style="margin-bottom:12px;">Que debe incluir el output</h3>
+      <ul class="clist" style="margin-bottom:18px;">
+        <li>Identificar la etapa exacta: vendor, carrier, o DC</li>
+        <li>Cuantificar el delay (X dias / Y horas)</li>
+        <li>Explicar si el reason code del DC coincide o no</li>
+        <li>Mencionar si es hot PO o short ship (agravantes)</li>
+        <li>Accion concreta: contactar vendor, escalar a carrier, revisar capacidad DC</li>
+        <li>Severidad: HIGH si hot PO + delay, MEDIUM si delay normal, LOW si borderline</li>
+      </ul>
+      <div class="callout amber">
+        <strong>El REASON_DSC no siempre es correcto.</strong> Es ingresado manualmente por DC staff y puede estar equivocado. El LLM debe usar los timestamps como fuente de verdad y mencionar discrepancias con el reason code.
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- SLIDE 8 — EVALUACION -->
+<div class="slide" style="background:#0f1117;">
+  <div class="slide-num">08</div>
+  <div class="slide-label">Como medir el exito</div>
+  <h2 class="slide-title">Criterios de <span>evaluacion</span></h2>
+  <div style="background:#161b22;border:1px solid #1c2a38;border-radius:12px;overflow:hidden;margin-bottom:20px;">
+    <table class="eval-table">
+      <thead><tr><th>Dimension</th><th>Como medirla</th><th>Umbral</th><th>Tipo</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong style="color:#e2e8f0">Stage Classification</strong><br><span style="font-size:0.76rem;">Reglas vs timestamps</span></td>
+          <td>% de POs delayed donde la etapa clasificada (vendor/carrier/DC) coincide con el gap mas grande en timestamps</td>
+          <td style="color:#4caf50;font-weight:700;">> 80%</td>
+          <td><span class="tag tag-required">Requerido</span></td>
+        </tr>
+        <tr>
+          <td><strong style="color:#e2e8f0">Reason Code Agreement</strong><br><span style="font-size:0.76rem;">Computed stage vs REASON_DSC</span></td>
+          <td>% de POs donde tu clasificacion coincide con lo que dijo el DC staff</td>
+          <td style="color:#ffa726;font-weight:700;">Reportar %</td>
+          <td><span class="tag tag-required">Requerido</span></td>
+        </tr>
+        <tr>
+          <td><strong style="color:#e2e8f0">LLM Explanation Quality</strong><br><span style="font-size:0.76rem;">Rubrica manual en muestra</span></td>
+          <td>Revisar 20 POs: la explicacion menciona etapa correcta, cuantifica delay, recomienda accion viable?</td>
+          <td style="color:#4caf50;font-weight:700;">4/5 puntos</td>
+          <td><span class="tag tag-required">Requerido</span></td>
+        </tr>
+        <tr>
+          <td><strong style="color:#e2e8f0">Severity Ranking</strong><br><span style="font-size:0.76rem;">Hot POs + large delays = HIGH</span></td>
+          <td>Los POs con hot_flag=Y y delay > 3 dias deben tener severity=HIGH en 100% de los casos</td>
+          <td style="color:#4caf50;font-weight:700;">> 95%</td>
+          <td><span class="tag tag-required">Requerido</span></td>
+        </tr>
+        <tr>
+          <td><strong style="color:#e2e8f0">Mismatch Analysis</strong><br><span style="font-size:0.76rem;">Donde AI > human annotation</span></td>
+          <td>Documentar al menos 5 casos donde la clasificacion computada discrepa del reason code y es mas precisa</td>
+          <td style="color:#ab47bc;font-weight:700;">5+ casos</td>
+          <td><span class="tag tag-stretch">Stretch</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
+<!-- SLIDE 9 — TIMELINE -->
+<div class="slide" style="background:#0a0e17;">
+  <div class="slide-num">09</div>
+  <div class="slide-label">Timeline</div>
+  <h2 class="slide-title">Plan de trabajo sugerido</h2>
+  <div class="two-col">
+    <div class="timeline">
+      <div class="tl-item">
+        <div class="tl-left"><div class="tl-week">Sem 1</div></div>
+        <div class="tl-right">
+          <h4>Data Pipeline + Cleaning</h4>
+          <p>Cargar el CSV, limpiar timestamps (nulls, orden incorrecto), validar datos. EDA: cuantos POs tienen delay? Distribucion por vendor/DC.</p>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-left"><div class="tl-week">Sem 2</div></div>
+        <div class="tl-right">
+          <h4>Clasificacion por Etapa</h4>
+          <p>Implementar reglas que asignan vendor/carrier/DC a cada PO. Comparar con REASON_DSC. Documentar matches vs mismatches.</p>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-left"><div class="tl-week">Sem 3</div></div>
+        <div class="tl-right">
+          <h4>LLM Integration</h4>
+          <p>Disenar prompt, generar root cause explanations para todos los POs delayed. Asignar severidad. Primera evaluacion.</p>
+        </div>
+      </div>
+      <div class="tl-item">
+        <div class="tl-left"><div class="tl-week">Sem 4</div></div>
+        <div class="tl-right">
+          <h4>Demo + Evaluacion Final</h4>
+          <p>Construir notebook/app demo: seleccionar PO > ver timeline, causa, explicacion. Medir metricas. Presentar hallazgos.</p>
+        </div>
+      </div>
+    </div>
+    <div>
+      <h3 class="sub" style="margin-bottom:14px;">Stack tecnico sugerido</h3>
+      <div class="card" style="margin-bottom:14px;">
+        <ul class="blist">
+          <li><strong>pandas</strong> — joins, cleaning, timestamp math</li>
+          <li><strong>Claude API (claude-sonnet-4-6)</strong> — root cause explanations</li>
+          <li><strong>datetime / timedelta</strong> — calculos de gaps entre timestamps</li>
+          <li><strong>Jupyter Notebook</strong> — exploracion + demo interactivo</li>
+          <li><strong>GitHub</strong> — versionado y entrega</li>
+        </ul>
+      </div>
+      <div class="callout purple">
+        <strong>La clave diferenciadora de este proyecto</strong> es que pueden validar su AI contra una anotacion humana real (REASON_DSC). Esto les da un ground truth parcial y una oportunidad de demostrar donde la AI es mas precisa que la persona.
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- SLIDE 10 — DELIVERABLES -->
+<div class="slide" style="background:#0f1117;">
+  <div class="slide-num">10</div>
+  <div class="slide-label">Entregables</div>
+  <h2 class="slide-title">Que deben entregar</h2>
+  <div class="deliv-grid">
+    <div class="deliv-item"><div class="d-icon">[S]</div><h4>Presentacion Final</h4><p>Slides + demo: seleccionar un PO delayed y ver la explicacion del AI en vivo.</p></div>
+    <div class="deliv-item"><div class="d-icon">[R]</div><h4>Repositorio de Codigo</h4><p>Pipeline de joins, reglas de clasificacion, integracion LLM, script de evaluacion. Con README.</p></div>
+    <div class="deliv-item"><div class="d-icon">[D]</div><h4>Documentacion Tecnica</h4><p>Umbrales elegidos, logica de clasificacion, diseno del prompt, iteraciones y decisiones.</p></div>
+    <div class="deliv-item"><div class="d-icon">[A]</div><h4>Data Artifacts</h4><p>CSV de input + CSV de output con: PO_NBR, stage, severity, LLM explanation, recommended action.</p></div>
+    <div class="deliv-item"><div class="d-icon">[E]</div><h4>Evaluacion</h4><p>Tabla de metricas + analisis de mismatches entre clasificacion computada vs reason codes del DC.</p></div>
+    <div class="deliv-item"><div class="d-icon">[F]</div><h4>Hallazgos</h4><p>Donde el AI es mas preciso que la anotacion humana? Donde falla? Recomendaciones para produccion.</p></div>
+  </div>
+</div>
+
+
+<!-- SLIDE 11 — CIERRE -->
+<div class="slide cover" style="background:linear-gradient(135deg,#1a0a2e 0%,#2d1b69 50%,#4a1942 100%);">
+  <div class="slide-num" style="color:#2d1b69;">11</div>
+  <div class="eyebrow">Listos para empezar</div>
+  <h1 style="font-size:2.4rem;">Preguntas?</h1>
+  <p class="subtitle">Los datasets sinteticos se generaran con el mismo esquema de las tablas de produccion. El equipo empieza por la limpieza y el join.</p>
+  <div class="cover-pills">
+    <span class="cover-pill">1 CSV plano: po_root_cause_synthetic.csv</span>
+    <span class="cover-pill">300 POs sinteticos</span>
+    <span class="cover-pill">Reason codes como ground truth parcial</span>
+  </div>
+  <div class="cover-meta">Mentor: Supply Chain AI Team<br>Modelo sugerido: claude-sonnet-4-6</div>
+</div>
+
+<div class="deck-footer">
+  <span>MAS Mentor Projects - PO Root Cause Analyzer - Kickoff 2026</span>
+  <span>1 tabla plana - 300 POs - 38 columnas - Reason codes incluidos</span>
+</div>
+
+</body>
+</html>
