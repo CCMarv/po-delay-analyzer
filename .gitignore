@@ -10,6 +10,8 @@ data/**
 *.csv
 *.xlsx
 *.json
+# Excepción: permitir el config de reglas
+!**/rules_config.json
 
 # == CREDENCIALES Y SECRETOS ==
 .env
