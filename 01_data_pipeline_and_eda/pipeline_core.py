@@ -1,3 +1,9 @@
+# ── Imports requeridos  ─────────────────────────────────────────────────────
+import numpy as np
+import pandas as pd
+import os
+
+
 def clean_po_data(df_input: pd.DataFrame) -> pd.DataFrame:
     """
     Pipeline de limpieza y enriquecimiento del dataset de PO Root Cause.
@@ -69,20 +75,42 @@ def clean_po_data(df_input: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+# ── AGREGADO: Envolver el bloque de ejecución para proteger el módulo ────────
+if __name__ == "__main__":
+
+    # 1. Encontrar la raíz del repositorio local de forma automática
+    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    csv_path = os.path.join(BASE_DIR, "data", "raw", "po_root_cause_synthetic.csv")
+
+    try:
+        # 2. Intentar cargar únicamente el archivo local
+        df_raw = pd.read_csv(csv_path, low_memory=False)
+        print(f"📖 Archivo local cargado exitosamente desde: {csv_path}")
+        
+    except FileNotFoundError:
+        # 3. Mensaje de error detallado para el equipo de desarrollo
+        error_msg = (
+            f"\n❌ ERROR: Archivo no encontrado.\n"
+            f"Debido a que la carpeta 'data/' está en .gitignore, debes colocar manualmente el archivo en:\n"
+            f"📍 {csv_path}\n"
+            f"Asegúrate de crear las carpetas 'data/' y 'raw/' en la raíz de tu repositorio local."
+        )
+        raise FileNotFoundError(error_msg)
+
 
 # ── Ejecutar y validar ───────────────────────────────────────────────────────
-df_clean = clean_po_data(df_raw)
+    df_clean = clean_po_data(df_raw)
 
-print('✅ clean_po_data() ejecutado correctamente')
-print(f'   Shape:                      {df_clean.shape}')
-print(f'   Columnas agregadas:         {df_clean.shape[1] - df_raw.shape[1]}')
-print(f'   POs con datos confiables:   {df_clean["_data_reliable"].sum()} / {len(df_clean)}')
-print(f'   POs rescheduled:            {df_clean["_rescheduled"].sum()}')
-print(f'   Short ships:                {df_clean["_short_ship"].sum()}')
-print(f'   Flag yard congestion:       {df_clean["flag_yard_congestion"].sum()}')
-print(f'   Flag dock backlog:          {df_clean["flag_dock_backlog"].sum()}')
-print(f'   Flag carrier miss:          {df_clean["flag_carrier_miss"].sum()}')
+    print('✅ clean_po_data() ejecutado correctamente')
+    print(f'   Shape:                      {df_clean.shape}')
+    print(f'   Columnas agregadas:         {df_clean.shape[1] - df_raw.shape[1]}')
+    print(f'   POs con datos confiables:   {df_clean["_data_reliable"].sum()} / {len(df_clean)}')
+    print(f'   POs rescheduled:            {df_clean["_rescheduled"].sum()}')
+    print(f'   Short ships:                {df_clean["_short_ship"].sum()}')
+    print(f'   Flag yard congestion:       {df_clean["flag_yard_congestion"].sum()}')
+    print(f'   Flag dock backlog:          {df_clean["flag_dock_backlog"].sum()}')
+    print(f'   Flag carrier miss:          {df_clean["flag_carrier_miss"].sum()}')
 
-# Nuevas columnas
-new_cols = [c for c in df_clean.columns if c not in df_raw.columns]
-print(f'\nColumnas nuevas: {new_cols}')
+    # Nuevas columnas
+    new_cols = [c for c in df_clean.columns if c not in df_raw.columns]
+    print(f'\nColumnas nuevas: {new_cols}')
