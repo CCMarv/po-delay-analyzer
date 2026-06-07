@@ -75,25 +75,76 @@ def clean_po_data(df_input: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+
+def cross_validate_deltas(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Cross-validation: deltas calculados desde timestamps vs columnas precalculadas.
+
+    Los timestamps son la fuente de verdad; las discrepancias son hallazgos
+    (no errores). Compara yard_wait_calc_hrs / dock_calc_hrs / delay_days_calc
+    contra YARD_WAIT_HRS / DOCK_HRS / DELAY_DAYS, imprime el reporte y marca las
+    discrepancias significativas (> 1.0).
+
+    Input:  DataFrame ya enriquecido por clean_po_data() (necesita las columnas
+            *_calc y las precalculadas del CSV).
+    Output: el mismo DataFrame con _yard_discrepancy y _dock_discrepancy añadidas.
+    """
+    print('-- Cross-validation: calculados vs pre-calculados -----------------------')
+
+    delta_yard = (df['yard_wait_calc_hrs'] - df['YARD_WAIT_HRS']).abs()
+    delta_dock = (df['dock_calc_hrs'] - df['DOCK_HRS']).abs()
+    delta_delay = (df['delay_days_calc'] - df['DELAY_DAYS']).abs()
+
+    print(f'  YARD_WAIT_HRS  - diferencia media: {delta_yard.mean():.3f}h, max: {delta_yard.max():.3f}h')
+    print(f'  DOCK_HRS       - diferencia media: {delta_dock.mean():.3f}h, max: {delta_dock.max():.3f}h')
+    print(f'  DELAY_DAYS     - diferencia media: {delta_delay.mean():.3f}d, max: {delta_delay.max():.3f}d')
+
+    # Marcar discrepancias significativas
+    df['_yard_discrepancy'] = delta_yard > 1.0
+    df['_dock_discrepancy'] = delta_dock > 1.0
+
+    print(f'\n  POs con discrepancia de yard > 1h: {df["_yard_discrepancy"].sum()}')
+    print(f'  POs con discrepancia de dock > 1h: {df["_dock_discrepancy"].sum()}')
+
+    return df
+
+
 # ── AGREGADO: Envolver el bloque de ejecución para proteger el módulo ────────
 if __name__ == "__main__":
+    # Imports solo necesarios para la ejecución como script (no para importar el
+    # módulo): se mantienen dentro del guard para que `import pipeline_core` siga
+    # siendo barato y no exija python-dotenv solo para usar la función.
+    from pathlib import Path
+    from dotenv import load_dotenv
 
-    # 1. Encontrar la raíz del repositorio local de forma automática
-    BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    csv_path = os.path.join(BASE_DIR, "data", "raw", "po_root_cause_synthetic.csv")
+    # 1. Resolver la raíz del repo desde la ubicación del módulo (no desde el cwd).
+    #    Mismo patrón acordado en #11 (celda 4 del notebook), pero usando __file__
+    #    porque para un módulo lo correcto es ubicarse por su archivo, no por
+    #    desde dónde se ejecute.
+    REPO_ROOT = Path(__file__).resolve().parent
+    if REPO_ROOT.name == "01_data_pipeline_and_eda":
+        REPO_ROOT = REPO_ROOT.parent
+
+    load_dotenv(REPO_ROOT / ".env", override=True)
+
+    # 2. Resolver la ruta al CSV: respeta PO_CSV_PATH si está definida; si no, el
+    #    default convencional bajo la raíz del repo (data/raw/).
+    _env_path = os.environ.get("PO_CSV_PATH")
+    csv_path = Path(_env_path) if _env_path else REPO_ROOT / "data" / "raw" / "po_root_cause_synthetic.csv"
 
     try:
-        # 2. Intentar cargar únicamente el archivo local
+        # 3. Intentar cargar únicamente el archivo local
         df_raw = pd.read_csv(csv_path, low_memory=False)
-        print(f"📖 Archivo local cargado exitosamente desde: {csv_path}")
-        
+        print(f"[OK] Archivo local cargado exitosamente desde: {csv_path}")
+
     except FileNotFoundError:
-        # 3. Mensaje de error detallado para el equipo de desarrollo
+        # 4. Mensaje de error detallado para el equipo de desarrollo
         error_msg = (
-            f"\n❌ ERROR: Archivo no encontrado.\n"
+            f"\nERROR: Archivo no encontrado.\n"
             f"Debido a que la carpeta 'data/' está en .gitignore, debes colocar manualmente el archivo en:\n"
-            f"📍 {csv_path}\n"
-            f"Asegúrate de crear las carpetas 'data/' y 'raw/' en la raíz de tu repositorio local."
+            f"  {csv_path}\n"
+            f"Asegúrate de crear las carpetas 'data/' y 'raw/' en la raíz de tu repositorio local,\n"
+            f"o define PO_CSV_PATH=/ruta/completa.csv en el archivo .env de la raíz."
         )
         raise FileNotFoundError(error_msg)
 
@@ -101,7 +152,7 @@ if __name__ == "__main__":
 # ── Ejecutar y validar ───────────────────────────────────────────────────────
     df_clean = clean_po_data(df_raw)
 
-    print('✅ clean_po_data() ejecutado correctamente')
+    print('[OK] clean_po_data() ejecutado correctamente')
     print(f'   Shape:                      {df_clean.shape}')
     print(f'   Columnas agregadas:         {df_clean.shape[1] - df_raw.shape[1]}')
     print(f'   POs con datos confiables:   {df_clean["_data_reliable"].sum()} / {len(df_clean)}')
@@ -110,6 +161,10 @@ if __name__ == "__main__":
     print(f'   Flag yard congestion:       {df_clean["flag_yard_congestion"].sum()}')
     print(f'   Flag dock backlog:          {df_clean["flag_dock_backlog"].sum()}')
     print(f'   Flag carrier miss:          {df_clean["flag_carrier_miss"].sum()}')
+
+    # Cross-validation: deltas calculados vs columnas precalculadas
+    print()
+    df_clean = cross_validate_deltas(df_clean)
 
     # Nuevas columnas
     new_cols = [c for c in df_clean.columns if c not in df_raw.columns]
