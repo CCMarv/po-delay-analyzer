@@ -85,6 +85,24 @@ propósito: la plantilla te guía):
 - **Bug / Corrección** — pide síntoma, cómo reproducir, esperado vs observado, evidencia.
 - **Decisión** — pide quién decide, la pregunta, opciones con trade-offs.
 
+#### Si creas el issue desde la terminal (`gh`)
+Las plantillas de arriba son *Issue Forms* (`.yml`): GitHub solo las renderiza en la web
+(con sus desplegables y campos obligatorios). `gh issue create` en terminal **no** puede
+usarlas. Para no improvisar el issue, hay borradores espejo en
+[`documentation/plantillas-cli/`](plantillas-cli/) (`tarea.md` · `decision.md` · `bug.md`)
+que reproducen las mismas secciones. El flujo:
+
+```
+cp documentation/plantillas-cli/tarea.md /tmp/issue.md   # copia y rellena
+gh issue create --title "[docs] ..." --label docs \
+  --milestone "Fase 1 — Pipeline + EDA" --assignee "@me" --body-file /tmp/issue.md
+```
+
+La metadata que el formulario captura con desplegables va aquí como flags: `--label`
+(área), `--milestone` (fase), `--assignee` (dueño). Lo único que se pierde es la
+**validación obligatoria** del form: GitHub no te impedirá crear el issue con secciones
+vacías, así que llenarlas bien es parte de tu self-review.
+
 ### Título: `[área] Verbo imperativo + objeto`
 - **`[área]`** en minúsculas (las plantillas ya lo ponen): `pipeline` · `eda` ·
   `analisis` · `infra` · `docs` · `llm` · `app`.
@@ -106,9 +124,24 @@ probablemente es demasiado grande o vago — pártelo o acláralo.
 | Campo | Para qué | Cómo |
 |-------|----------|------|
 | **Milestone** | la **fase** | `Fase 1 — Pipeline + EDA`, etc. La fecha de vencimiento = el check-in del lunes. |
-| **Assignee** | el **dueño** | Te lo auto-asignas **al empezar** (señal de "yo me encargo"), no al crear. |
+| **Assignee** | el **dueño** | Te lo auto-asignas cuando lo tomas (señal de "yo me encargo"), no al crear. |
 | **Labels** | **área** + marcadores | una de área + 0 o más marcadores (ver abajo). |
-| **Project** | el **estado** | columna del board: Todo / In Progress / Review / Done. |
+| **Project** | el **estado** | columna del board (ver abajo). |
+
+#### El board (4 columnas)
+El estado de cada ticket es su columna en el board *"PO Delay Analyzer — Tablero"*:
+
+| Columna | Significado |
+|---------|-------------|
+| **Todo** | En el backlog, nadie lo ha tomado. |
+| **Assigned** | Tiene dueño (te auto-asignaste) pero aún no lo estás trabajando. |
+| **In Progress** | Se está trabajando **ahora**. Es la señal de coordinación asíncrona: avisa al resto que el ticket está tomado. |
+| **Done** | Mergeado e issue cerrado. |
+
+> **La review cruzada NO es una columna.** El board va directo de *In Progress* a *Done*
+> porque mergeamos sin esperar revisión (ver [§4](#4-la-regla-de-merge-no-bloqueante)).
+> La review cruzada existe, pero es **posterior y opcional**: ocurre sobre `main` ya
+> integrado, y si encuentra algo abre un issue de seguimiento — no es un paso del flujo.
 
 #### Labels (lista cerrada — no agregar sin acordar)
 - **Área (exactamente una):** `pipeline` · `eda` · `analisis` · `infra` · `docs` ·
