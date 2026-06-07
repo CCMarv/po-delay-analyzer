@@ -21,6 +21,10 @@ data/**
 .ipynb_checkpoints/
 __pycache__/
 *.pyc
+.pytest_cache/
+# Entornos virtuales (incluye el .venv_check de la verificacion en entorno limpio)
+.venv/
+.venv*/
 
 # == SISTEMA OPERATIVO ==
 .DS_Store
