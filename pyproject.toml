@@ -1,0 +1,16 @@
+# Config de pytest para el repo.
+#
+# ¿Por qué este archivo y no pytest.ini? pyproject.toml es el archivo de
+# configuración canónico de un proyecto Python moderno; ya que aún no existía,
+# lo creamos aquí en lugar de añadir un pytest.ini separado.
+#
+# La clave de este bloque es `pythonpath`. El módulo bajo prueba vive en
+# `01_data_pipeline_and_eda/pipeline_core.py`, pero esa carpeta EMPIEZA con un
+# dígito, así que Python no la puede importar como paquete (un nombre de módulo
+# no puede empezar por número). `pythonpath` (pytest 7+) añade esa carpeta al
+# sys.path ANTES de recolectar los tests, de modo que `from pipeline_core import
+# clean_po_data` funciona sin tener que parchear sys.path a mano en cada test.
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
+pythonpath = ["01_data_pipeline_and_eda"]
