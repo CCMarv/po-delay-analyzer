@@ -1,59 +1,43 @@
-# Convenciones y flujo de trabajo — po-delay-analyzer
+# Convenciones del equipo — po-delay-analyzer
 
-> Esta guía explica **cómo trabajamos juntos en el repo de principio a fin**: desde que
-> detectas algo que hay que hacer hasta que ese cambio vive en `main`. Está escrita
-> asumiendo que tienes base de programación pero **poca práctica con git/GitHub y con
-> gestión de proyectos** — por eso explica el *porqué* de cada paso, no solo el *cómo*.
+> Este documento recoge los **acuerdos del equipo**: cómo nombramos y clasificamos el
+> trabajo, qué etiquetas usamos, cuándo algo es un issue / una discussion / un mensaje de
+> chat, y bajo qué regla integramos a `main`. Es el *qué acordamos*, no el *cómo se teclea*.
 >
-> Objetivo: que cualquiera sepa de un vistazo qué es un ticket, quién lo tiene y en qué
-> estado está — sin abrirlo y sin coordinación en vivo. Y que el resultado sea, además,
-> documentación que el mentor pueda revisar.
+> 📖 **El tutorial paso a paso de git/GitHub** (crear rama, commits, abrir PR, resolver
+> conflictos, el flujo en comandos) vive en el post fijado de
+> [Discussions → 📣 Anuncios → "Guía de git del equipo"](https://github.com/CCMarv/po-delay-analyzer/discussions/27).
+> Lo movimos ahí porque es material de *onboarding operativo*, no descripción del
+> proyecto: el repo describe el producto y su proceso de decisión; el tutorial de git
+> vive donde el equipo se comunica.
+>
+> Objetivo de estos acuerdos: que cualquiera sepa de un vistazo qué es un ticket, quién
+> lo tiene y en qué estado está — sin abrirlo y sin coordinación en vivo. Y que el
+> resultado sea, además, documentación que el mentor pueda revisar.
 
 ---
 
-## 0. El ciclo de vida de un cambio (el mapa completo)
+## 0. El ciclo de vida de un cambio (el mapa)
 
-Todo cambio en el proyecto recorre el mismo camino. Tenlo en la cabeza; el resto del
-documento detalla cada paso.
+Todo cambio recorre el mismo camino. Este documento cubre las **reglas** de cada etapa;
+el **paso a paso en comandos** está en la [guía de git](https://github.com/CCMarv/po-delay-analyzer/discussions/27).
 
 ```
-  gap / idea          (detectas algo: un bug, una mejora, un hallazgo, una decisión)
-      │
-      ▼
-  issue(s)            (lo escribes con una plantilla; lo partes y enlazas dependencias)
-      │
-      ▼
-  rama                (creas una rama desde main para trabajarlo)
-      │
-      ▼
-  commits             (avanzas en commits pequeños y descriptivos)
-      │
-      ▼
-  PR + self-review    (abres Pull Request, completas tu propio checklist)
-      │
-      ▼
-  CI en verde         (los tests pasan automáticamente)
-      │
-      ▼
-  merge               (lo integras tú mismo a main — sin esperar a nadie)
-      │
-      ▼
-  issue cerrado       (el "Closes #N" del PR lo cierra solo; main queda al día)
-      │
-      ▼
-  (review cruzada opcional, DESPUÉS, cuando alguien esté disponible)
+  gap / idea  →  issue(s)  →  rama  →  commits  →  PR + self-review  →  CI en verde
+              →  merge (tú mismo, sin esperar aprobación)  →  issue cerrado
+              →  (review cruzada opcional, DESPUÉS)
 ```
 
-**Lo más importante de entender:** no esperamos aprobación de otra persona para mergear.
-Lo explicamos en el [Paso 5](#5-paso-5--pr-self-review-y-merge-no-bloqueante).
+**Lo más importante de entender:** no esperamos aprobación de otra persona para mergear
+(ver [§4](#4-la-regla-de-merge-no-bloqueante)).
 
 ---
 
-## 1. Paso 1 — De un gap a un issue
+## 1. De un gap a un issue
 
 Un **gap** es cualquier cosa que detectas que el proyecto necesita: un bug, una mejora,
-una pieza de pipeline que falta, un hallazgo del EDA que hay que investigar, una decisión
-de diseño pendiente, deuda técnica. El primer trabajo es **convertir ese gap en uno o
+una pieza de pipeline que falta, un hallazgo del EDA que investigar, una decisión de
+diseño pendiente, deuda técnica. El primer trabajo es **convertir ese gap en uno o
 varios issues bien formados.**
 
 ### ¿Es uno o varios issues?
@@ -79,7 +63,7 @@ también puede **abrir** otros: si mientras trabajas descubres algo nuevo, abre 
 para ello y enlázalo (no lo metas a presión en el actual).
 
 ### ¿Es una tarea, un bug o una decisión?
-Esto determina qué plantilla usas (ver siguiente paso):
+Esto determina qué plantilla usas:
 
 | Si el gap es… | Plantilla |
 |---|---|
@@ -91,7 +75,7 @@ Regla: si no sabes *qué hacer* sino *qué decidir*, es una Decisión, no una Ta
 
 ---
 
-## 2. Paso 2 — Escribir el issue
+## 2. Escribir el issue
 
 ### Elige la plantilla
 Al hacer *New issue* en GitHub verás tres opciones (no se permite el issue en blanco, a
@@ -154,194 +138,102 @@ La última casilla es la **DoD global** y va en todos los tickets de trabajo:
 
 ---
 
-## 3. Paso 3 — Crear la rama
+## 3. Trabajar el issue: rama, commits y PR
 
-**Nunca trabajes directo en `main`.** `main` es la versión "buena" del proyecto; tu
-trabajo en curso vive en una **rama** aparte hasta que esté listo. Una rama por issue.
+Estos son los **acuerdos**; el cómo está en la
+[guía de git](https://github.com/CCMarv/po-delay-analyzer/discussions/27).
 
-**Convención de nombre:** `tipo/<nombre>-<tarea-corta>`
-
-- **tipo:** `feat` (algo nuevo) · `fix` (arreglo) · `docs` (documentación) · `chore`
-  (mantenimiento/infra).
-- **nombre:** tu identificador (ej. `vidaurri`, `maria`, `isaac`).
-- **tarea-corta:** 2–4 palabras con guiones.
-
-Ejemplos: `feat/vidaurri-csv-local` · `fix/maria-carrier-nan` · `docs/isaac-readme`.
-La fase NO va en el nombre (se infiere del milestone y la carpeta).
-
-**Cómo crearla** (siempre desde un `main` actualizado, para no partir de algo viejo):
-
-```bash
-git checkout main
-git pull                          # traes lo último de main
-git checkout -b feat/tu-nombre-tarea-corta
-```
+- **Una rama por issue, nunca trabajar directo en `main`.** Nombre:
+  `tipo/<nombre>-<tarea-corta>` (`feat` · `fix` · `docs` · `chore`). Ej.
+  `feat/vidaurri-csv-local`. La fase NO va en el nombre.
+- **Commits pequeños y frecuentes**, mensaje `area: descripción en imperativo (Closes #N)`.
+  El `Closes #N` cierra el issue solo al mergear.
+- **Nunca se commitea:** secrets / API keys (van en `.env`, gitignored) · el CSV de
+  datos (`data/raw/` gitignored) · **outputs de notebooks** (límpialos antes de commit).
+- **Al terminar abres un PR** con la plantilla (se rellena sola) y `Closes #N`.
 
 ---
 
-## 4. Paso 4 — Commits
+## 4. La regla de merge no bloqueante
 
-Un **commit** es una foto guardada de tu avance. Haz commits **pequeños y frecuentes**:
-es más fácil entender (y deshacer) cambios chicos que un commit gigante al final.
+**No esperamos a que otro revise antes de mergear.** La práctica común dice lo contrario,
+pero **para nosotros no funciona:** trabajamos en horarios muy desfasados (Vidaurri de
+noche; María e Isaac de mañana). Si Vidaurri termina algo a las 2am y tiene que esperar a
+que alguien lo revise en la mañana, ese cambio queda parado — y **bloquea el trabajo
+secuencial** de quien depende de él. El equipo se frena.
 
-**Mensajes** — formato corto, alineado con lo que ya hay en el repo:
+Por eso el gate de merge eres **tú + CI**:
 
-```
-area: descripción breve en imperativo (Closes #N)
-```
+1. Completas el **self-review** del PR (corre en limpio, tests pasan, sin
+   secrets/datos/outputs, DoD cumplida).
+2. **Esperas a que CI pase en verde.**
+3. **Mergeas tú mismo**, con *"Create a merge commit"*. Luego borras la rama; el issue se
+   cierra solo y `main` queda en su estado ideal.
 
-Ejemplos reales del repo:
-- `pipeline: cargar CSV desde data/raw/ local con PO_CSV_PATH (Closes #11)`
-- `infra: mover requirements.txt a la raíz, completarlo y crear .env.example`
+**La review cruzada sigue existiendo — pero es opcional y POSTERIOR.** Cuando otro
+integrante tenga un rato, revisa PRs **ya mergeados** (sobre `main`). Si encuentra algo,
+**abre un issue de seguimiento** — no revierte ni regaña. Así conservamos el segundo par
+de ojos (que el mentor valora en la rúbrica: *Collaboration & Professionalism*) sin
+frenar a nadie.
 
-`Closes #N` en el commit (o en el PR) hace que GitHub **cierre el issue solo** al
-mergear. Ponlo en el commit final o en la descripción del PR.
+> ⚠️ Mientras **CI todavía no exista** (issues #12 y #13), el gate temporal es:
+> self-review + "tests/pipeline pasan en local" verificado a mano. Montar CI es
+> prioritario: es la red de seguridad que sustituye al revisor humano.
 
-**Qué NO se commitea nunca:**
-- Secrets / API keys (van en `.env`, que está en `.gitignore`).
-- El CSV de datos (`data/raw/` está gitignored — cada quien coloca el suyo).
-- **Outputs de los notebooks** (limpia las salidas antes de commitear — ver
-  [conflictos de notebooks](#conflictos-en-notebooks-ipynb)).
-
----
-
-## 5. Paso 5 — PR, self-review y merge (NO bloqueante)
-
-Cuando tu trabajo está listo, abres un **Pull Request (PR)**: la propuesta de meter tu
-rama a `main`. Usa la plantilla de PR (se rellena sola) y pon `Closes #N`.
-
-### Por qué NO esperamos a que otro revise antes de mergear
-La práctica común dice "que otro revise tu PR antes de mergear". **Para nosotros eso no
-funciona:** trabajamos en horarios muy desfasados (Vidaurri de noche; María e Isaac de
-mañana). Si Vidaurri termina algo a las 2am y tiene que esperar a que alguien lo revise
-en la mañana, ese cambio queda parado — y **bloquea el trabajo secuencial** de quien
-depende de él. El equipo se frena.
-
-Por eso nuestro modelo es **merge no bloqueante**:
-
-1. **El gate de merge eres tú + CI.** Completas el *self-review* del PR (corre en limpio,
-   tests pasan, CI en verde, sin secrets/datos/outputs, DoD cumplida).
-2. **Esperas a que CI pase en verde** (los tests automáticos).
-3. **Mergeas tú mismo.** Sin esperar aprobación.
-
-### La review cruzada sigue existiendo — pero es opcional y POSTERIOR
-Que no bloquee no significa que desaparezca. Cuando otro integrante tenga un rato, revisa
-PRs **ya mergeados** (sobre `main`). Si encuentra algo, **abre un issue de seguimiento**
-— no revierte ni regaña. Así conservamos el segundo par de ojos (que el mentor valora en
-la rúbrica: *Collaboration & Professionalism*) sin frenar a nadie.
-
-### Si CI falla o tu self-review detecta algo
-No es un rechazo. Empuja más commits de arreglo a **la misma rama** (el PR se actualiza
-solo), CI vuelve a correr, y mergeas cuando esté verde.
-
-### Estrategia de merge: **Merge commit**
-Al mergear, GitHub ofrece varias opciones; usamos **"Create a merge commit"**. Esto
-conserva todos los commits de tu rama y añade un commit de unión (verás
-`Merge pull request #N…` en el historial, como ya pasa en el repo). El historial se
-"ramifica y vuelve a unir": es más fiel a cómo trabajamos y evita reescribir historia
-(que es lo arriesgado para quien empieza).
-
-> ⚠️ Mientras **CI todavía no exista** en el repo (pendiente en los issues #12 y #13), el
-> gate temporal es: self-review + "tests/pipeline pasan en local" verificado a mano.
-> Montar CI es prioritario justamente porque es la red de seguridad que sustituye al
-> revisor humano.
+El paso a paso de PR, merge y resolución de conflictos está en la
+[guía de git](https://github.com/CCMarv/po-delay-analyzer/discussions/27).
 
 ---
 
-## 6. Paso 6 — Resolución de conflictos
+## 5. Discussions: la memoria del equipo
 
-### Por qué ocurren
-Un conflicto pasa cuando **dos ramas tocan las mismas líneas**, o cuando `main` avanzó
-mientras tú trabajabas y git no sabe cuál versión quedarse. Es normal y se resuelve; no
-es que hayas roto nada.
+No todo lo que el equipo comunica es trabajo: hay dudas, debates que aún no maduran y
+anuncios. Meter eso en issues los ensucia; dejarlo solo en el chat lo pierde. Para eso
+está **GitHub Discussions**: comunicación asíncrona que **deja memoria buscable**, fuera
+del board y fuera del chat efímero.
 
-### Flujo seguro (para novatos)
-La idea: **trae `main` a tu rama**, resuelve ahí, vuelve a probar, y luego mergeas.
+### Las tres vías — cuándo usar cada una
 
-```bash
-git checkout main
-git pull                          # main al día
-git checkout tu-rama
-git merge main                    # trae main a tu rama; aquí pueden aparecer conflictos
-# ...resuelves los conflictos (abajo)...
-git add <archivos-resueltos>
-git commit                        # cierra el merge
-# vuelve a correr tests / pipeline antes de empujar
-git push
-```
+| Vía | Para qué | Persistencia |
+|-----|----------|--------------|
+| **Issue** | Trabajo a ejecutar, o una decisión ya planteada que deja rastro accionable (board, DoD, `Closes #N`). | Permanente, **en el board**. |
+| **Discussion** | Una duda con respuesta reutilizable · debatir un trade-off que **aún no madura** · un anuncio. | Permanente, **buscable**, fuera del board. |
+| **Chat** | Desbloqueo inmediato, coordinación del momento ("¿alguien está tocando el notebook?"). | **Efímero** — se pierde al scrollear. |
 
-> Usamos `git merge`, **no `git rebase`**. Rebase reescribe la historia y es fácil
-> hacerse un lío siendo principiante. Merge es más seguro aunque deje un commit de unión.
+**Regla de oro:** *si dentro de un mes alguien va a querer encontrar esto, no va al
+chat.* Y si además ya es **trabajo concreto o una decisión planteada**, no es una
+discussion: es un **issue**.
 
-### Conflictos en código
-Git marca el conflicto dentro del archivo así:
+### Las 3 categorías
 
-```
-<<<<<<< HEAD
-   (lo que hay en tu rama)
-=======
-   (lo que viene de main)
->>>>>>> main
-```
+- **📣 Anuncios** — lo del lunes con el mentor, acuerdos del equipo, cambios de rumbo.
+  Es el tablón: se lee, no se debate. (Aquí vive la
+  [guía de git fijada](https://github.com/CCMarv/po-delay-analyzer/discussions/27).)
+- **🤔 Decisiones (debate)** — pensar en voz alta un trade-off **antes** de que sea un
+  issue de Decisión formal. El hilo es la memoria del *porqué*.
+- **❓ Dudas / Q&A** — preguntas con respuesta reutilizable. Se marca la respuesta
+  correcta para que quede buscable para el siguiente que tenga la misma duda.
 
-Editas el bloque para dejar la versión correcta (la tuya, la de main, o una combinación
-de ambas), **borras las líneas de marcadores** `<<<<<<<`, `=======`, `>>>>>>>`, guardas,
-y haces `git add`. **Antes de commitear, vuelve a correr los tests / el pipeline**: un
-conflicto mal resuelto compila pero rompe la lógica.
+### El puente Discussion → Issue (importante, evita el solape)
 
-### Conflictos en notebooks (.ipynb)
-Los notebooks son el caso más feo. **Por qué:** un `.ipynb` no es texto — es un JSON que
-guarda el código **y** los outputs **y** metadata de ejecución (números de celda,
-imágenes en base64…). Git intenta hacer merge de ese JSON línea por línea y produce un
-desastre ilegible. Por eso lo atacamos **previniéndolo**, no resolviéndolo.
+Una duda razonable: *si ya tengo la plantilla [Decisión](#1-de-un-gap-a-un-issue), ¿para
+qué "🤔 Decisiones (debate)" en Discussions?* Porque son dos momentos distintos:
 
-**Convención preventiva del equipo:**
+- **Discussions = pensar en voz alta.** El trade-off aún es difuso, no hay opciones
+  claras, estás tanteando con el equipo. Un issue de Decisión aquí sería prematuro
+  (¿qué opciones pones si todavía no las tienes?).
+- **Issue de Decisión = la decisión registrada.** Cuando el debate madura —ya hay
+  opciones con sus trade-offs y algo bloquea—, el hilo **se gradúa**: abres un issue con
+  la plantilla [Decisión](../.github/ISSUE_TEMPLATE/2-decision.yml), enlazas el hilo en
+  el contexto, y ahí queda la elección formal (con sus labels `decisión-equipo` /
+  `consulta-mentor` y lo que bloquea).
 
-1. **Un notebook = un dueño por sesión.** Si vas a tocar un notebook, asegúrate de que
-   nadie más lo tiene *In Progress* en el board. Coordínalo en el chat antes de empezar.
-   Trabajar el mismo notebook en paralelo es pedir un conflicto.
-2. **Limpia los outputs antes de cada commit.** Así el diff es solo de código y se
-   reducen los conflictos drásticamente:
-   - En Jupyter/VS Code: *Kernel → Restart & Clear All Outputs* antes de guardar.
-   - O por terminal: `jupyter nbconvert --clear-output --inplace tu_notebook.ipynb`.
-3. **No commitees datos pesados ni imágenes generadas** dentro del notebook.
-
-**Si aun así hay conflicto en un .ipynb:**
-- **No edites el JSON a mano.** Te quedas con **una** versión completa del notebook (la
-  tuya o la de `main`):
-  ```bash
-  git checkout --theirs tu_notebook.ipynb   # te quedas con la de main
-  # o --ours para quedarte con la tuya
-  git add tu_notebook.ipynb
-  ```
-- Vuelve a aplicar **a mano** los cambios de la otra versión, en las celdas
-  correspondientes.
-- **Re-ejecuta el notebook limpio** de principio a fin para confirmar que corre.
-- **Documenta en las *Notas* del issue** qué versión conservaste y qué reaplicaste, para
-  que el equipo sepa qué pasó.
-
-> Opcional (recomendado si tocas notebooks seguido): instala
-> [`nbdime`](https://nbdime.readthedocs.io/) — da diffs y merges de notebooks legibles
-> (`nbdiff`, `nbmerge`). No es obligatorio.
+Así no se duplica: Discussions guarda el *cómo llegamos a pensarlo*; el issue guarda *qué
+se decidió*.
 
 ---
 
-## 7. Paso 7 — Merge, cierre y el estado ideal de `main`
-
-Cuando mergeas (merge commit) con `Closes #N` en el PR:
-
-- El **issue se cierra solo** y pasa a *Done* en el board.
-- **Borra la rama** (GitHub ofrece el botón *Delete branch* tras mergear): ya cumplió su
-  función.
-- `main` queda en su **estado ideal**: completo, reproducible (corre en entorno limpio),
-  sin secrets ni datos. Quien parta de `main` parte de algo sano.
-
-La review cruzada, si ocurre, sucede **después** y sobre `main` ya integrado — nunca
-bloquea este cierre.
-
----
-
-## 8. Sincronización del equipo
+## 6. Sincronización del equipo
 
 - **Lunes 9:00 = reunión con el mentor** (stakeholder externo): sprint review + planning,
   y se resuelven los issues con `consulta-mentor`.
@@ -353,9 +245,16 @@ bloquea este cierre.
 
 ---
 
-## 9. Referencia rápida (cheat-sheet)
+## 7. Referencia rápida (cheat-sheet)
 
-### ¿Qué plantilla uso?
+### ¿Issue, Discussion o chat?
+| Lo que vas a comunicar… | Vía |
+|---|---|
+| Trabajo a ejecutar o una decisión ya planteada | **Issue** |
+| Duda con respuesta reutilizable · debate aún no maduro · anuncio | **Discussion** |
+| Desbloqueo inmediato y efímero | **Chat** |
+
+### ¿Qué plantilla uso? (si es un issue)
 | El gap es… | Plantilla |
 |---|---|
 | Trabajo a ejecutar | **Tarea** |
@@ -366,24 +265,6 @@ bloquea este cierre.
 `pipeline` · `eda` · `analisis` · `infra` · `docs` · `llm` · `app` (área, una) ·
 `fundamental` · `decisión-equipo` · `consulta-mentor` (marcadores).
 
-### El flujo en comandos
-```bash
-git checkout main && git pull                 # parte de main al día
-git checkout -b feat/tu-nombre-tarea          # rama por issue
-# ...trabajas...
-git add -A && git commit -m "area: qué hiciste (Closes #N)"
-git push -u origin feat/tu-nombre-tarea       # sube la rama
-# abres el PR en GitHub (plantilla + Closes #N) → self-review → CI verde → mergeas tú
-# borras la rama; el issue se cierra solo
-```
-
-### Si hay conflicto
-```bash
-git checkout main && git pull
-git checkout tu-rama && git merge main        # resuelve, borra marcadores, re-prueba
-```
-Notebooks: un dueño por sesión, limpia outputs antes de commit, no edites el JSON a mano.
-
----
-
-
+### El cómo (git paso a paso)
+Crear rama, commits, PR, merge y conflictos →
+[Guía de git del equipo (Discussions)](https://github.com/CCMarv/po-delay-analyzer/discussions/27).
