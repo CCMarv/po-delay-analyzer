@@ -1,0 +1,102 @@
+name: "Tarea"
+description: "Trabajo concreto y ejecutable (lo más común): una mejora, una pieza de pipeline, un análisis, documentación…"
+title: "[area] "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Antes de empezar:** una tarea debería cerrarse en **medio día a un día**.
+        Si al llenar los pasos ves que son más de ~5 o que tocas varias áreas,
+        párte esto en varios issues y enlázalos en *Dependencias*.
+
+        El título ya trae `[area]` — déjalo y escribe un **verbo + objeto**:
+        ej. `[pipeline] Cargar el CSV desde data/raw/ local`.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área
+      description: "La parte del proyecto que toca. Va también como label. Elige UNA — si dudas entre dos, el ticket quizá sea dos tareas."
+      options:
+        - "pipeline — ingesta, limpieza, parseo, transformación (pipeline_core)"
+        - "eda — exploración y visualización; distribuciones, mix de escenarios"
+        - "analisis — hallazgos y decisiones analíticas; validación, anomalías"
+        - "infra — repo, entorno, CI, git, config; no toca la lógica del producto"
+        - "docs — metodología, README, reporte, presentación"
+        - "llm — prompts, few-shot, severidad (Fase 3)"
+        - "app — demo y UI: selector de PO, notebook/Streamlit (Fase 4)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: fase
+    attributes:
+      label: Fase (milestone)
+      description: "A qué fase pertenece. Ponla también en el campo *Milestone* del issue (panel derecho)."
+      options:
+        - "Fase 1 — Pipeline + EDA"
+        - "Fase 2 — Clasificación por etapa (reglas)"
+        - "Fase 3 — LLM (prompt, explicaciones, severidad)"
+        - "Fase 4 — Demo + evaluación final"
+    validations:
+      required: true
+
+  - type: textarea
+    id: contexto
+    attributes:
+      label: Contexto
+      description: "¿Por qué existe esta tarea? El gap, hallazgo o mejora que la motiva. 1–3 líneas. Esto es lo que el mentor lee para entender el porqué."
+      placeholder: "Ej.: El notebook carga el CSV desde la URL del mentor; necesitamos leerlo de data/raw/ local para que corra sin red y sea reproducible."
+    validations:
+      required: true
+
+  - type: textarea
+    id: tarea
+    attributes:
+      label: Tarea (pasos concretos)
+      description: "Qué hay que hacer, en pasos marcables. Concretos y verificables. Si pasan de ~5, párte el issue."
+      value: |
+        - [ ]
+        - [ ]
+    validations:
+      required: true
+
+  - type: textarea
+    id: dod
+    attributes:
+      label: Definición de hecho (DoD)
+      description: "¿Cuándo está REALMENTE terminado? Criterios verificables, no 'quedó bien'. La última línea es la DoD global del equipo: déjala siempre."
+      value: |
+        - [ ] Criterio verificable y específico
+        - [ ]
+        - [ ] Corre en entorno limpio (`venv` desde `requirements.txt`) · CI en verde · self-review hecho · sin secrets/datos/outputs commiteados
+    validations:
+      required: true
+
+  - type: input
+    id: dependencias
+    attributes:
+      label: Dependencias
+      description: "Enlaza otros issues con #N. 'Depende de' = no puedo empezar hasta que ese cierre. 'Bloquea' = otros me esperan. GitHub dibuja el grafo: clave para no chocar trabajando asíncrono."
+      placeholder: "Depende de: #10  ·  Bloquea: #11"
+    validations:
+      required: false
+
+  - type: textarea
+    id: notas
+    attributes:
+      label: Notas / hallazgos
+      description: "Se llena MIENTRAS trabajas. Es tu handoff asíncrono: qué decidiste, qué descubriste, qué necesita saber quien siga. Si trabajas mientras los demás duermen, esto es tu entrega."
+      placeholder: "Ej.: Resultó que appt_lead_days no se usa en ningún flag — abro #16 para decidir si es columna muerta."
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: ownership
+    attributes:
+      label: Ownership
+      description: "El board es nuestra señal de coordinación asíncrona."
+      options:
+        - label: "Cuando empiece, me auto-asigno y muevo el issue a *In Progress* (no al crearlo — al empezar a trabajarlo)."
+          required: true

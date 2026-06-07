@@ -1,0 +1,84 @@
+name: "Bug / Corrección"
+description: "Algo está mal y hay que arreglarlo: un error, un resultado incorrecto, un cálculo que no cuadra."
+title: "[area] Arreglar: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Un buen reporte de bug deja que **cualquiera reproduzca el problema** sin
+        preguntarte. Si no sabes aún si es un bug o una decisión de diseño, abre una
+        *Decisión* en su lugar.
+
+        El título trae `[area] Arreglar:` — completa con el síntoma:
+        ej. `[pipeline] Arreglar: carrier_lag queda NaN en 27 POs con trailer nulo`.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área
+      description: "La parte del proyecto donde está el problema. Va también como label."
+      options:
+        - "pipeline"
+        - "eda"
+        - "analisis"
+        - "infra"
+        - "docs"
+        - "llm"
+        - "app"
+    validations:
+      required: true
+
+  - type: textarea
+    id: sintoma
+    attributes:
+      label: Qué pasa (síntoma)
+      description: "Describe el problema en una o dos frases, sin teorizar todavía la causa."
+      placeholder: "Ej.: flag_carrier_miss dispara en 25.8% de los POs cuando el mix esperado es ~15%."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproducir
+    attributes:
+      label: Cómo reproducir
+      description: "Pasos exactos para llegar al problema. Cuanto más concreto, más rápido se arregla."
+      value: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: esperado-vs-observado
+    attributes:
+      label: Esperado vs observado
+      description: "Qué debería pasar y qué pasa en realidad. La diferencia es el bug."
+      value: |
+        **Esperado:**
+
+        **Observado:**
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidencia
+    attributes:
+      label: Evidencia
+      description: "Lo que ayude a verlo: traceback, número(s) de PO afectados, celda del notebook, captura, salida de una celda."
+      placeholder: "Ej.: PO_NBR de los 27 casos; o el traceback de `import pipeline_core` (NameError: pd no definido)."
+    validations:
+      required: false
+
+  - type: textarea
+    id: dod
+    attributes:
+      label: Definición de hecho (DoD)
+      description: "¿Cuándo está arreglado de verdad? Idealmente incluye un test que falle antes y pase después."
+      value: |
+        - [ ] El problema ya no se reproduce con los pasos de arriba
+        - [ ] (si aplica) test que cubre el caso
+        - [ ] Corre en entorno limpio (`venv` desde `requirements.txt`) · CI en verde · self-review hecho · sin secrets/datos/outputs commiteados
+    validations:
+      required: true

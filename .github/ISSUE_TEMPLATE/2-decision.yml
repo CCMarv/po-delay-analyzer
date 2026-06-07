@@ -1,0 +1,87 @@
+name: "Decisión"
+description: "Un trade-off de diseño que hay que resolver antes de seguir (no es una tarea ejecutable, es una elección)."
+title: "[area] Decidir: "
+labels: ["decisión-equipo"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Usa esto cuando hay que **elegir entre caminos** y la elección bloquea o
+        condiciona otro trabajo. No es para ejecutar algo (eso es una *Tarea*), sino
+        para dejar registrada la pregunta, las opciones y, al final, la decisión.
+
+        El título trae `[area] Decidir:` — complétalo con la elección concreta:
+        ej. `[analisis] Decidir: fuente de verdad de las flags (calc vs precalc)`.
+
+  - type: dropdown
+    id: quien-decide
+    attributes:
+      label: ¿Quién decide?
+      description: >-
+        Define el flujo y la etiqueta. La mayoría de las decisiones las podemos
+        resolver los 3 de forma asíncrona en cualquier momento — NO hay que esperar al
+        lunes para eso. Reserva 'mentor' solo para lo que de verdad necesita su criterio.
+      options:
+        - "Entre los 3 (asíncrono, cualquier día) — label decisión-equipo"
+        - "Necesita al mentor (va a la reunión del lunes) — label consulta-mentor"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Área
+      description: "La parte del proyecto que toca. Va también como label."
+      options:
+        - "pipeline"
+        - "eda"
+        - "analisis"
+        - "infra"
+        - "docs"
+        - "llm"
+        - "app"
+    validations:
+      required: true
+
+  - type: textarea
+    id: pregunta
+    attributes:
+      label: La decisión / pregunta
+      description: "¿Qué hay que decidir, exactamente? Una pregunta clara que se pueda responder."
+      placeholder: "Ej.: ¿Las flags se computan desde los timestamps (deltas) o desde las columnas precalculadas (DOCK_HRS, IS_LATE)?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: opciones
+    attributes:
+      label: Opciones y trade-offs
+      description: "Las alternativas reales, con sus pros y contras. Estructurar la decisión así es la mitad de resolverla — y es lo que el mentor evalúa."
+      value: |
+        **Opción A —**
+        - A favor:
+        - En contra:
+
+        **Opción B —**
+        - A favor:
+        - En contra:
+    validations:
+      required: true
+
+  - type: textarea
+    id: recomendacion
+    attributes:
+      label: Recomendación / inclinación actual
+      description: "¿Hacia dónde te inclinas y por qué? Opcional, pero acelera la decisión. Aquí también se anota la decisión FINAL una vez tomada."
+      placeholder: "Ej.: Me inclino por A (deltas) porque el principio del proyecto es 'timestamps = fuente de verdad', y DOCK_HRS tiene 11 POs no confiables."
+    validations:
+      required: false
+
+  - type: input
+    id: bloquea
+    attributes:
+      label: ¿Qué bloquea esta decisión?
+      description: "Issues que no pueden avanzar hasta resolver esto. Enlázalos con #N."
+      placeholder: "Bloquea: #15, #17"
+    validations:
+      required: false
