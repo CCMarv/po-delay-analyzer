@@ -7,10 +7,17 @@
 blank_issues_enabled: false
 
 # Enlaces que aparecen bajo las plantillas, para lo que NO es un issue.
+# Por qué: no todo lo que se comunica es trabajo. Una duda, un debate aún no maduro
+# o un anuncio no necesitan un issue (board + DoD + Closes); van a Discussions, que
+# deja memoria buscable fuera del chat efímero. Ver "Discussions: la memoria del
+# equipo" en documentation/convenciones-issues.md.
 contact_links:
-  - name: Duda rápida del equipo (no es un issue)
+  - name: ¿Duda, debate o anuncio? → Discussions (no es un issue)
     url: https://github.com/CCMarv/po-delay-analyzer/discussions
     about: >-
-      Para preguntas o desbloqueos rápidos entre los 3, usa el chat del equipo o
-      Discussions. Un issue es para trabajo o decisiones que dejan rastro; una duda
-      pasajera no necesita uno.
+      Elige la vía por lo que vas a comunicar. Issue = trabajo a ejecutar o una
+      decisión ya planteada que deja rastro accionable (sigue con una plantilla de
+      arriba). Discussion = una duda con respuesta reutilizable, debatir un trade-off
+      que aún no madura, o un anuncio. Chat del equipo = desbloqueo inmediato y
+      efímero. Regla: si dentro de un mes alguien va a querer encontrar esto, no va al
+      chat.
