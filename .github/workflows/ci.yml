@@ -1,0 +1,59 @@
+# CI — corre la suite de pytest en cada PR y en cada push a main.
+#
+# Por qué existe (issue #14): la convención del equipo (§4) dice que mergeamos sin
+# esperar revisión humana, así que el gate de merge es "tú + CI". Este workflow ES
+# esa red de seguridad: la palomita verde reemplaza el "en mi compu sí jala".
+#
+# Qué garantiza la DoD del issue:
+#   - check verde cuando el módulo importa y los 57 tests pasan;
+#   - check ROJO si el módulo no importa (paso "Import smoke check") o si un test falla.
+#
+# Nota de versión: el issue sugería alinear a 3.10/3.11, pero esa nota quedó
+# desactualizada — el notebook real declara 3.13.1 y el entorno local corre 3.13.x con
+# los tests en verde, así que fijamos 3.13.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# El job solo lee el repo; sin permisos de escritura (higiene de seguridad).
+permissions:
+  contents: read
+
+# Si llega un push nuevo al mismo ref, cancela el run viejo en curso (ahorra minutos).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      # Smoke de import aislado: falla el job si pipeline_core no importa.
+      # La carpeta 01_data_pipeline_and_eda/ empieza con dígito, así que no es un
+      # paquete importable por su nombre; la añadimos al PYTHONPATH solo para este
+      # paso (pytest lo resuelve aparte vía pyproject.toml).
+      - name: Import smoke check
+        run: python -c "import pipeline_core"
+        env:
+          PYTHONPATH: 01_data_pipeline_and_eda
+
+      # pytest toma su config (testpaths, pythonpath, -v) de pyproject.toml.
+      - name: Run tests
+        run: pytest
