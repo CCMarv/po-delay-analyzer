@@ -11,26 +11,28 @@ Construir una plataforma integral que reciba datos transaccionales de órdenes d
 
 El repositorio está organizado siguiendo el orden cronológico de las cuatro etapas del ciclo de vida del proyecto, facilitando el seguimiento del progreso desde la investigación hasta el despliegue:
 
+> **Nota:** este árbol refleja el **estado real del repo hoy** (Fase 1). Las carpetas
+> `02/03/04` están reservadas para las fases siguientes y aún no tienen contenido.
+
 ```text
-├── documentation/            # Archivos de texto, PDFs y requerimientos
-│   └── requirements.txt      # Dependencias y librerías del proyecto
-│   └──kickoff_po_root_cause  # Especificaciones del proyecto
-├── 01_data_pipeline_and_eda/ # Etapa 1: Análisis exploratorio y limpieza de datos
-│   └── data_pipeline.ipynb   # Notebook de data pipeline
-│   └── eda_analysis.ipynb    # Notebook de Análisis Exploratorio de Datos
-├── 02_clasif_reglas_negocio/ # Etapa 2: Clasificación por etapa (reglas de negocio)
-│   ├── clasif_etapa.ipynb    # Experimentación del flujo de datos
-│   └── rules_config.json     # Definición de reglas aplicadas
-├── 03_llm_integration/       # Etapa 3: Orquestación del modelo de lenguaje
-│   ├── llm_testing.ipynb     # Notebook de pruebas de prompts y embeddings
-│   └── prompt_templates/     # Plantillas de prompts utilizadas
-├── 04_app/                   # Etapa 4: Aplicación funcional de producción
-│   ├── src/                  # Módulos de código estables
-│   │   ├── pipeline_core.py  # Pipeline migrado a producción
-│   │   ├── llm_core.py       # Conector del LLM migrado a producción
-│   │   └── utils/            # Herramientas de soporte
-│   └── main.py               # Punto de entrada de la aplicación final
-└── README.md                 # Descripción general del repositorio
+├── documentation/                      # Textos, PDFs, convenciones del equipo
+│   ├── kickoff_po_root_cause.html      # Especificaciones del proyecto (mentor)
+│   ├── convenciones-issues.md          # Acuerdos de gestión del equipo
+│   └── plantillas-cli/                 # Borradores de issues para `gh`
+├── data/                               # raw/ y processed/ (gitignored; solo .gitkeep)
+├── 01_data_pipeline_and_eda/           # Fase 1: pipeline + EDA
+│   ├── data_pipeline_and_EDA.ipynb     # Notebook combinado (pipeline + EDA)
+│   └── pipeline_core.py                # Función reutilizable clean_po_data() + cross_validate
+├── tests/                              # Suite de pytest de pipeline_core
+│   ├── conftest.py                     # Fixtures (DataFrame sintético de valores conocidos)
+│   └── test_pipeline_core.py
+├── 02_clasif_reglas_negocio/           # Fase 2: clasificación por etapa (pendiente)
+├── 03_llm_integration/                 # Fase 3: integración LLM (pendiente)
+├── 04_app/                             # Fase 4: demo / app (pendiente)
+├── requirements.txt                    # Dependencias (en la raíz)
+├── pyproject.toml                      # Config de pytest (pythonpath, testpaths)
+├── .env.example                        # Plantilla de variables de entorno
+└── README.md                           # Descripción general del repositorio
 ```
 
 
