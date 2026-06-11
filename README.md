@@ -49,7 +49,7 @@ El proyecto se estructura en **4 fases secuenciales**:
 * "Cargar el CSV, limpiar timestamps, validar datos. EDA: cuantos POs tienen delay? Distribucion por vendor/DC."
 
 * **Carga y Parseo**: Uso de `pandas` con `errors='coerce'` para evitar rupturas por valores nulos (dejándolos como `NaT`).
-* **Auditoría de Calidad**: Detección de tiempos invertidos (ej. `CHECKIN_DT` < `TRAILER_ARRIVE_DT`) marcados bajo la flag `_TIMESTAMP_ISSUE` sin eliminar registros.
+* **Auditoría de Calidad**: Detección de tiempos invertidos (ej. `CHECKIN_DT` < `TRAILER_ARRIVE_DT`) marcados bajo la flag `_ts_issue` sin eliminar registros.
 * **Cálculo de Métricas Clave (Lead Times)**:
   * `yard_wait` = `CHECKIN` - `TRAILER_ARRIVE`
   * `dock_time` = `CHECKOUT` - `CHECKIN`
