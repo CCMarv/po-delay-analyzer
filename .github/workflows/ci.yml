@@ -54,6 +54,15 @@ jobs:
         env:
           PYTHONPATH: 01_data_pipeline_and_eda
 
+      # Mismo smoke aislado para el módulo de Fase 2 (issue #43). La carpeta
+      # 02_clasif_reglas_negocio/ también empieza con dígito; la añadimos al
+      # PYTHONPATH solo para este paso. Defensa en profundidad: falla el job si
+      # classifier_core no importa, aunque pytest también lo cubra.
+      - name: Import smoke check (classifier)
+        run: python -c "import classifier_core"
+        env:
+          PYTHONPATH: 02_clasif_reglas_negocio
+
       # pytest toma su config (testpaths, pythonpath, -v) de pyproject.toml.
       - name: Run tests
         run: pytest
