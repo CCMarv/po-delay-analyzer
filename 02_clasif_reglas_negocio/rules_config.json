@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "_status": "semilla provisional — umbrales pendientes de confirmar (#39-#42, 'el lunes confirmamos'); #44/#45 fijan definitivos",
+  "thresholds": {
+    "yard_wait_hrs":        { "value": 4.0, "comparison": "gt", "metric": "yard_wait_calc_hrs" },
+    "dock_hrs":             { "value": 6.0, "comparison": "gt", "metric": "dock_calc_hrs" },
+    "carrier_lag_hrs":      { "value": 4.0, "comparison": "gt", "metric": "carrier_lag_hrs" },
+    "short_ship_fill_rate": { "value": 0.9, "comparison": "lt", "metric": "_fill_rate" },
+    "severity_delay_days":  { "value": 3.0, "comparison": "gt", "metric": "delay_days_calc" }
+  }
+}
