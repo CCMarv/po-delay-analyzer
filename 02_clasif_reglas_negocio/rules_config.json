@@ -7,5 +7,11 @@
     "carrier_lag_hrs":      { "value": 4.0, "comparison": "gt", "metric": "carrier_lag_hrs" },
     "short_ship_fill_rate": { "value": 0.9, "comparison": "lt", "metric": "_fill_rate" },
     "severity_delay_days":  { "value": 3.0, "comparison": "gt", "metric": "delay_days_calc" }
+  },
+  "expected_leg_times": {
+    "_status": "provisional — presupuesto operativo SEMILLA por tramo (#45). Valores en HORAS, sembrados un poco bajo la mediana global de cada tramo entre tardíos (carrier 3.07 / yard 1.46 / dock 2.67). El lunes el mentor confirma si su 'tramo más largo' es exceso-sobre-esperado y qué presupuestos usar; cambiar AQUÍ mueve constantes, no la arquitectura.",
+    "carrier_hrs": { "value": 3.0, "metric": "carrier_lag_hrs" },
+    "yard_hrs":    { "value": 1.5, "metric": "yard_wait_calc_hrs" },
+    "dock_hrs":    { "value": 2.5, "metric": "dock_calc_hrs" }
   }
 }

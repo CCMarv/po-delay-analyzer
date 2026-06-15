@@ -254,6 +254,47 @@ def _build_raw() -> pd.DataFrame:
             YARD_WAIT_HRS=10.0, DOCK_HRS=20.0, DELAY_DAYS=0.0,
             HOT_PO_FLAG=0, IS_LATE="N",
         ),
+        # ── PO-CARRIER-LATE: carrier domina el exceso → stage_primary='Carrier' ──
+        #    Presupuestos semilla: carrier 3.0 / yard 1.5 / dock 2.5 h.
+        #    carrier_lag=14h (exc 11) · yard=1h (exc 0) · dock=2h (exc 0) → exc_dc=0
+        #    delay=0.5d=12h → residual vendor = max(0, 12-11)=1 < 11 → gana Carrier.
+        dict(
+            PO_NBR="PO-CARRIER-LATE",
+            PO_DT="2024-01-01 00:00", STA_DT="2024-01-05 00:00",
+            APPROVED_DT="2024-01-04 00:00",
+            DT_APPT_FIRST_APPROVED="2024-01-04 00:00",
+            DT_APPT_CURRENT_APPROVED="2024-01-04 00:00",
+            TRAILER_ARRIVE_DT="2024-01-04 14:00",   # lag 14h desde APPROVED
+            CHECKIN_DT="2024-01-04 15:00",           # yard 1h
+            CHECKOUT_DT="2024-01-04 17:00",          # dock 2h
+            RECPT_DT="2024-01-05 12:00",             # delay 0.5 día
+            REQUESTED_DT="2024-01-01 00:00", FIRST_SUBMITTED_DT="2024-01-01 00:00",
+            PREVIOUS_REQUEST_DT=NaT, TRAILER_DEPART_DT="2024-01-04 18:00",
+            NUM_CASES_ORDERED=100, NUM_CASES_SHIPPED=100,
+            YARD_WAIT_HRS=1.0, DOCK_HRS=2.0, DELAY_DAYS=0.5,
+            HOT_PO_FLAG=0, IS_LATE="Y",
+            REASON_DSC="Carrier delivery delay",
+        ),
+        # ── PO-DOCK-LATE: dock domina DC → stage_primary='DC' ───────────────────
+        #    carrier_lag=2h (exc 0) · yard=1h (exc 0) · dock=10h (exc 7.5) → exc_dc=7.5
+        #    delay=0.5d=12h → residual vendor = max(0, 12-7.5)=4.5 < 7.5 → gana DC.
+        dict(
+            PO_NBR="PO-DOCK-LATE",
+            PO_DT="2024-01-01 00:00", STA_DT="2024-01-05 00:00",
+            APPROVED_DT="2024-01-04 00:00",
+            DT_APPT_FIRST_APPROVED="2024-01-04 00:00",
+            DT_APPT_CURRENT_APPROVED="2024-01-04 00:00",
+            TRAILER_ARRIVE_DT="2024-01-04 02:00",    # lag 2h
+            CHECKIN_DT="2024-01-04 03:00",           # yard 1h
+            CHECKOUT_DT="2024-01-04 13:00",          # dock 10h
+            RECPT_DT="2024-01-05 12:00",             # delay 0.5 día
+            REQUESTED_DT="2024-01-01 00:00", FIRST_SUBMITTED_DT="2024-01-01 00:00",
+            PREVIOUS_REQUEST_DT=NaT, TRAILER_DEPART_DT="2024-01-04 14:00",
+            NUM_CASES_ORDERED=100, NUM_CASES_SHIPPED=100,
+            YARD_WAIT_HRS=1.0, DOCK_HRS=10.0, DELAY_DAYS=0.5,
+            HOT_PO_FLAG=0, IS_LATE="Y",
+            REASON_DSC="Dock processing backlog",
+        ),
     ]
     return pd.DataFrame(rows)
 
