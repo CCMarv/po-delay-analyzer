@@ -37,11 +37,6 @@ def _thr(rules: dict, name: str) -> float:
     return float(rules["thresholds"][name]["value"])
 
 
-def _expected(rules: dict, name: str) -> float:
-    """Tiempo esperado (presupuesto) del tramo `name` bajo expected_leg_times (#45)."""
-    return float(rules["expected_leg_times"][name]["value"])
-
-
 # ── #44 · Flags por umbral + máscaras field-level ────────────────────────────
 def _flags_por_umbral(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
     """Recalcula las flags de etapa desde las columnas *_calc (no las precalc del
@@ -73,52 +68,58 @@ def _flags_por_umbral(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
     return df
 
 
-# ── #45 · Etapa primaria: gap dominante + vendor residual + indeterminado ────
+# ── #45 · Etapa primaria: STA push (vendor) + exceso sobre umbral + indeterminado ──
 def _etapa_primaria(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
-    """Asigna la etapa primaria por el tramo de MAYOR EXCESO sobre su tiempo esperado
+    """Asigna la etapa primaria por el tramo de MAYOR EXCESO sobre el UMBRAL del mentor
     (no por duración cruda: cruda siempre gana el tramo inherentemente más lento).
 
-    Método (decidido y verificado contra los 400 POs; ver respuestas-maria-fase2):
-      1. Exceso de cada tramo MEDIBLE = max(0, actual − esperado), en HORAS.
-         No-medible (máscara False) → exceso 0 en el argmax, pero la máscara queda.
-      2. VENDOR = residual de pre-llegada (no hay VENDOR_SHIP_DT): el delay total que
-         los tramos medibles NO explican con su exceso. Todo en horas:
-            exceso_vendor = max(0, delay_days_calc*24 − (exceso_carrier + exceso_dc))
-         El clip(0) absorbe los casos donde lo medible "sobra" (residual negativo).
-         APROXIMACIÓN (provisional, #57): el exceso de tramos internos del viaje se
-         resta de la tardanza vs la promesa (RECPT−STA) — ejes distintos, pero es la
-         única vía sin dato de embarque. El lunes el mentor confirma.
+    Método (decidido por el mentor 06-16 / consulta 06-17; verificado contra los 400 POs):
+      1. Exceso de cada tramo MEDIBLE = max(0, actual − UMBRAL del mentor), en HORAS.
+         Umbrales: carrier 8h, yard 4h, dock 6h (rules_config). No-medible (máscara
+         False) → exceso 0 en el argmax, pero la máscara queda para Indeterminado.
+      2. VENDOR por SEÑAL DIRECTA "STA push" (no por residual): si la cita se aprobó
+         DESPUÉS de la fecha esperada de llegada (APPROVED_DT > STA_DT), hay evidencia
+         de que el vendor arrancó tarde. appt_lead_days = STA − APPROVED (días); es
+         NEGATIVO cuando APPROVED > STA, así que el push en horas es:
+            exc_vendor = max(0, −appt_lead_days * 24)
+         Es estrictamente mejor que el residual: no asume que los tramos sean aditivos
+         ni mutuamente excluyentes, y funciona en los 27 POs SIN hora de tráiler (no
+         necesita carrier/DC para medirse). Reemplaza el residual de #57.
       3. Etapa primaria = argmax de {VENDOR, CARRIER, DC}. Si todos 0 y no es tardío
          → 'On-Time'.
-      4. INDETERMINADO intercepta ANTES de premiar a vendor por descarte: si el PO es
-         tardío pero los tramos clave no son medibles y nada medible tiene exceso, no
-         se le endosa a vendor — se marca 'Indeterminado' (separa "no medible" de "fue
-         vendor", como pedía la nota: "primero sacamos los indeterminados").
+      4. INDETERMINADO = SOLO casos sin evidencia: (a) tardío no medible (sin
+         TRAILER_ARRIVE_DT → no se puede juzgar carrier/DC), o (b) tardío medible pero
+         sin NINGUNA señal (push 0 y exc carrier/dc 0). El (b) cae aquí por la propia
+         intercepción del argmax-de-ceros: si excesos.max == 0 no hay a quién atribuir
+         con evidencia → Indeterminado (decisión del mentor, opción b: no inventar
+         causalidad). Ya no hay "Rama 2" aparte; ambos casos colapsan en la misma regla.
 
     Universo: tardíos = delay_days_calc > 0 (fuente de verdad #18); el resto 'On-Time'.
-    Expone stage_primary + las magnitudes excess_*_hrs (para severidad futura #48 y
-    para validación contra stage_multi).
+    Expone stage_primary, dc_substage (Yard/Dock cuando primary==DC) y las magnitudes
+    excess_*_hrs (para severidad #48 y para validación contra el gap dominante #46).
     """
-    esperado_carrier = _expected(rules, "carrier_hrs")
-    esperado_yard    = _expected(rules, "yard_hrs")
-    esperado_dock    = _expected(rules, "dock_hrs")
+    thr_carrier = _thr(rules, "carrier_lag_hrs")
+    thr_yard    = _thr(rules, "yard_wait_hrs")
+    thr_dock    = _thr(rules, "dock_hrs")
 
-    # Paso 1 — exceso por tramo medible (horas, clip 0). fillna(0): un tramo no
-    # medible (NaN) o sin exceso aporta 0 al argmax; la máscara guarda el "no sé".
-    exc_carrier = (df["carrier_lag_hrs"]    - esperado_carrier).clip(lower=0).fillna(0)
-    exc_yard    = (df["yard_wait_calc_hrs"] - esperado_yard).clip(lower=0).fillna(0)
-    exc_dock    = (df["dock_calc_hrs"]      - esperado_dock).clip(lower=0).fillna(0)
+    # Paso 1 — exceso por tramo medible sobre el UMBRAL (horas, clip 0). fillna(0): un
+    # tramo no medible (NaN) o sin exceso aporta 0 al argmax; la máscara guarda el "no sé".
+    exc_carrier = (df["carrier_lag_hrs"]    - thr_carrier).clip(lower=0).fillna(0)
+    exc_yard    = (df["yard_wait_calc_hrs"] - thr_yard).clip(lower=0).fillna(0)
+    exc_dock    = (df["dock_calc_hrs"]      - thr_dock).clip(lower=0).fillna(0)
     # Solo cuenta el exceso de un tramo si ese tramo es medible.
     exc_carrier = exc_carrier.where(df["_carrier_medible"], 0.0)
     exc_yard    = exc_yard.where(df["_dc_medible"], 0.0)
     exc_dock    = exc_dock.where(df["_dc_medible"], 0.0)
     exc_dc      = exc_yard + exc_dock
 
-    # Paso 2 — residual vendor (horas). delay en días → horas para operar en 1 unidad.
-    delay_hrs     = (df["delay_days_calc"] * 24).fillna(0)
-    exc_vendor    = (delay_hrs - (exc_carrier + exc_dc)).clip(lower=0)
+    # Paso 2 — VENDOR por STA push (horas). appt_lead_days = STA − APPROVED (días):
+    # negativo cuando APPROVED > STA, así que −appt_lead_days*24 es el push en horas.
+    exc_vendor = (-df["appt_lead_days"] * 24).clip(lower=0).fillna(0)
 
     df["excess_carrier_hrs"] = exc_carrier
+    df["excess_yard_hrs"]    = exc_yard
+    df["excess_dock_hrs"]    = exc_dock
     df["excess_dc_hrs"]      = exc_dc
     df["excess_vendor_hrs"]  = exc_vendor
 
@@ -138,11 +139,21 @@ def _etapa_primaria(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
     stage = stage.mask(es_tardio & decidible & algun_exceso, ganador)
     # Tardío pero NO decidible (no medible) → Indeterminado, no vendor por descarte.
     stage = stage.mask(es_tardio & ~decidible, "Indeterminado")
-    # Tardío, decidible, pero sin exceso en ningún tramo medible y residual vendor 0
-    # → tampoco hay a quién atribuir con evidencia: Indeterminado.
+    # Tardío, decidible, pero SIN ninguna señal (push 0 y exc carrier/dc 0): no hay a
+    # quién atribuir con evidencia (los 14 sin-señal, opción b del mentor) → Indeterminado.
     stage = stage.mask(es_tardio & decidible & ~algun_exceso, "Indeterminado")
 
     df["stage_primary"] = stage
+
+    # Subclase del DC: solo informativa cuando el primario es DC; separa Yard de Dock
+    # por el mayor exceso de los dos. Empate (o ambos 0 dentro de un DC) → 'Dock': es la
+    # operación TERMINAL del CD (procesamiento en muelle), la más informativa para el LLM.
+    es_dc = df["stage_primary"] == "DC"
+    dc_substage = pd.Series(pd.NA, index=df.index, dtype="object")
+    dc_substage = dc_substage.mask(es_dc & (exc_yard > exc_dock), "Yard")
+    dc_substage = dc_substage.mask(es_dc & (exc_yard <= exc_dock), "Dock")
+    df["dc_substage"] = dc_substage
+
     return df
 
 
@@ -165,19 +176,23 @@ _REASON_DSC_MAP = {
 
 def _capa_complementaria(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
     """Columnas SECUNDARIAS (no son el driver de la clasificación; stage_primary lo es).
-    Sirven como capa auxiliar de validación / revisión histórica: el vector multi-causa
-    de María y los modificadores narrativos.
+    Capa auxiliar de validación / revisión + las flags de contexto para Fase 3.
 
       reason_group_manual — REASON_DSC mapeado a {Vendor, Carrier, DC, Unknown, On-Time}.
-      stage_multi         — las 8 etiquetas multi-causa desde las flags *_calc de #44
-                            (p.ej. 'Vendor + Carrier + DC'). 'Vendor' aquí = señal
-                            explícita de vendor (rescheduled/short-ship/lead corto), NO
-                            la atribución por residual — es la capa de banderas, a propósito.
+      stage_multi         — etiquetas multi-causa desde las CAUSAS reales de cada etapa
+                            (p.ej. 'Vendor + Carrier'). 'Vendor' aquí = STA push
+                            (appt_lead_days < 0), NO rescheduled/short-ship: el mentor
+                            (06-16) descartó esos como señal de vendor — describen un
+                            evento, no la causa raíz del retraso.
       stage_modifiers     — sufijos cuando hay señal de vendor pero el primario no es
                             Vendor (#54): '(+ vendor_rescheduled)', '(+ vendor_short_ship)'.
 
-    Short-ship: en esta tanda solo se apoya en _short_ship (ya viene del pipeline); su
-    rol de agravante de severidad llega con #48 (diferido), aquí no se puntúa.
+    Flags de CONTEXTO (decisión del mentor: rescheduled/short-ship son contexto/agravante,
+    no etapa). Se exponen SIEMPRE como columnas propias para que la severidad (#48) y el
+    LLM (Fase 3) las consuman sin reinterpretar las flags internas del pipeline:
+      is_rescheduled — la cita se reprogramó (DT_APPT_CURRENT != DT_APPT_FIRST).
+      is_short_ship  — fill rate por debajo del umbral (envío incompleto).
+      is_short_lead  — lead time PO→STA por debajo del mínimo (ventana de aviso corta).
     """
     # REASON_DSC es columna de entrada (anotación humana, 2.2% nulls en el CSV real).
     # Si faltara por completo, degradar a "Unknown" en vez de romper: la capa
@@ -187,12 +202,14 @@ def _capa_complementaria(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
     else:
         df["reason_group_manual"] = "Unknown"
 
-    # Señales de banderas (capa complementaria, independiente del residual de #45).
-    v = (
-        df["_rescheduled"].fillna(False)
-        | df["_short_ship"].fillna(False)
-        | df["flag_short_lead_time"].fillna(False)
-    )
+    # Flags de contexto propias (siempre presentes, alias estables de las del pipeline).
+    df["is_rescheduled"] = df["_rescheduled"].fillna(False)
+    df["is_short_ship"]  = df["_short_ship"].fillna(False)
+    df["is_short_lead"]  = df["flag_short_lead_time"].fillna(False)
+
+    # Señales multi-causa: SOLO causas de etapa (el mentor sacó reschedule/short-ship
+    # de la señal de vendor). Vendor = STA push; carrier/DC = sus flags de umbral.
+    v = (df["appt_lead_days"] < 0).fillna(False)        # STA push (APPROVED > STA)
     c = df["flag_carrier_calc"].fillna(False)
     d = (df["flag_yard_calc"].fillna(False)) | (df["flag_dock_calc"].fillna(False))
 
@@ -204,17 +221,67 @@ def _capa_complementaria(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
         _etiqueta(vv, cc, dd) for vv, cc, dd in zip(v, c, d)
     ]
 
-    # Modificadores narrativos: señal de vendor cuando el primario NO es Vendor.
+    # Modificadores narrativos: señal de contexto de vendor cuando el primario NO es Vendor.
     def _mods(row) -> str:
         suf = []
         no_vendor_primary = row["stage_primary"] != "Vendor"
-        if bool(row.get("_rescheduled", False)) and no_vendor_primary:
+        if bool(row.get("is_rescheduled", False)) and no_vendor_primary:
             suf.append("(+ vendor_rescheduled)")
-        if bool(row.get("_short_ship", False)) and no_vendor_primary:
+        if bool(row.get("is_short_ship", False)) and no_vendor_primary:
             suf.append("(+ vendor_short_ship)")
         return " ".join(suf)
 
     df["stage_modifiers"] = df.apply(_mods, axis=1)
+    return df
+
+
+# ── #48 · Severidad determinística ───────────────────────────────────────────
+# Orden de niveles para subir/bajar por índice (LOW < MEDIUM < HIGH).
+_SEVERITY_LEVELS = ["LOW", "MEDIUM", "HIGH"]
+
+
+def _severidad(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
+    """Asigna severidad determinística a cada PO tardío (#48). Auditable y reproducible
+    (no la decide el LLM; esa es una capa narrativa aparte de Fase 3).
+
+    Nivel BASE (regla del brief/mentor):
+      HIGH   = HOT PO en retraso fuerte: flag_hot_late & delay_days_calc > severity_delay_days (3.0).
+      LOW    = borderline: delay_days_calc < severity_low_days (1.0), casi a tiempo (<~24h).
+      MEDIUM = el resto de los tardíos (retraso normal).
+      On-Time (no tardío)        → severity = '' (no entra al ranking de #48).
+
+    AGRAVANTES (decisión del mentor #40/#42: lead corto y short-ship NO son etapa, son
+    contexto que agrava la severidad). Si is_short_lead OR is_short_ship: subir 1 nivel
+    (LOW→MEDIUM, MEDIUM→HIGH); HIGH se queda HIGH (tope). No acumulan más allá de HIGH:
+    el gate HIGH "real" sigue siendo HOT_PO + retraso fuerte; un agravante puede empujar
+    un caso a HIGH, pero la base se mantiene monótona y fácil de explicar.
+
+    Por qué determinística y no del LLM: la rúbrica pide un Severity Ranking auditable
+    (>95%); el cómputo desde columnas confiables es defendible, el del LLM es narrativa.
+    """
+    thr_high = _thr(rules, "severity_delay_days")   # 3.0
+    thr_low  = _thr(rules, "severity_low_days")     # 1.0
+
+    es_tardio = df["delay_days_calc"] > 0
+    hot_late  = df["flag_hot_late"].fillna(False)
+    delay     = df["delay_days_calc"].fillna(0)
+
+    # Nivel base: empieza vacío; solo los tardíos reciben nivel.
+    base = pd.Series("", index=df.index, dtype="object")
+    base = base.mask(es_tardio, "MEDIUM")                       # tardío normal
+    base = base.mask(es_tardio & (delay < thr_low), "LOW")      # borderline
+    base = base.mask(es_tardio & hot_late & (delay > thr_high), "HIGH")  # hot + fuerte
+
+    # Agravante: lead corto o short-ship sube un escalón (sin pasar de HIGH).
+    agrava = df["is_short_lead"].fillna(False) | df["is_short_ship"].fillna(False)
+
+    def _subir(nivel: str, sube: bool) -> str:
+        if nivel == "" or not sube:
+            return nivel
+        i = _SEVERITY_LEVELS.index(nivel)
+        return _SEVERITY_LEVELS[min(i + 1, len(_SEVERITY_LEVELS) - 1)]
+
+    df["severity"] = [_subir(n, s) for n, s in zip(base, agrava)]
     return df
 
 
@@ -243,12 +310,13 @@ def classify_po_stages(df_input: pd.DataFrame, rules: dict | None = None) -> pd.
 
     # Orquestación de la fase (Opción 2: un core, funciones-hueco por issue).
     #   #44 → flags desde *_calc + máscaras field-level (prerequisito de #45).
-    #   #45 → etapa primaria por gap dominante + vendor residual + indeterminado.
-    #   complementaria → vector multi-causa + modificadores (capa auxiliar).
-    # #48 (severidad) y #47 (mismatch) quedan diferidos: no se añaden aquí.
+    #   #45 → etapa primaria por STA push (vendor) + exceso sobre umbral + indeterminado.
+    #   complementaria → flags de contexto + vector multi-causa + modificadores.
+    #   #48 → severidad determinística (usa las flags de contexto de la complementaria).
     df = _flags_por_umbral(df, rules)      # #44
     df = _etapa_primaria(df, rules)        # #45
-    df = _capa_complementaria(df, rules)   # complementaria
+    df = _capa_complementaria(df, rules)   # complementaria (is_*, stage_multi, modifiers)
+    df = _severidad(df, rules)             # #48 (tras la complementaria: necesita is_*)
 
     return df
 
@@ -307,9 +375,8 @@ if __name__ == "__main__":
     print("[OK] classify_po_stages() ejecutado correctamente")
     print(f"   Shape entrada (clean):      {df_clean.shape}")
     print(f"   Shape salida (classified):  {df_classified.shape}")
-    print(f"   Columnas añadidas (#44/#45): {df_classified.shape[1] - df_clean.shape[1]}")
+    print(f"   Columnas añadidas:          {df_classified.shape[1] - df_clean.shape[1]}")
     print(f"   Umbrales cargados:          {list(rules.get('thresholds', {}).keys())}")
-    print(f"   Tiempos esperados (#45):    {list(rules.get('expected_leg_times', {}).keys())}")
 
     # Reparto de la etapa primaria sobre el universo de tardíos (delay_days_calc > 0).
     tardios = df_classified[df_classified["delay_days_calc"] > 0]
@@ -318,3 +385,10 @@ if __name__ == "__main__":
     print(tardios["stage_primary"].value_counts().to_string().replace("\n", "\n     "))
     sin_clase = (tardios["stage_primary"] == "On-Time").sum()
     print(f"\n   Tardíos sin clase primaria (debe ser 0): {sin_clase}")
+
+    # Severidad (#48) y subclase DC sobre los tardíos.
+    print("\n   Reparto severity (tardíos):")
+    print(tardios["severity"].value_counts().to_string().replace("\n", "\n     "))
+    es_dc = df_classified["stage_primary"] == "DC"
+    print("\n   dc_substage (solo DC):")
+    print(df_classified.loc[es_dc, "dc_substage"].value_counts().to_string().replace("\n", "\n     "))
