@@ -349,6 +349,56 @@ def classify_po_stages(df_input: pd.DataFrame, rules: dict | None = None) -> pd.
     return df
 
 
+# ── #49 · Persistencia del output clasificado ────────────────────────────────
+# Columnas que se exportan: el veredicto por PO (stage_primary, severity, dc_substage),
+# las flags de etapa y las máscaras de evaluabilidad (para auditar QUÉ se pudo medir), y
+# las flags de contexto que Fase 3 consume. Se mantienen solo las relevantes para los
+# consumidores (Fase 3/4 + revisión), no todo el DataFrame intermedio.
+_OUTPUT_COLUMNS = [
+    "PO_NBR",
+    "stage_primary", "severity", "dc_substage",
+    "excess_vendor_hrs", "excess_carrier_hrs", "excess_dc_hrs",
+    "flag_carrier_calc", "flag_yard_calc", "flag_dock_calc",
+    "_carrier_medible", "_dc_medible",
+    "is_rescheduled", "is_short_ship", "is_short_lead",
+    "reason_group_manual",
+]
+
+
+def save_classified_output(df: pd.DataFrame, path=None) -> Path:
+    """Persiste el DataFrame clasificado a un CSV en data/processed/ (#49).
+
+    Función REUSABLE (Fase 3/4 la importan en vez de re-implementar el to_csv): escribe
+    solo las columnas del veredicto + auditabilidad (_OUTPUT_COLUMNS), no el DataFrame
+    intermedio entero. Crea el directorio destino si no existe.
+
+    Resolución de ruta (mismo patrón que la entrada PO_CSV_PATH del guard __main__):
+      - `path` explícito tiene prioridad;
+      - si no, respeta la env var PO_OUTPUT_PATH;
+      - si no, default convencional: <repo>/data/processed/df_classified.csv.
+    data/processed/ está en .gitignore: el CSV NO se versiona, se regenera ejecutando.
+
+    Input:  df — DataFrame ya pasado por classify_po_stages().
+            path — ruta destino opcional (str | Path).
+    Output: el Path donde se escribió (para que el caller lo reporte/loguee).
+    """
+    if path is not None:
+        out_path = Path(path)
+    elif os.environ.get("PO_OUTPUT_PATH"):
+        out_path = Path(os.environ["PO_OUTPUT_PATH"])
+    else:
+        repo_root = Path(__file__).resolve().parent
+        if repo_root.name == "02_clasif_reglas_negocio":
+            repo_root = repo_root.parent
+        out_path = repo_root / "data" / "processed" / "df_classified.csv"
+
+    # Exportar solo las columnas presentes (robustez: si el contrato cambia, no rompe).
+    cols = [c for c in _OUTPUT_COLUMNS if c in df.columns]
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df[cols].to_csv(out_path, index=False)
+    return out_path
+
+
 # ── Ejecución como script ────────────────────────────────────────────────────
 # Replica el patrón de pipeline_core.py: resolución de raíz por __file__, carga del
 # CSV local (respetando PO_CSV_PATH), y encadena clean_po_data → classify_po_stages.
@@ -420,3 +470,7 @@ if __name__ == "__main__":
     es_dc = df_classified["stage_primary"] == "DC"
     print("\n   dc_substage (solo DC):")
     print(df_classified.loc[es_dc, "dc_substage"].value_counts().to_string().replace("\n", "\n     "))
+
+    # Persistir el output clasificado a data/processed/ (#49). Gitignored: NO se commitea.
+    out_path = save_classified_output(df_classified)
+    print(f"\n[OK] Output clasificado escrito en: {out_path}")
