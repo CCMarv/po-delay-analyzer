@@ -40,25 +40,36 @@ consulta de atribución (2026-06-17). Cada decisión con su porqué:
 1. **Exceso por tramo medible** = `max(0, observado − umbral del mentor)`, en horas
    (carrier 8h, yard 4h, dock 6h). Un tramo no medible (máscara field-level en False) aporta
    0 al argmax, pero la máscara registra el "no se pudo medir".
-2. **Vendor por STA push** = `max(0, −appt_lead_days × 24)`, donde `appt_lead_days = STA −
-   APPROVED` (días); es negativo cuando `APPROVED > STA`, así que el push en horas es positivo.
+2. **Vendor por STA push sobre umbral** = `max(0, −appt_lead_days × 24 − 24h)`, donde
+   `appt_lead_days = STA − APPROVED` (días); es negativo cuando `APPROVED > STA`, así que el
+   push en horas es positivo. El push solo cuenta como exceso **por encima de `vendor_gap_hrs`
+   = 24h**, igual que carrier/DC tienen su umbral (consulta del mentor 06-17; ver §3 y §5.3).
 3. **Etapa primaria** = argmax de `{Vendor, Carrier, DC}`.
-4. **Indeterminado** intercepta cuando: (a) el PO es tardío pero no medible (sin
-   `TRAILER_ARRIVE_DT`), o (b) es medible pero ningún tramo tiene exceso ni hay STA push.
+4. **Indeterminado** (con subclase `indeterminado_substage`, espejo de `dc_substage`): (a)
+   **`sin_datos`** = el PO es tardío pero no medible (sin `TRAILER_ARRIVE_DT`); (b)
+   **`sin_causa_dominante`** = es medible pero ningún tramo supera su umbral (incluido el de
+   vendor). La etiqueta superior es `Indeterminado`; la razón específica vive en la subclase.
 
 ### Reparto resultante (247 tardíos)
 
 | Etapa | % | n |
 |-------|---|---|
-| Vendor | 57.1% | 141 |
+| Vendor | 53.0% | 131 |
 | Carrier | 16.2% | 40 |
 | DC | 15.0% | 37 |
-| Indeterminado | 11.7% | 29 |
+| Indeterminado | 15.8% | 39 |
 
-Vendor domina (57%) muy por encima del ~20% del kickoff. Se validó: la señal de vendor (STA
-push) correlaciona ~0.985 con el retraso total y seis métodos de decisión distintos dan el
-mismo reparto (apenas 2 POs son multicausales). Las órdenes tardías lo son casi siempre
-porque la cita se aprobó tarde.
+Los 39 Indeterminados se desglosan en **15 `sin_datos`** (sin hora de tráiler) + **24
+`sin_causa_dominante`** (medibles pero sin ningún exceso sobre umbral).
+
+Vendor domina (53%) por encima del ~20% del kickoff. Tras la consulta del mentor (06-17),
+vendor lleva **umbral propio (24h)** para corregir la *asimetría de construcción*: antes
+disparaba con cualquier push positivo mientras carrier/DC exigían 8/4/6h, así que absorbía por
+default. El 53% **lo soporta el dato, no la regla de disparo**: la distribución del push es
+**bimodal** — 12 POs con push casi-cero (≤6h) y 141 con push de días (mediana 3.1 días), con un
+**hueco vacío entre 6h y 18h** (ningún PO). Las órdenes tardías lo son casi siempre porque la
+cita se aprobó tarde. *(La correlación push↔retraso total es alta por construcción —un retraso
+temprano se propaga— y NO es evidencia de causalidad; lo relevante es el exceso por tramo.)*
 
 ## 3. Umbrales (`rules_config.json`)
 
@@ -67,6 +78,7 @@ JSON, no el código.
 
 | Clave | Valor | Uso |
 |-------|-------|-----|
+| `vendor_gap_hrs` | 24.0 h | Exceso de vendor (STA push) sobre este umbral. 24h = grano natural del dato (STA a nivel día). |
 | `carrier_lag_hrs` | 8.0 h | Exceso de carrier sobre este umbral (confirmado por el mentor). |
 | `yard_wait_hrs` | 4.0 h | Exceso de yard. |
 | `dock_hrs` | 6.0 h | Exceso de dock. |
@@ -97,8 +109,8 @@ Reparto (247 tardíos): MEDIUM 131 · LOW 82 · HIGH 34.
 
 | Métrica | Resultado | Umbral | Estado |
 |---------|-----------|--------|--------|
-| **Stage accuracy** (#46) | 96.8% (211/218 evaluables) | > 80% | ✅ |
-| **Reason agreement** (#47) | 88.7% (180/203 clasificables) | — (referencia) | hallazgo |
+| **Stage accuracy** (#46) | 100% (208/208 evaluables) | > 80% | ✅ |
+| **Reason agreement** (#47) | 88.8% (174/196 clasificables) | — (referencia) | hallazgo |
 | **Severity ranking** (#48) | determinístico, auditable | > 95% | ✅ |
 
 ### 5.1 Stage accuracy (#46): gap dominante vs `stage_primary`
@@ -118,38 +130,67 @@ Se **excluye** el lead time `PO→STA` (mediana 192 h: tiempo de compra normal, 
 todo lo posterior a CHECKOUT: `TRAILER_DEPART` ocurre **después** de `RECPT` en el **99.8%**
 de los POs (verificado), o sea fuera del ciclo de recepción.
 
-Denominador = **evaluables** (218): tardíos con stage decidible y gap medible. Los
-Indeterminados quedan fuera (el gap dominante no puede juzgar un PO sin tráiler). Los **7
-desacuerdos** son multicausalidad (un PO con STA push grande Y un tramo interno largo), no
-errores.
+Denominador = **evaluables** (208): tardíos con stage decidible y gap medible. Los
+Indeterminados quedan fuera (el gap dominante no puede juzgar un PO sin tráiler). Con el umbral
+de vendor (24h) el acuerdo es **total (208/208)**: al exigir un push de al menos un día, los
+casos antes multicausales (push pequeño + tramo interno) ya no se clasifican Vendor, así que la
+atribución por exceso coincide con el tramo de mayor duración bruta en todos los evaluables.
 
 ### 5.2 Sensibilidad del umbral carrier (4 / 6 / 8 / 12 h)
 
+Reparto = Vendor / Carrier / DC / Indeterminado (% de tardíos, con `vendor_gap_hrs`=24 activo).
+
 | Umbral | `flag_carrier_calc` | Reparto `stage_primary` |
 |--------|---------------------|--------------------------|
-| 4 h | 25.8% (103) | 57.1 / 16.2 / 15.0 / 11.7 |
-| 6 h | 12.8% (51) | 57.1 / 16.2 / 15.0 / 11.7 |
-| **8 h** | **12.8% (51)** | **57.1 / 16.2 / 15.0 / 11.7** |
-| 12 h | 11.2% (45) | 57.1 / 14.6 / 15.0 / 13.4 |
+| 4 h | 25.8% (103) | 53.0 / 17.4 / 15.0 / 14.6 |
+| 6 h | 12.8% (51) | 53.0 / 16.2 / 15.0 / 15.8 |
+| **8 h** | **12.8% (51)** | **53.0 / 16.2 / 15.0 / 15.8** |
+| 12 h | 11.2% (45) | 53.0 / 14.6 / 15.0 / 17.4 |
 
 **Lectura:** el umbral carrier mueve mucho la *flag bruta* `flag_carrier_calc` (de 25.8% a
 ~12% al pasar de 4h a 8h, justo lo que predijo el mentor) pero apenas mueve `stage_primary`,
-porque con vendor por STA push la señal de vendor domina el argmax y el umbral carrier solo
-reordena los pocos casos donde carrier compite de cerca. 8h es el valor confirmado.
+porque la señal de vendor domina el argmax y el umbral carrier solo reordena los pocos casos
+donde carrier compite de cerca. 8h es el valor confirmado.
 
-### 5.3 Reason agreement (#47): la tesis del proyecto
+### 5.3 Sensibilidad del umbral vendor (6 / 12 / 18 / 24 / 48 / 72 h)
 
-Agreement = 88.7% sobre 203 clasificables (`stage_primary` vs `reason_group_manual`, el mapeo
-de la anotación humana `REASON_DSC`; 6 nulos entre tardíos → "Unknown", fuera del denominador).
+Decidir `vendor_gap_hrs` con el mismo análisis que carrier (instrucción del mentor 06-17).
+Reparto = Vendor / Carrier / DC / sin_datos / sin_causa_dominante (conteos sobre 247 tardíos).
+
+| Umbral | Vendor | %Vendor | Reparto |
+|--------|--------|---------|---------|
+| 0 (sin umbral) | 141 | 57.1 | 141 / 40 / 37 / 15 / 14 |
+| 6 h | 133 | 53.8 | 133 / 40 / 37 / 15 / 22 |
+| 12 h | 133 | 53.8 | 133 / 40 / 37 / 15 / 22 |
+| 18 h | 133 | 53.8 | 133 / 40 / 37 / 15 / 22 |
+| **24 h** | **131** | **53.0** | **131 / 40 / 37 / 15 / 24** |
+| 48 h | 114 | 46.2 | 114 / 40 / 37 / 15 / 41 |
+| 72 h | 76 | 30.8 | 76 / 40 / 37 / 15 / 79 |
+
+**Lectura:** 6/12/18h son equivalentes (la distribución del push tiene un hueco vacío entre 6h
+y 18h). **24h** es el valor elegido por tres razones: (1) es el **grano natural del dato** —
+`STA_DT` está a nivel día (sin resolución sub-día), así que medir el push contra un día completo
+es la unidad en que el problema está expresado; (2) cae en la **zona vacía** de la distribución
+→ robusto a perturbaciones; (3) no fuerza el reparto hacia el ~20% del kickoff (que el mentor
+desaconsejó). Los POs que dejan de ser Vendor al subir el umbral migran **todos a
+`sin_causa_dominante`, ninguno a Carrier/DC** → el umbral no reatribuye, solo separa los push
+difusos. Detalle del análisis: `data/_local_notes/analisis-umbral-vendor.md`.
+
+### 5.4 Reason agreement (#47): la tesis del proyecto
+
+Agreement = 88.8% sobre 196 clasificables (`stage_primary` vs `reason_group_manual`, el mapeo
+de la anotación humana `REASON_DSC`; los nulos entre tardíos → "Unknown", fuera del denominador).
 
 El agreement < 100% es **esperado y deseado**: la anotación humana es ~20% incorrecta (dato del
-kickoff). Los **23 mismatches** son la evidencia de que el cómputo temporal supera a la
+kickoff). Los **22 mismatches** son la evidencia de que el cómputo temporal supera a la
 anotación humana — el insumo few-shot de Fase 3.
 
 ## 6. Mismatches seleccionados (#47) — evidencia temporal
 
 Ocho casos donde los timestamps contradicen el reason code humano y el cómputo es defendible.
-Cubren los tres tipos de discrepancia:
+Cubren los tres tipos de discrepancia. ("STA push" = push crudo `APPROVED − STA` en horas, la
+evidencia del fenómeno; el argmax usa el exceso sobre el umbral de 24h, que es 24h menor pero no
+altera la atribución: todos superan el día con holgura.)
 
 | PO | Cómputo | Humano (REASON_DSC) | Evidencia temporal |
 |----|---------|---------------------|--------------------|
