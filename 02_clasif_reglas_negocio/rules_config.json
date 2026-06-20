@@ -1,17 +1,13 @@
 {
-  "version": 1,
-  "_status": "semilla provisional — umbrales pendientes de confirmar (#39-#42, 'el lunes confirmamos'); #44/#45 fijan definitivos",
+  "version": 3,
+  "_status": "umbrales del mentor confirmados (06-16): carrier 8h / yard 4h / dock 6h. Vendor lleva umbral propio vendor_gap_hrs=24h (consulta mentor 06-17): el push (APPROVED−STA) solo cuenta como exceso por encima de 24h, igual que carrier/DC — corrige la asimetría de construcción (vendor disparaba con cualquier push). 24h = un día completo, grano natural del dato (STA anclado a medianoche) y hueco vacío de la distribución; ver data/_local_notes/analisis-umbral-vendor.md. El argmax de _etapa_primaria mide EXCESO sobre estos thresholds. severity_delay_days/severity_low_days fijan los cortes de severidad (#48).",
   "thresholds": {
+    "vendor_gap_hrs":       { "value": 24.0, "comparison": "gt", "metric": "gap_vendor_hrs" },
     "yard_wait_hrs":        { "value": 4.0, "comparison": "gt", "metric": "yard_wait_calc_hrs" },
     "dock_hrs":             { "value": 6.0, "comparison": "gt", "metric": "dock_calc_hrs" },
-    "carrier_lag_hrs":      { "value": 4.0, "comparison": "gt", "metric": "carrier_lag_hrs" },
+    "carrier_lag_hrs":      { "value": 8.0, "comparison": "gt", "metric": "carrier_lag_hrs" },
     "short_ship_fill_rate": { "value": 0.9, "comparison": "lt", "metric": "_fill_rate" },
-    "severity_delay_days":  { "value": 3.0, "comparison": "gt", "metric": "delay_days_calc" }
-  },
-  "expected_leg_times": {
-    "_status": "provisional — presupuesto operativo SEMILLA por tramo (#45). Valores en HORAS, sembrados un poco bajo la mediana global de cada tramo entre tardíos (carrier 3.07 / yard 1.46 / dock 2.67). El lunes el mentor confirma si su 'tramo más largo' es exceso-sobre-esperado y qué presupuestos usar; cambiar AQUÍ mueve constantes, no la arquitectura.",
-    "carrier_hrs": { "value": 3.0, "metric": "carrier_lag_hrs" },
-    "yard_hrs":    { "value": 1.5, "metric": "yard_wait_calc_hrs" },
-    "dock_hrs":    { "value": 2.5, "metric": "dock_calc_hrs" }
+    "severity_delay_days":  { "value": 3.0, "comparison": "gt", "metric": "delay_days_calc" },
+    "severity_low_days":    { "value": 1.0, "comparison": "lt", "metric": "delay_days_calc" }
   }
 }

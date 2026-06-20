@@ -255,9 +255,9 @@ def _build_raw() -> pd.DataFrame:
             HOT_PO_FLAG=0, IS_LATE="N",
         ),
         # ── PO-CARRIER-LATE: carrier domina el exceso → stage_primary='Carrier' ──
-        #    Presupuestos semilla: carrier 3.0 / yard 1.5 / dock 2.5 h.
-        #    carrier_lag=14h (exc 11) · yard=1h (exc 0) · dock=2h (exc 0) → exc_dc=0
-        #    delay=0.5d=12h → residual vendor = max(0, 12-11)=1 < 11 → gana Carrier.
+        #    Umbrales del mentor: carrier 8.0 / yard 4.0 / dock 6.0 h.
+        #    carrier_lag=14h (exc 14-8=6) · yard=1h (exc 0) · dock=2h (exc 0) → exc_dc=0
+        #    APPROVED(01-04) < STA(01-05) → appt_lead +1d → STA push 0 → gana Carrier.
         dict(
             PO_NBR="PO-CARRIER-LATE",
             PO_DT="2024-01-01 00:00", STA_DT="2024-01-05 00:00",
@@ -275,9 +275,9 @@ def _build_raw() -> pd.DataFrame:
             HOT_PO_FLAG=0, IS_LATE="Y",
             REASON_DSC="Carrier delivery delay",
         ),
-        # ── PO-DOCK-LATE: dock domina DC → stage_primary='DC' ───────────────────
-        #    carrier_lag=2h (exc 0) · yard=1h (exc 0) · dock=10h (exc 7.5) → exc_dc=7.5
-        #    delay=0.5d=12h → residual vendor = max(0, 12-7.5)=4.5 < 7.5 → gana DC.
+        # ── PO-DOCK-LATE: dock domina DC → stage_primary='DC' (subclase Dock) ───
+        #    carrier_lag=2h (exc 0) · yard=1h (exc 0) · dock=10h (exc 10-6=4) → exc_dc=4
+        #    APPROVED(01-04) < STA(01-05) → STA push 0 → gana DC; exc_dock>exc_yard → Dock.
         dict(
             PO_NBR="PO-DOCK-LATE",
             PO_DT="2024-01-01 00:00", STA_DT="2024-01-05 00:00",
@@ -294,6 +294,47 @@ def _build_raw() -> pd.DataFrame:
             YARD_WAIT_HRS=1.0, DOCK_HRS=10.0, DELAY_DAYS=0.5,
             HOT_PO_FLAG=0, IS_LATE="Y",
             REASON_DSC="Dock processing backlog",
+        ),
+        # ── PO-VENDOR-LATE: APPROVED > STA → STA push domina → stage_primary='Vendor' ──
+        #    STA(01-04) → APPROVED(01-06): appt_lead_days = -2d → STA push = 48h.
+        #    carrier_lag=2h (exc 0) · yard=1h (exc 0) · dock=2h (exc 0) → solo vendor.
+        #    RECPT(01-07) > CHECKIN(01-06 03:00) y STA>PO → sin _ts_issue (DC medible).
+        #    delay_days_calc = RECPT - STA = 3.0d. → gana Vendor con excess_vendor_hrs≈48.
+        dict(
+            PO_NBR="PO-VENDOR-LATE",
+            PO_DT="2024-01-01 00:00", STA_DT="2024-01-04 00:00",
+            APPROVED_DT="2024-01-06 00:00",                 # APPROVED > STA → push
+            DT_APPT_FIRST_APPROVED="2024-01-06 00:00",
+            DT_APPT_CURRENT_APPROVED="2024-01-06 00:00",
+            TRAILER_ARRIVE_DT="2024-01-06 02:00",            # carrier 2h
+            CHECKIN_DT="2024-01-06 03:00",                   # yard 1h
+            CHECKOUT_DT="2024-01-06 05:00",                  # dock 2h
+            RECPT_DT="2024-01-07 00:00",                     # > CHECKIN → sin inversión
+            REQUESTED_DT="2024-01-01 00:00", FIRST_SUBMITTED_DT="2024-01-01 00:00",
+            PREVIOUS_REQUEST_DT=NaT, TRAILER_DEPART_DT="2024-01-08 00:00",
+            NUM_CASES_ORDERED=100, NUM_CASES_SHIPPED=100,
+            YARD_WAIT_HRS=1.0, DOCK_HRS=2.0, DELAY_DAYS=3.0,
+            HOT_PO_FLAG=0, IS_LATE="Y",
+            REASON_DSC="Vendor delayed shipment",
+        ),
+        # ── PO-HOT-HIGH: HOT_PO_FLAG=1 + delay>3 → severity='HIGH' (gate del mentor) ──
+        #    Sin exceso en ningún tramo (carrier/yard/dock bajo umbral) y APPROVED<STA
+        #    (push 0) → stage_primary='Indeterminado'; pero la severidad NO depende de la
+        #    etapa: HOT + delay 4.0 (>3) → HIGH determinístico. delay=RECPT-STA=4d.
+        dict(
+            PO_NBR="PO-HOT-HIGH",
+            PO_DT="2024-01-01 00:00", STA_DT="2024-01-05 00:00",
+            APPROVED_DT="2024-01-04 00:00",
+            DT_APPT_FIRST_APPROVED="2024-01-04 00:00",
+            DT_APPT_CURRENT_APPROVED="2024-01-04 00:00",
+            TRAILER_ARRIVE_DT="2024-01-04 02:00",            # carrier 2h
+            CHECKIN_DT="2024-01-04 05:00", CHECKOUT_DT="2024-01-04 09:00",  # yard 3h, dock 4h
+            RECPT_DT="2024-01-09 00:00",                     # delay = 4 días
+            REQUESTED_DT="2024-01-01 00:00", FIRST_SUBMITTED_DT="2024-01-01 00:00",
+            PREVIOUS_REQUEST_DT=NaT, TRAILER_DEPART_DT="2024-01-04 10:00",
+            NUM_CASES_ORDERED=100, NUM_CASES_SHIPPED=100,
+            YARD_WAIT_HRS=3.0, DOCK_HRS=4.0, DELAY_DAYS=4.0,
+            HOT_PO_FLAG=1, IS_LATE="Y",
         ),
     ]
     return pd.DataFrame(rows)

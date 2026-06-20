@@ -20,13 +20,14 @@ import pytest
 from conftest import row_for
 from classifier_core import classify_po_stages, load_rules_config
 
-# Llaves de umbral que el config semilla debe exponer (las que #44/#45 leerán por nombre).
+# Llaves de umbral que el config debe exponer (las que #44/#45/#48 leen por nombre).
 EXPECTED_THRESHOLD_KEYS = {
     "yard_wait_hrs",
     "dock_hrs",
     "carrier_lag_hrs",
     "short_ship_fill_rate",
     "severity_delay_days",
+    "severity_low_days",
 }
 
 
@@ -116,23 +117,57 @@ def test_mascara_medible_en_po_limpio(df_clean):
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# D. #45 — Etapa primaria por gap dominante (exceso sobre lo esperado)
+# D. #45 — Etapa primaria: STA push (vendor) + exceso sobre umbral del mentor
 # ════════════════════════════════════════════════════════════════════════════
 def test_stage_primary_carrier_domina(df_clean):
-    # PO-CARRIER-LATE: carrier_lag=14h (exc 11) supera el residual vendor (1) → Carrier.
+    # PO-CARRIER-LATE: carrier_lag=14h sobre umbral 8h → exc 6h. APPROVED<STA → push 0.
+    # carrier (6) supera a yard/dock (0) y vendor (0) → Carrier. El ganador NO cambió
+    # respecto al config viejo; solo la MAGNITUD (presupuesto 3 → umbral 8).
     out = classify_po_stages(df_clean)
     r = row_for(out, "PO-CARRIER-LATE")
     assert r["stage_primary"] == "Carrier"
-    # La magnitud del exceso queda expuesta (para severidad futura y validación).
-    assert r["excess_carrier_hrs"] == pytest.approx(11.0)
+    assert r["excess_carrier_hrs"] == pytest.approx(6.0)
 
 
 def test_stage_primary_dc_domina(df_clean):
-    # PO-DOCK-LATE: dock=10h (exc 7.5) supera el residual vendor (4.5) → DC.
+    # PO-DOCK-LATE: dock=10h sobre umbral 6h → exc 4h. yard 1h (exc 0). exc_dc=4.
+    # APPROVED<STA → push 0 → gana DC. Magnitud recalculada (7.5 → 4.0).
     out = classify_po_stages(df_clean)
     r = row_for(out, "PO-DOCK-LATE")
     assert r["stage_primary"] == "DC"
-    assert r["excess_dc_hrs"] == pytest.approx(7.5)
+    assert r["excess_dc_hrs"] == pytest.approx(4.0)
+
+
+def test_stage_primary_vendor_domina(df_clean):
+    # PO-VENDOR-LATE: APPROVED(01-06) > STA(01-04) → STA push 48h; carrier/yard/dock
+    # bajo umbral (exc 0). El vendor por señal directa domina → Vendor. Es el caso que
+    # el método residual NO distinguía bien y que la decisión del mentor habilita.
+    # Con vendor_gap_hrs=24 (consulta 06-17), el EXCESO es push − umbral = 48 − 24 = 24h
+    # (el push de 48h supera el umbral, así que sigue siendo Vendor).
+    out = classify_po_stages(df_clean)
+    r = row_for(out, "PO-VENDOR-LATE")
+    assert r["stage_primary"] == "Vendor"
+    assert r["excess_vendor_hrs"] == pytest.approx(24.0)
+
+
+def test_excess_yard_dock_expuestos(df_clean):
+    # #48/#46 necesitan el desglose yard vs dock (no solo el agregado DC). PO-DOCK-LATE:
+    # yard 1h bajo umbral 4h → exc 0; dock 10h sobre umbral 6h → exc 4.
+    out = classify_po_stages(df_clean)
+    for col in ("excess_yard_hrs", "excess_dock_hrs"):
+        assert col in out.columns
+    r = row_for(out, "PO-DOCK-LATE")
+    assert r["excess_yard_hrs"] == pytest.approx(0.0)
+    assert r["excess_dock_hrs"] == pytest.approx(4.0)
+
+
+def test_dc_substage_dock_cuando_dock_domina(df_clean):
+    # Subclase del DC: PO-DOCK-LATE tiene exc_dock(4) > exc_yard(0) → 'Dock'.
+    # Y dc_substage solo se llena cuando el primario es DC (None en otros casos).
+    out = classify_po_stages(df_clean)
+    assert row_for(out, "PO-DOCK-LATE")["dc_substage"] == "Dock"
+    # Un caso NO-DC no debe tener subclase.
+    assert pd.isna(row_for(out, "PO-CARRIER-LATE")["dc_substage"])
 
 
 def test_stage_primary_on_time_si_no_tardio(df_clean):
@@ -142,26 +177,47 @@ def test_stage_primary_on_time_si_no_tardio(df_clean):
 
 
 def test_indeterminado_intercepta_a_vendor(df_clean):
-    # PO-NULLTRAILER es TARDÍO pero ni carrier ni DC son medibles. Por el residual
-    # crudo todo el delay caería en vendor; la regla de Indeterminado lo intercepta
-    # ANTES del argmax: no se le endosa a vendor por descarte ciego.
+    # PO-NULLTRAILER es TARDÍO pero ni carrier ni DC son medibles. Con APPROVED=STA
+    # (push 0) no hay señal de vendor tampoco → Indeterminado, no vendor por descarte.
+    # Sin tramos medibles → subclase 'sin_datos' (no 'sin_causa_dominante').
     out = classify_po_stages(df_clean)
     r = row_for(out, "PO-NULLTRAILER")
     assert r["delay_days_calc"] > 0          # es tardío
     assert r["stage_primary"] == "Indeterminado"
     assert r["stage_primary"] != "Vendor"    # el punto del diseño
+    assert r["indeterminado_substage"] == "sin_datos"
+
+
+def test_indeterminado_sin_causa_dominante(df_clean):
+    # PO-HOT-HIGH es TARDÍO y DECIDIBLE (tramos medibles) pero ningún tramo supera su
+    # umbral: carrier 2h/yard 3h/dock 4h bajo 8/4/6, y APPROVED<STA (push 0, < 24h).
+    # Datos completos pero sin causa dominante → subclase 'sin_causa_dominante' (la rama
+    # que la consulta 06-17 separó de 'sin_datos'). Antes habría caído en vendor por default.
+    out = classify_po_stages(df_clean)
+    r = row_for(out, "PO-HOT-HIGH")
+    assert r["delay_days_calc"] > 0
+    assert r["stage_primary"] == "Indeterminado"
+    assert r["indeterminado_substage"] == "sin_causa_dominante"
+
+
+def test_indeterminado_substage_na_si_no_indeterminado(df_clean):
+    # Espejo de dc_substage: la subclase solo se llena cuando el primario es Indeterminado.
+    # Un caso Vendor/Carrier/DC no debe traerla.
+    out = classify_po_stages(df_clean)
+    assert pd.isna(row_for(out, "PO-VENDOR-LATE")["indeterminado_substage"])
 
 
 def test_universo_tardios_sin_clase_es_cero(df_clean):
     # Contrato de la métrica del mentor: todo tardío (delay_days_calc>0) recibe una
-    # clase primaria de retraso; ninguno se queda como 'On-Time'.
+    # clase primaria de retraso; ninguno se queda como 'On-Time'. Debe seguir verde
+    # tras quitar la "Rama 2" (el efecto se conserva en la intercepción del argmax).
     out = classify_po_stages(df_clean)
     tardios = out[out["delay_days_calc"] > 0]
     assert (tardios["stage_primary"] == "On-Time").sum() == 0
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# E. Capa complementaria — multi-causa, reason_group_manual, modificadores
+# E. Capa complementaria — multi-causa, reason_group_manual, flags de contexto
 # ════════════════════════════════════════════════════════════════════════════
 def test_reason_group_manual_mapea_reason_dsc(df_clean):
     # REASON_DSC del staff se mapea a grupo de responsable (para mismatch #47 futuro).
@@ -171,15 +227,68 @@ def test_reason_group_manual_mapea_reason_dsc(df_clean):
 
 
 def test_modificador_rescheduled_cuando_primary_no_vendor(df_clean):
-    # PO-RESCHED tiene _rescheduled=True. Reschedule es MODIFICADOR, no etapa: si el
-    # primario no es Vendor, aparece como sufijo narrativo, no cambia stage_primary.
+    # PO-RESCHED tiene is_rescheduled=True. Reschedule es MODIFICADOR/contexto, no etapa:
+    # si el primario no es Vendor, aparece como sufijo narrativo, no cambia stage_primary.
     out = classify_po_stages(df_clean)
     r = row_for(out, "PO-RESCHED")
     if r["stage_primary"] != "Vendor":
         assert "vendor_rescheduled" in r["stage_modifiers"]
 
 
-def test_columnas_complementarias_existen(df_clean):
+def test_is_rescheduled_es_flag_de_contexto(df_clean):
+    # Decisión del mentor: rescheduled es contexto (un evento), no señal de vendor.
+    # Se expone SIEMPRE como flag propia, reflejando _rescheduled del pipeline.
     out = classify_po_stages(df_clean)
-    for col in ("stage_multi", "reason_group_manual", "stage_modifiers"):
+    assert bool(row_for(out, "PO-RESCHED")["is_rescheduled"]) is True
+    assert bool(row_for(out, "PO-CLEAN")["is_rescheduled"]) is False
+
+
+def test_stage_multi_no_incluye_reschedule(df_clean):
+    # PO-RESCHED reprograma la cita pero NO tiene STA push (APPROVED<STA) ni exceso de
+    # tramo → su stage_multi NO debe contener 'Vendor' por el reschedule (el mentor lo
+    # sacó de la señal de etapa). On-time y sin causa → 'None'.
+    out = classify_po_stages(df_clean)
+    r = row_for(out, "PO-RESCHED")
+    assert "Vendor" not in r["stage_multi"]
+
+
+def test_columnas_contexto_existen(df_clean):
+    out = classify_po_stages(df_clean)
+    for col in ("stage_multi", "reason_group_manual", "stage_modifiers",
+                "is_rescheduled", "is_short_ship", "is_short_lead"):
         assert col in out.columns
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# F. #48 — Severidad determinística (HIGH/MEDIUM/LOW) + agravantes
+# ════════════════════════════════════════════════════════════════════════════
+def test_severity_high_para_hot_con_delay_fuerte(df_clean):
+    # PO-HOT-HIGH: HOT_PO_FLAG=1, IS_LATE=Y, delay=4d (>3) → gate HIGH del mentor.
+    out = classify_po_stages(df_clean)
+    assert row_for(out, "PO-HOT-HIGH")["severity"] == "HIGH"
+
+
+def test_severity_medium_para_tardio_normal(df_clean):
+    # PO-VENDOR-LATE: delay=3d, no es hot, sin agravantes (lead largo, fill 100%) →
+    # MEDIUM (tardío normal, ni borderline ni gate HIGH).
+    out = classify_po_stages(df_clean)
+    assert row_for(out, "PO-VENDOR-LATE")["severity"] == "MEDIUM"
+
+
+def test_severity_low_para_borderline(df_clean):
+    # PO-CARRIER-LATE: delay=0.5d (<1) → borderline = LOW. No tiene agravantes
+    # (lead 4d largo, fill 100%), así que no sube de nivel.
+    out = classify_po_stages(df_clean)
+    assert row_for(out, "PO-CARRIER-LATE")["severity"] == "LOW"
+
+
+def test_severity_vacia_para_on_time(df_clean):
+    # PO-CLEAN no es tardío → severity vacía (no entra al ranking de #48).
+    out = classify_po_stages(df_clean)
+    assert row_for(out, "PO-CLEAN")["severity"] == ""
+
+
+def test_severity_columna_existe_y_valores_validos(df_clean):
+    out = classify_po_stages(df_clean)
+    assert "severity" in out.columns
+    assert set(out["severity"].unique()).issubset({"HIGH", "MEDIUM", "LOW", ""})
