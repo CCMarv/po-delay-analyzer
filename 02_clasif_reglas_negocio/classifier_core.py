@@ -356,7 +356,7 @@ def classify_po_stages(df_input: pd.DataFrame, rules: dict | None = None) -> pd.
 # consumidores (Fase 3/4 + revisión), no todo el DataFrame intermedio.
 _OUTPUT_COLUMNS = [
     "PO_NBR",
-    "stage_primary", "severity", "dc_substage",
+    "stage_primary", "severity", "dc_substage", "indeterminado_substage",
     "excess_vendor_hrs", "excess_carrier_hrs", "excess_dc_hrs",
     "flag_carrier_calc", "flag_yard_calc", "flag_dock_calc",
     "_carrier_medible", "_dc_medible",
@@ -470,6 +470,9 @@ if __name__ == "__main__":
     es_dc = df_classified["stage_primary"] == "DC"
     print("\n   dc_substage (solo DC):")
     print(df_classified.loc[es_dc, "dc_substage"].value_counts().to_string().replace("\n", "\n     "))
+    es_indet = df_classified["stage_primary"] == "Indeterminado"
+    print("\n   indeterminado_substage (solo Indeterminado):")
+    print(df_classified.loc[es_indet, "indeterminado_substage"].value_counts().to_string().replace("\n", "\n     "))
 
     # Persistir el output clasificado a data/processed/ (#49). Gitignored: NO se commitea.
     out_path = save_classified_output(df_classified)
