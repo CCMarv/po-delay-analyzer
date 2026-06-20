@@ -142,10 +142,12 @@ def test_stage_primary_vendor_domina(df_clean):
     # PO-VENDOR-LATE: APPROVED(01-06) > STA(01-04) → STA push 48h; carrier/yard/dock
     # bajo umbral (exc 0). El vendor por señal directa domina → Vendor. Es el caso que
     # el método residual NO distinguía bien y que la decisión del mentor habilita.
+    # Con vendor_gap_hrs=24 (consulta 06-17), el EXCESO es push − umbral = 48 − 24 = 24h
+    # (el push de 48h supera el umbral, así que sigue siendo Vendor).
     out = classify_po_stages(df_clean)
     r = row_for(out, "PO-VENDOR-LATE")
     assert r["stage_primary"] == "Vendor"
-    assert r["excess_vendor_hrs"] == pytest.approx(48.0)
+    assert r["excess_vendor_hrs"] == pytest.approx(24.0)
 
 
 def test_excess_yard_dock_expuestos(df_clean):
@@ -177,11 +179,32 @@ def test_stage_primary_on_time_si_no_tardio(df_clean):
 def test_indeterminado_intercepta_a_vendor(df_clean):
     # PO-NULLTRAILER es TARDÍO pero ni carrier ni DC son medibles. Con APPROVED=STA
     # (push 0) no hay señal de vendor tampoco → Indeterminado, no vendor por descarte.
+    # Sin tramos medibles → subclase 'sin_datos' (no 'sin_causa_dominante').
     out = classify_po_stages(df_clean)
     r = row_for(out, "PO-NULLTRAILER")
     assert r["delay_days_calc"] > 0          # es tardío
     assert r["stage_primary"] == "Indeterminado"
     assert r["stage_primary"] != "Vendor"    # el punto del diseño
+    assert r["indeterminado_substage"] == "sin_datos"
+
+
+def test_indeterminado_sin_causa_dominante(df_clean):
+    # PO-HOT-HIGH es TARDÍO y DECIDIBLE (tramos medibles) pero ningún tramo supera su
+    # umbral: carrier 2h/yard 3h/dock 4h bajo 8/4/6, y APPROVED<STA (push 0, < 24h).
+    # Datos completos pero sin causa dominante → subclase 'sin_causa_dominante' (la rama
+    # que la consulta 06-17 separó de 'sin_datos'). Antes habría caído en vendor por default.
+    out = classify_po_stages(df_clean)
+    r = row_for(out, "PO-HOT-HIGH")
+    assert r["delay_days_calc"] > 0
+    assert r["stage_primary"] == "Indeterminado"
+    assert r["indeterminado_substage"] == "sin_causa_dominante"
+
+
+def test_indeterminado_substage_na_si_no_indeterminado(df_clean):
+    # Espejo de dc_substage: la subclase solo se llena cuando el primario es Indeterminado.
+    # Un caso Vendor/Carrier/DC no debe traerla.
+    out = classify_po_stages(df_clean)
+    assert pd.isna(row_for(out, "PO-VENDOR-LATE")["indeterminado_substage"])
 
 
 def test_universo_tardios_sin_clase_es_cero(df_clean):

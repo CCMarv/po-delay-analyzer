@@ -80,27 +80,42 @@ def _etapa_primaria(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
       2. VENDOR por SEÑAL DIRECTA "STA push" (no por residual): si la cita se aprobó
          DESPUÉS de la fecha esperada de llegada (APPROVED_DT > STA_DT), hay evidencia
          de que el vendor arrancó tarde. appt_lead_days = STA − APPROVED (días); es
-         NEGATIVO cuando APPROVED > STA, así que el push en horas es:
-            exc_vendor = max(0, −appt_lead_days * 24)
-         Es estrictamente mejor que el residual: no asume que los tramos sean aditivos
-         ni mutuamente excluyentes, y funciona en los 27 POs SIN hora de tráiler (no
-         necesita carrier/DC para medirse). Reemplaza el residual de #57.
+         NEGATIVO cuando APPROVED > STA, así que el push en horas es −appt_lead_days*24.
+         Vendor lleva UMBRAL propio (vendor_gap_hrs, consulta mentor 06-17), igual que
+         carrier/DC — el push solo cuenta como exceso por encima del umbral:
+            exc_vendor = max(0, −appt_lead_days * 24 − vendor_gap_hrs)
+         Por qué el umbral (06-17): sin él, vendor disparaba con CUALQUIER push positivo
+         mientras carrier/DC exigían 8/4/6h → asimetría de construcción (vendor absorbía
+         por default, 62.8%). Con umbral simétrico, un push pequeño ya no basta para
+         culpar al vendor. Valor 24h: el push se mide en días porque STA_DT está anclado
+         a medianoche (sin resolución sub-día), así que 24h = un día completo es el GRANO
+         NATURAL del dato; además cae en un hueco vacío de la distribución (0 POs entre 6
+         y 18h) → robusto. Análisis de sensibilidad: data/_local_notes/analisis-umbral-vendor.md.
+         La señal directa sigue siendo mejor que el residual: no asume tramos aditivos ni
+         excluyentes, y funciona en los 27 POs SIN hora de tráiler (reemplaza #57).
       3. Etapa primaria = argmax de {VENDOR, CARRIER, DC}. Si todos 0 y no es tardío
          → 'On-Time'.
-      4. INDETERMINADO = SOLO casos sin evidencia: (a) tardío no medible (sin
-         TRAILER_ARRIVE_DT → no se puede juzgar carrier/DC), o (b) tardío medible pero
-         sin NINGUNA señal (push 0 y exc carrier/dc 0). El (b) cae aquí por la propia
-         intercepción del argmax-de-ceros: si excesos.max == 0 no hay a quién atribuir
-         con evidencia → Indeterminado (decisión del mentor, opción b: no inventar
-         causalidad). Ya no hay "Rama 2" aparte; ambos casos colapsan en la misma regla.
+      4. INDETERMINADO = SOLO casos sin evidencia, con SUBCLASE (indeterminado_substage,
+         espejo de dc_substage; consulta mentor 06-17):
+           'sin_datos'           = tardío no medible (sin TRAILER_ARRIVE_DT → no se puede
+                                   juzgar carrier/DC).
+           'sin_causa_dominante' = tardío medible pero sin NINGUNA señal sobre umbral
+                                   (push ≤ 24h y exc carrier/dc 0): datos completos pero
+                                   ningún tramo destaca. Antes caía en vendor por default;
+                                   ahora se separa (no inventar causalidad).
+         Ambos colapsan en stage_primary='Indeterminado' (etiqueta limpia arriba); la
+         razón específica vive en la subclase. El (b) cae por la intercepción argmax-de-
+         ceros: si excesos.max == 0, no hay a quién atribuir con evidencia.
 
     Universo: tardíos = delay_days_calc > 0 (fuente de verdad #18); el resto 'On-Time'.
-    Expone stage_primary, dc_substage (Yard/Dock cuando primary==DC) y las magnitudes
+    Expone stage_primary, dc_substage (Yard/Dock cuando primary==DC), indeterminado_substage
+    (sin_datos/sin_causa_dominante cuando primary==Indeterminado) y las magnitudes
     excess_*_hrs (para severidad #48 y para validación contra el gap dominante #46).
     """
     thr_carrier = _thr(rules, "carrier_lag_hrs")
     thr_yard    = _thr(rules, "yard_wait_hrs")
     thr_dock    = _thr(rules, "dock_hrs")
+    thr_vendor  = _thr(rules, "vendor_gap_hrs")
 
     # Paso 1 — exceso por tramo medible sobre el UMBRAL (horas, clip 0). fillna(0): un
     # tramo no medible (NaN) o sin exceso aporta 0 al argmax; la máscara guarda el "no sé".
@@ -113,9 +128,10 @@ def _etapa_primaria(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
     exc_dock    = exc_dock.where(df["_dc_medible"], 0.0)
     exc_dc      = exc_yard + exc_dock
 
-    # Paso 2 — VENDOR por STA push (horas). appt_lead_days = STA − APPROVED (días):
-    # negativo cuando APPROVED > STA, así que −appt_lead_days*24 es el push en horas.
-    exc_vendor = (-df["appt_lead_days"] * 24).clip(lower=0).fillna(0)
+    # Paso 2 — VENDOR por STA push (horas) SOBRE su umbral. appt_lead_days = STA − APPROVED
+    # (días): negativo cuando APPROVED > STA, así que −appt_lead_days*24 es el push en horas.
+    # Igual que carrier/DC, solo cuenta el exceso por encima del umbral (vendor_gap_hrs).
+    exc_vendor = (-df["appt_lead_days"] * 24 - thr_vendor).clip(lower=0).fillna(0)
 
     df["excess_carrier_hrs"] = exc_carrier
     df["excess_yard_hrs"]    = exc_yard
@@ -134,14 +150,18 @@ def _etapa_primaria(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
     ganador = excesos.idxmax(axis=1)          # nombre del tramo con mayor exceso
     algun_exceso = excesos.max(axis=1) > 0
 
+    # Las dos ramas de Indeterminado (se reutilizan para la subclase más abajo):
+    #   sin_datos          = tardío no decidible (ningún tramo medible).
+    #   sin_causa_dominante = tardío decidible pero sin ningún exceso sobre umbral.
+    rama_sin_datos = es_tardio & ~decidible
+    rama_sin_causa = es_tardio & decidible & ~algun_exceso
+
     stage = pd.Series("On-Time", index=df.index, dtype="object")
     # Tardío y decidible → el ganador del argmax (si hay algún exceso medible/vendor).
     stage = stage.mask(es_tardio & decidible & algun_exceso, ganador)
-    # Tardío pero NO decidible (no medible) → Indeterminado, no vendor por descarte.
-    stage = stage.mask(es_tardio & ~decidible, "Indeterminado")
-    # Tardío, decidible, pero SIN ninguna señal (push 0 y exc carrier/dc 0): no hay a
-    # quién atribuir con evidencia (los 14 sin-señal, opción b del mentor) → Indeterminado.
-    stage = stage.mask(es_tardio & decidible & ~algun_exceso, "Indeterminado")
+    # Tardío sin evidencia (cualquiera de las dos ramas) → Indeterminado (etiqueta limpia
+    # arriba; la razón específica va en indeterminado_substage). No vendor por descarte.
+    stage = stage.mask(rama_sin_datos | rama_sin_causa, "Indeterminado")
 
     df["stage_primary"] = stage
 
@@ -153,6 +173,14 @@ def _etapa_primaria(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
     dc_substage = dc_substage.mask(es_dc & (exc_yard > exc_dock), "Yard")
     dc_substage = dc_substage.mask(es_dc & (exc_yard <= exc_dock), "Dock")
     df["dc_substage"] = dc_substage
+
+    # Subclase de Indeterminado (espejo de dc_substage; consulta mentor 06-17): distingue
+    # "no hay datos para medir" de "datos completos pero ningún tramo destaca". Solo poblada
+    # cuando stage_primary == 'Indeterminado'; NA en el resto.
+    indeterminado_substage = pd.Series(pd.NA, index=df.index, dtype="object")
+    indeterminado_substage = indeterminado_substage.mask(rama_sin_datos, "sin_datos")
+    indeterminado_substage = indeterminado_substage.mask(rama_sin_causa, "sin_causa_dominante")
+    df["indeterminado_substage"] = indeterminado_substage
 
     return df
 
