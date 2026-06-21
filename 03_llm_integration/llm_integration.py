@@ -48,7 +48,7 @@ from tqdm import tqdm
 
 DEFAULT_OLLAMA_URL = "http://localhost:11434/api/generate"
 DEFAULT_OLLAMA_MODEL = "qwen2.5:7b"
-DEFAULT_CLAUDE_MODEL = "claude-3-sonnet-20241022"
+DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"   # alternativa: "deepseek-reasoner"
 DEFAULT_TEMPERATURE = 0.3
 DEFAULT_MAX_TOKENS = 512
