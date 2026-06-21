@@ -24,7 +24,7 @@ Toma el DataFrame ya limpio y clasificado (fases 1 y 2), filtra los POs con retr
 
 ## Requisitos previos
 
-- Python 3.10+ con el `venv` del repo activado
+- Python 3.13 con el `.venv` del repo activado
 - Dependencias instaladas: `pip install -r ../requirements.txt`
 - Si usas `--backend local`: [Ollama](https://ollama.com) corriendo localmente con el modelo descargado:
   ```bash
@@ -36,9 +36,8 @@ Toma el DataFrame ya limpio y clasificado (fases 1 y 2), filtra los POs con retr
 
 Las keys **nunca** se escriben en el código ni se pasan como argumento en producción. Se guardan en un archivo `.env` en la raíz del repo (mismo nivel que `pyproject.toml`), que está excluido de git vía `.gitignore`.
 
-1. Copia la plantilla:
+1. Copia la plantilla (desde la raíz del repo):
    ```bash
-   cd "/home/icastro/Documents/LIACD/2026 V/Blend/team-repo/po-delay-analyzer"
    cp .env.example .env
    ```
 2. Edita `.env` con tus keys reales:
@@ -56,11 +55,10 @@ El script carga estas variables automáticamente con `load_dotenv()`, así que n
 
 ## Uso
 
-Activa el entorno virtual antes de correr cualquier comando:
+Activa el entorno virtual antes de correr cualquier comando (desde la raíz del repo):
 
 ```bash
-cd "/home/icastro/Documents/LIACD/2026 V/Blend/team-repo/po-delay-analyzer"
-source venv/bin/activate
+source .venv/bin/activate    # Windows: .venv\Scripts\activate
 cd 03_llm_integration
 ```
 
@@ -97,7 +95,7 @@ python llm_integration.py --mode full --backend claude
 | `--limit` | `50` | Cantidad de POs en modo `custom` |
 | `--backend` | `local` | `local`, `claude` o `deepseek` |
 | `--api-key` | `None` | Override manual de la key (no recomendado; usa `.env`) |
-| `--claude-model` | `claude-3-sonnet-20241022` | Modelo de Claude a usar |
+| `--claude-model` | `claude-sonnet-4-6` | Modelo de Claude a usar |
 | `--deepseek-model` | `deepseek-chat` | Modelo de DeepSeek (`deepseek-chat` o `deepseek-reasoner`) |
 | `--ollama-model` | `qwen2.5:7b` | Modelo local en Ollama |
 | `--ollama-url` | `http://localhost:11434/api/generate` | URL de la API de Ollama |
@@ -122,7 +120,7 @@ También se generan guardados parciales cada 50 POs (configurable vía `DEFAULT_
 ## Troubleshooting
 
 **`ModuleNotFoundError: No module named 'dotenv'`**
-El venv no está activado. Corre `source venv/bin/activate` desde la raíz del repo antes de ejecutar el script.
+El `.venv` no está activado. Corre `source .venv/bin/activate` (Windows: `.venv\Scripts\activate`) desde la raíz del repo antes de ejecutar el script.
 
 **`Error HTTP 401: ... api key ... is invalid`**
 La key en `.env` no es válida o tiene espacios/caracteres extra al copiarla. Verifícala directamente con un `curl` de prueba al endpoint del proveedor, o regenera la key desde su dashboard.

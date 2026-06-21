@@ -32,6 +32,20 @@ _REQUIRED_INPUT_COLUMNS = _DATE_INPUT_COLUMNS + [
 ]
 
 
+# ── Umbrales PRELIMINARES del EDA de Fase 1 (T14) ────────────────────────────
+# Externalizados a constantes de módulo (antes eran literales duplicados entre esta
+# función y el notebook → riesgo de divergencia). El notebook las IMPORTA, no las
+# redeclara, para que haya una sola fuente. Son EXPLORATORIOS: las flags de F1 que
+# dependen de ellos sirvieron al EDA, pero NO son los umbrales de clasificación.
+# Los VIGENTES (para asignar la etapa) viven en 02_.../rules_config.json y los lee
+# Fase 2 por nombre. El de carrier de F1 (4h) está SUPERADO por el del mentor (8h,
+# validación 06-16); se conserva el 4h aquí solo para no alterar el EDA histórico.
+_YARD_THR_EDA    = 4.0
+_DOCK_THR_EDA    = 6.0
+_CARRIER_THR_EDA = 4.0   # preliminar / superado por 8h en Fase 2 (no es el carrier definitivo)
+_LEAD_THR_EDA    = 3.0
+
+
 def clean_po_data(df_input: pd.DataFrame) -> pd.DataFrame:
     """
     Pipeline de limpieza y enriquecimiento del dataset de PO Root Cause.
@@ -106,15 +120,18 @@ def clean_po_data(df_input: pd.DataFrame) -> pd.DataFrame:
     df['delay_days_calc']   = days(df['RECPT_DT']          - df['STA_DT']).clip(lower=0)
 
     # ── 5. Flags de clasificación por etapa ──────────────────────────────────
-    YARD_THR    = 4.0
-    DOCK_THR    = 6.0
-    CARRIER_THR = 4.0
-    LEAD_THR    = 3.0
-
-    df['flag_yard_congestion'] = df['YARD_WAIT_HRS'] > YARD_THR
-    df['flag_dock_backlog']    = df['DOCK_HRS']      > DOCK_THR
-    df['flag_carrier_miss']    = df['carrier_lag_hrs'] > CARRIER_THR
-    df['flag_short_lead_time'] = df['lead_time_days']  < LEAD_THR
+    # Umbrales leídos de las constantes de módulo (_*_THR_EDA), no de literales aquí:
+    # son los umbrales PRELIMINARES del EDA de Fase 1. Los VIGENTES para clasificar viven
+    # en 02_clasif_reglas_negocio/rules_config.json (leídos por nombre). En particular el
+    # de carrier de F1 (4h) está SUPERADO por el del mentor (8h, validación 06-16) que usa
+    # Fase 2: flag_carrier_miss es un indicador exploratorio de F1, NO el carrier definitivo
+    # aguas abajo (T9). F2 recomputa carrier desde carrier_lag_hrs con su propio umbral 8h.
+    df['flag_yard_congestion'] = df['YARD_WAIT_HRS']   > _YARD_THR_EDA
+    df['flag_dock_backlog']    = df['DOCK_HRS']        > _DOCK_THR_EDA
+    df['flag_carrier_miss']    = df['carrier_lag_hrs'] > _CARRIER_THR_EDA   # 4h preliminar; F2 usa 8h
+    # flag_short_lead_time: ventana de aviso corta. DESTINO (T13): Fase 2 la consume como
+    # is_short_lead, un MODIFICADOR de severidad (#48), no una etapa de retraso.
+    df['flag_short_lead_time'] = df['lead_time_days']  < _LEAD_THR_EDA
     df['flag_hot_late']        = (df['HOT_PO_FLAG'] == 1) & (df['IS_LATE'] == 'Y')
 
     return df

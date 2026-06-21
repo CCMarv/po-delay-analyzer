@@ -5,12 +5,20 @@
 # esa red de seguridad: la palomita verde reemplaza el "en mi compu sí jala".
 #
 # Qué garantiza la DoD del issue:
-#   - check verde cuando el módulo importa y los 57 tests pasan;
-#   - check ROJO si el módulo no importa (paso "Import smoke check") o si un test falla.
+#   - check verde cuando los módulos importan y la suite completa pasa (114 tests a jun 2026,
+#     pipeline + clasificador + métricas + contrato de handoff + LLM);
+#   - check ROJO si un módulo no importa (pasos "Import smoke check") o si un test falla.
 #
 # Nota de versión: el issue sugería alinear a 3.10/3.11, pero esa nota quedó
 # desactualizada — el notebook real declara 3.13.1 y el entorno local corre 3.13.x con
 # los tests en verde, así que fijamos 3.13.
+#
+# Ausencia de gates de estilo (T16, DECISIÓN consciente, no olvido): este CI corre import-
+# smoke + pytest, pero NO tiene gate de lint/formato/type-check (flake8/ruff/black/mypy).
+# Es deliberado para el alcance del proyecto: el estándar de estilo es la convención interna
+# observada del repo (PEP 8 + docstrings Input/Output, umbrales externalizados, rutas por
+# __file__), revisada en el self-review del PR, no por herramienta. Si el proyecto crece,
+# añadir ruff/black como gate es el siguiente paso natural; hoy se omite a propósito.
 name: CI
 
 on:
