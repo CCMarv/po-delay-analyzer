@@ -245,8 +245,11 @@ def _capa_complementaria(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
     d = (df["flag_yard_calc"].fillna(False)) | (df["flag_dock_calc"].fillna(False))
 
     def _etiqueta(vv: bool, cc: bool, dd: bool) -> str:
+        # Centinela "sin causa" = "Ninguno" (no el literal "None"): "None" es token de
+        # nulo en CSV/pandas, así que el round-trip del handoff lo convertiría en NaN y
+        # perdería la etiqueta. "Ninguno" sobrevive la serialización (contrato dual T4).
         activos = [n for n, on in (("Vendor", vv), ("Carrier", cc), ("DC", dd)) if on]
-        return " + ".join(activos) if activos else "None"
+        return " + ".join(activos) if activos else "Ninguno"
 
     df["stage_multi"] = [
         _etiqueta(vv, cc, dd) for vv, cc, dd in zip(v, c, d)
@@ -342,27 +345,22 @@ def classify_po_stages(df_input: pd.DataFrame, rules: dict | None = None) -> pd.
 
 
 # ── #49 · Persistencia del output clasificado ────────────────────────────────
-# Columnas que se exportan: el veredicto por PO (stage_primary, severity, dc_substage),
-# las flags de etapa y las máscaras de evaluabilidad (para auditar QUÉ se pudo medir), y
-# las flags de contexto que Fase 3 consume. Se mantienen solo las relevantes para los
-# consumidores (Fase 3/4 + revisión), no todo el DataFrame intermedio.
-_OUTPUT_COLUMNS = [
-    "PO_NBR",
-    "stage_primary", "severity", "dc_substage", "indeterminado_substage",
-    "excess_vendor_hrs", "excess_carrier_hrs", "excess_dc_hrs",
-    "flag_carrier_calc", "flag_yard_calc", "flag_dock_calc",
-    "_carrier_medible", "_dc_medible",
-    "is_rescheduled", "is_short_ship", "is_short_lead",
-    "reason_group_manual",
-]
+# Contrato dual del handoff (auditoría de cierre §3-A): el CSV de salida de F2 es
+# IDÉNTICO al DataFrame que classify_po_stages() deja en memoria — TODAS las columnas
+# (las crudas del CSV + las que añade F1 + las que añade F2), no un subconjunto curado.
+# Releer el CSV reconstruye el estado que F3 cargaría si corriera la cadena monolítica.
+# F3 decide qué columnas consume (mete al prompt) y cuáles usa como auditables; ese
+# recorte es trabajo de F3, no de F2 — el productor entrega su veredicto completo.
+# Limitación inherente a CSV: las columnas de fecha se escriben como texto; un lector
+# que necesite datetime las reparsea (ver el guard __main__ con la lectura opcional).
 
 
 def save_classified_output(df: pd.DataFrame, path=None) -> Path:
-    """Persiste el DataFrame clasificado a un CSV en data/processed/ (#49).
+    """Persiste el DataFrame clasificado COMPLETO a un CSV en data/processed/ (#49).
 
-    Función REUSABLE (Fase 3/4 la importan en vez de re-implementar el to_csv): escribe
-    solo las columnas del veredicto + auditabilidad (_OUTPUT_COLUMNS), no el DataFrame
-    intermedio entero. Crea el directorio destino si no existe.
+    Función REUSABLE (Fase 3/4 la importan en vez de re-implementar el to_csv). Escribe
+    TODAS las columnas del DataFrame (contrato dual: el CSV es idéntico a lo que F2 tiene
+    en memoria), no un subconjunto. Crea el directorio destino si no existe.
 
     Resolución de ruta (mismo patrón que la entrada PO_CSV_PATH del guard __main__):
       - `path` explícito tiene prioridad;
@@ -384,10 +382,9 @@ def save_classified_output(df: pd.DataFrame, path=None) -> Path:
             repo_root = repo_root.parent
         out_path = repo_root / "data" / "processed" / "df_classified.csv"
 
-    # Exportar solo las columnas presentes (robustez: si el contrato cambia, no rompe).
-    cols = [c for c in _OUTPUT_COLUMNS if c in df.columns]
+    # Contrato dual: escribir el DataFrame ENTERO (todas las columnas, mismo orden).
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    df[cols].to_csv(out_path, index=False)
+    df.to_csv(out_path, index=False)
     return out_path
 
 
@@ -414,31 +411,44 @@ if __name__ == "__main__":
     _PIPELINE_DIR = REPO_ROOT / "01_data_pipeline_and_eda"
     if str(_PIPELINE_DIR) not in sys.path:
         sys.path.insert(0, str(_PIPELINE_DIR))
-    from pipeline_core import clean_po_data
+    from pipeline_core import clean_po_data, _DATE_INPUT_COLUMNS
 
     load_dotenv(REPO_ROOT / ".env", override=True)
 
-    # 2. Resolver la ruta al CSV: respeta PO_CSV_PATH si está definida; si no, el
-    #    default convencional bajo la raíz del repo (data/raw/).
-    _env_path = os.environ.get("PO_CSV_PATH")
-    csv_path = Path(_env_path) if _env_path else REPO_ROOT / "data" / "raw" / "po_root_cause_synthetic.csv"
+    # 2. Origen de la entrada: por DEFAULT se recomputa la cadena (clean_po_data sobre el
+    #    CSV crudo) — nunca se sirven datos rancios por defecto (H3 del instrumento). La
+    #    lectura del CSV de handoff de F1 (df_clean.csv) es OPT-IN: bandera --from-csv o
+    #    env PO_USE_PREV_CSV. Si se pide y el CSV existe, se carga reparseando las fechas
+    #    (el CSV las guarda como texto) para que sea funcionalmente idéntico a memoria.
+    _from_csv = ("--from-csv" in sys.argv) or bool(os.environ.get("PO_USE_PREV_CSV"))
+    _clean_csv = REPO_ROOT / "data" / "processed" / "df_clean.csv"
 
-    try:
-        df_raw = pd.read_csv(csv_path, low_memory=False)
-        print(f"[OK] Archivo local cargado exitosamente desde: {csv_path}")
+    if _from_csv and _clean_csv.exists():
+        # Reparsear las columnas de fecha de F1 (fuente de verdad _DATE_INPUT_COLUMNS);
+        # el resto se infiere solo. Así el df leído equivale funcionalmente al de memoria.
+        df_clean = pd.read_csv(_clean_csv, low_memory=False, parse_dates=list(_DATE_INPUT_COLUMNS))
+        print(f"[OK] Handoff F1 leído desde CSV (opt-in): {_clean_csv}")
+    else:
+        if _from_csv:
+            print(f"[aviso] --from-csv pedido pero no existe {_clean_csv}; se recomputa.")
+        # 2b. Resolver la ruta al CSV crudo: respeta PO_CSV_PATH; si no, default en data/raw/.
+        _env_path = os.environ.get("PO_CSV_PATH")
+        csv_path = Path(_env_path) if _env_path else REPO_ROOT / "data" / "raw" / "po_root_cause_synthetic.csv"
+        try:
+            df_raw = pd.read_csv(csv_path, low_memory=False)
+            print(f"[OK] Archivo local cargado exitosamente desde: {csv_path}")
+        except FileNotFoundError:
+            error_msg = (
+                f"\nERROR: Archivo no encontrado.\n"
+                f"Debido a que la carpeta 'data/' está en .gitignore, debes colocar manualmente el archivo en:\n"
+                f"  {csv_path}\n"
+                f"Asegúrate de crear las carpetas 'data/' y 'raw/' en la raíz de tu repositorio local,\n"
+                f"o define PO_CSV_PATH=/ruta/completa.csv en el archivo .env de la raíz."
+            )
+            raise FileNotFoundError(error_msg)
+        df_clean = clean_po_data(df_raw)
 
-    except FileNotFoundError:
-        error_msg = (
-            f"\nERROR: Archivo no encontrado.\n"
-            f"Debido a que la carpeta 'data/' está en .gitignore, debes colocar manualmente el archivo en:\n"
-            f"  {csv_path}\n"
-            f"Asegúrate de crear las carpetas 'data/' y 'raw/' en la raíz de tu repositorio local,\n"
-            f"o define PO_CSV_PATH=/ruta/completa.csv en el archivo .env de la raíz."
-        )
-        raise FileNotFoundError(error_msg)
-
-    # 3. Encadenar el pipeline de Fase 1 con el clasificador de Fase 2.
-    df_clean = clean_po_data(df_raw)
+    # 3. Clasificar (Fase 2) sobre la entrada limpia (recomputada o leída del handoff).
     rules = load_rules_config()
     df_classified = classify_po_stages(df_clean, rules)
 

@@ -238,10 +238,12 @@ def test_is_rescheduled_es_flag_de_contexto(df_clean):
 def test_stage_multi_no_incluye_reschedule(df_clean):
     # PO-RESCHED reprograma la cita pero NO tiene STA push (APPROVED<STA) ni exceso de
     # tramo → su stage_multi NO debe contener 'Vendor' por el reschedule (el mentor lo
-    # sacó de la señal de etapa). On-time y sin causa → 'None'.
+    # sacó de la señal de etapa). On-time y sin causa → 'Ninguno' (centinela que sobrevive
+    # el round-trip CSV; ver T4: el literal 'None' colisionaba con los nulos de pandas).
     out = classify_po_stages(df_clean)
     r = row_for(out, "PO-RESCHED")
     assert "Vendor" not in r["stage_multi"]
+    assert r["stage_multi"] == "Ninguno"
 
 
 def test_stage_multi_vendor_respeta_umbral_24h(df_clean):
@@ -249,12 +251,13 @@ def test_stage_multi_vendor_respeta_umbral_24h(df_clean):
     # PO-VENDOR-SUBUMBRAL tiene STA push positivo de 12h, BAJO el umbral de 24h → no es
     # exceso atribuible → excess_vendor_hrs=0 y stage_multi NO debe contener 'Vendor'.
     # Con la señal vieja (appt_lead_days<0) sí lo habría puesto: ese es el caso que el
-    # doble umbral introducía y que T7 elimina. Sin exceso en ningún tramo → 'None'.
+    # doble umbral introducía y que T7 elimina. Sin exceso en ningún tramo → 'Ninguno'.
     out = classify_po_stages(df_clean)
     r = row_for(out, "PO-VENDOR-SUBUMBRAL")
     assert r["delay_days_calc"] > 0                 # es tardío
     assert r["excess_vendor_hrs"] == pytest.approx(0.0)   # push 12h - 24h, clip 0
     assert "Vendor" not in r["stage_multi"]         # el punto de T7
+    assert r["stage_multi"] == "Ninguno"            # centinela sin-causa (no 'None')
 
 
 def test_columnas_contexto_existen(df_clean):
