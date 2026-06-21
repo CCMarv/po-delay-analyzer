@@ -336,6 +336,28 @@ def _build_raw() -> pd.DataFrame:
             YARD_WAIT_HRS=3.0, DOCK_HRS=4.0, DELAY_DAYS=4.0,
             HOT_PO_FLAG=1, IS_LATE="Y",
         ),
+        # ── PO-VENDOR-SUBUMBRAL: STA push POSITIVO pero BAJO el umbral de 24h ────
+        #    APPROVED(01-04 12:00) > STA(01-04 00:00): appt_lead_days = -0.5d → push 12h.
+        #    12h < vendor_gap_hrs(24) → excess_vendor_hrs = max(0, 12 - 24) = 0.
+        #    carrier 2h / yard 1h / dock 2h, todos bajo umbral (exc 0). RECPT>STA → tardío.
+        #    Caso límite de T7: con la señal vieja (appt_lead_days<0) stage_multi pondría
+        #    'Vendor'; con la alineada (excess_vendor_hrs>0) NO debe ponerlo (push sub-umbral).
+        dict(
+            PO_NBR="PO-VENDOR-SUBUMBRAL",
+            PO_DT="2024-01-01 00:00", STA_DT="2024-01-04 00:00",
+            APPROVED_DT="2024-01-04 12:00",                  # push 12h (< 24h umbral)
+            DT_APPT_FIRST_APPROVED="2024-01-04 12:00",
+            DT_APPT_CURRENT_APPROVED="2024-01-04 12:00",
+            TRAILER_ARRIVE_DT="2024-01-04 14:00",            # carrier 2h
+            CHECKIN_DT="2024-01-04 15:00",                   # yard 1h
+            CHECKOUT_DT="2024-01-04 17:00",                  # dock 2h
+            RECPT_DT="2024-01-05 00:00",                     # > CHECKIN → sin inversión; delay 1d
+            REQUESTED_DT="2024-01-01 00:00", FIRST_SUBMITTED_DT="2024-01-01 00:00",
+            PREVIOUS_REQUEST_DT=NaT, TRAILER_DEPART_DT="2024-01-05 02:00",
+            NUM_CASES_ORDERED=100, NUM_CASES_SHIPPED=100,
+            YARD_WAIT_HRS=1.0, DOCK_HRS=2.0, DELAY_DAYS=1.0,
+            HOT_PO_FLAG=0, IS_LATE="Y",
+        ),
     ]
     return pd.DataFrame(rows)
 

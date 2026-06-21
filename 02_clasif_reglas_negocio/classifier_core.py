@@ -208,12 +208,11 @@ def _capa_complementaria(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
 
       reason_group_manual — REASON_DSC mapeado a {Vendor, Carrier, DC, Unknown, On-Time}.
       stage_multi         — etiquetas multi-causa desde las CAUSAS reales de cada etapa
-                            (p.ej. 'Vendor + Carrier'). 'Vendor' aquí = STA push
-                            (appt_lead_days < 0), NO rescheduled/short-ship: el mentor
-                            (06-16) descartó esos como señal de vendor — describen un
-                            evento, no la causa raíz del retraso.
-      stage_modifiers     — sufijos cuando hay señal de vendor pero el primario no es
-                            Vendor (#54): '(+ vendor_rescheduled)', '(+ vendor_short_ship)'.
+                            (p.ej. 'Vendor + Carrier'). Las tres señales (V/C/DC) miden
+                            EXCESO sobre su umbral del mentor, igual que stage_primary:
+                            'Vendor' = STA push por encima de vendor_gap_hrs (24h), NO
+                            cualquier push ni rescheduled/short-ship (el mentor 06-16 los
+                            descartó como señal de vendor: describen un evento, no la causa).
 
     Flags de CONTEXTO (decisión del mentor: rescheduled/short-ship son contexto/agravante,
     no etapa). Se exponen SIEMPRE como columnas propias para que la severidad (#48) y el
@@ -236,8 +235,12 @@ def _capa_complementaria(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
     df["is_short_lead"]  = df["flag_short_lead_time"].fillna(False)
 
     # Señales multi-causa: SOLO causas de etapa (el mentor sacó reschedule/short-ship
-    # de la señal de vendor). Vendor = STA push; carrier/DC = sus flags de umbral.
-    v = (df["appt_lead_days"] < 0).fillna(False)        # STA push (APPROVED > STA)
+    # de la señal de vendor). Las tres señales miden EXCESO sobre el umbral del mentor,
+    # igual que stage_primary: Vendor por excess_vendor_hrs (push sobre vendor_gap_hrs=24h),
+    # carrier/DC por sus flags de umbral. Antes vendor usaba appt_lead_days<0 (cualquier
+    # push), divergiendo de stage_primary y reintroduciendo el sesgo pro-vendor que el
+    # umbral 24h (mentor 06-17) corrige; excess_vendor_hrs ya lo calculó _etapa_primaria.
+    v = (df["excess_vendor_hrs"] > 0).fillna(False)     # STA push SOBRE el umbral de 24h
     c = df["flag_carrier_calc"].fillna(False)
     d = (df["flag_yard_calc"].fillna(False)) | (df["flag_dock_calc"].fillna(False))
 
@@ -249,17 +252,6 @@ def _capa_complementaria(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
         _etiqueta(vv, cc, dd) for vv, cc, dd in zip(v, c, d)
     ]
 
-    # Modificadores narrativos: señal de contexto de vendor cuando el primario NO es Vendor.
-    def _mods(row) -> str:
-        suf = []
-        no_vendor_primary = row["stage_primary"] != "Vendor"
-        if bool(row.get("is_rescheduled", False)) and no_vendor_primary:
-            suf.append("(+ vendor_rescheduled)")
-        if bool(row.get("is_short_ship", False)) and no_vendor_primary:
-            suf.append("(+ vendor_short_ship)")
-        return " ".join(suf)
-
-    df["stage_modifiers"] = df.apply(_mods, axis=1)
     return df
 
 

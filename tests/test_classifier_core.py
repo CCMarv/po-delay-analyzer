@@ -22,6 +22,7 @@ from classifier_core import classify_po_stages, load_rules_config
 
 # Llaves de umbral que el config debe exponer (las que #44/#45/#48 leen por nombre).
 EXPECTED_THRESHOLD_KEYS = {
+    "vendor_gap_hrs",
     "yard_wait_hrs",
     "dock_hrs",
     "carrier_lag_hrs",
@@ -226,15 +227,6 @@ def test_reason_group_manual_mapea_reason_dsc(df_clean):
     assert row_for(out, "PO-DOCK-LATE")["reason_group_manual"] == "DC"
 
 
-def test_modificador_rescheduled_cuando_primary_no_vendor(df_clean):
-    # PO-RESCHED tiene is_rescheduled=True. Reschedule es MODIFICADOR/contexto, no etapa:
-    # si el primario no es Vendor, aparece como sufijo narrativo, no cambia stage_primary.
-    out = classify_po_stages(df_clean)
-    r = row_for(out, "PO-RESCHED")
-    if r["stage_primary"] != "Vendor":
-        assert "vendor_rescheduled" in r["stage_modifiers"]
-
-
 def test_is_rescheduled_es_flag_de_contexto(df_clean):
     # Decisión del mentor: rescheduled es contexto (un evento), no señal de vendor.
     # Se expone SIEMPRE como flag propia, reflejando _rescheduled del pipeline.
@@ -252,9 +244,22 @@ def test_stage_multi_no_incluye_reschedule(df_clean):
     assert "Vendor" not in r["stage_multi"]
 
 
+def test_stage_multi_vendor_respeta_umbral_24h(df_clean):
+    # T7 (coherencia interna, VERIF-2): stage_multi mide el MISMO concepto que stage_primary.
+    # PO-VENDOR-SUBUMBRAL tiene STA push positivo de 12h, BAJO el umbral de 24h → no es
+    # exceso atribuible → excess_vendor_hrs=0 y stage_multi NO debe contener 'Vendor'.
+    # Con la señal vieja (appt_lead_days<0) sí lo habría puesto: ese es el caso que el
+    # doble umbral introducía y que T7 elimina. Sin exceso en ningún tramo → 'None'.
+    out = classify_po_stages(df_clean)
+    r = row_for(out, "PO-VENDOR-SUBUMBRAL")
+    assert r["delay_days_calc"] > 0                 # es tardío
+    assert r["excess_vendor_hrs"] == pytest.approx(0.0)   # push 12h - 24h, clip 0
+    assert "Vendor" not in r["stage_multi"]         # el punto de T7
+
+
 def test_columnas_contexto_existen(df_clean):
     out = classify_po_stages(df_clean)
-    for col in ("stage_multi", "reason_group_manual", "stage_modifiers",
+    for col in ("stage_multi", "reason_group_manual",
                 "is_rescheduled", "is_short_ship", "is_short_lead"):
         assert col in out.columns
 
