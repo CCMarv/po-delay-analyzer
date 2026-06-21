@@ -13,4 +13,4 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v"
-pythonpath = ["01_data_pipeline_and_eda", "02_clasif_reglas_negocio"]
+pythonpath = ["01_data_pipeline_and_eda", "02_clasif_reglas_negocio", "03_llm_integration"]
