@@ -1,32 +1,76 @@
 # ── Imports requeridos  ─────────────────────────────────────────────────────
+import os
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-import os
+
+
+# ── Contrato de entrada (T2 · A-D2-1) ────────────────────────────────────────
+# Columnas CRUDAS que clean_po_data() necesita del CSV (extremo productor del
+# handoff 1→2). Si falta cualquiera, el pipeline fallaba aguas adentro con un
+# KeyError opaco (en el loop de fechas o al calcular un delta); declararlas y
+# validarlas aquí convierte ese fallo en un error que NOMBRA la columna ausente.
+#
+# _DATE_INPUT_COLUMNS — las columnas que se parsean a datetime (bloque 1). Es la
+#   FUENTE DE VERDAD de "qué columna es fecha"; un lector que reconstruya el handoff
+#   desde el CSV (donde las fechas son texto) reparsea exactamente estas (no por un
+#   heurístico de sufijo: DT_APPT_FIRST_APPROVED es fecha y no termina en _DT).
+_DATE_INPUT_COLUMNS = [
+    "PO_DT", "STA_DT", "RECPT_DT",
+    "REQUESTED_DT", "FIRST_SUBMITTED_DT",
+    "DT_APPT_FIRST_APPROVED", "APPROVED_DT", "DT_APPT_CURRENT_APPROVED",
+    "PREVIOUS_REQUEST_DT",
+    "TRAILER_ARRIVE_DT", "CHECKIN_DT", "CHECKOUT_DT", "TRAILER_DEPART_DT",
+]
+# El resto de columnas crudas requeridas (no fechas): cantidades para el fill rate,
+# flags precalc (YARD/DOCK_HRS) y contexto (HOT_PO_FLAG, IS_LATE).
+_REQUIRED_INPUT_COLUMNS = _DATE_INPUT_COLUMNS + [
+    "NUM_CASES_ORDERED", "NUM_CASES_SHIPPED",
+    "YARD_WAIT_HRS", "DOCK_HRS",
+    "HOT_PO_FLAG", "IS_LATE",
+]
 
 
 def clean_po_data(df_input: pd.DataFrame) -> pd.DataFrame:
     """
     Pipeline de limpieza y enriquecimiento del dataset de PO Root Cause.
 
-    Input:  DataFrame crudo del CSV po_root_cause_synthetic.csv
+    Contrato de entrada (T2): el DataFrame crudo debe traer las columnas de
+    _REQUIRED_INPUT_COLUMNS (las que esta función referencia). Se validan al inicio:
+    si falta alguna, se lanza KeyError NOMBRÁNDOLA, en vez de fallar aguas adentro
+    con un mensaje opaco. No se valida el TIPO ni la NULIDAD: las fechas se parsean
+    con errors='coerce' (un valor inválido → NaT, tratado por las flags de calidad
+    _ts_issue/_trailer_arrive_null), y las cantidades con divisor 0 → fill rate NaN
+    (manejado en el bloque 3). Es decir, el contrato exige PRESENCIA de columna;
+    los valores presentes-pero-inválidos los absorbe el pipeline como dato sucio.
+
+    Input:  DataFrame crudo del CSV po_root_cause_synthetic.csv, con al menos las
+            columnas de _REQUIRED_INPUT_COLUMNS.
     Output: DataFrame enriquecido con:
             - Timestamps parseados a datetime
             - Flags de calidad de datos (_ts_issue, _trailer_arrive_null)
             - Deltas calculados (yard_wait_calc_hrs, dock_calc_hrs, carrier_lag_hrs, etc.)
             - Flags de clasificación (flag_yard_congestion, flag_dock_backlog, etc.)
             - Flags operacionales (_rescheduled, _short_ship, _fill_rate)
+
+    Raises: KeyError si falta alguna columna de _REQUIRED_INPUT_COLUMNS.
     """
+    # Validación del contrato de entrada: nombra TODAS las columnas ausentes de una
+    # vez (no solo la primera), para no obligar a iterar arreglando una por corrida.
+    faltantes = [c for c in _REQUIRED_INPUT_COLUMNS if c not in df_input.columns]
+    if faltantes:
+        raise KeyError(
+            "clean_po_data: faltan columnas requeridas en la entrada: "
+            f"{faltantes}. El contrato de entrada de Fase 1 exige las columnas de "
+            "_REQUIRED_INPUT_COLUMNS (ver docstring)."
+        )
+
     df = df_input.copy()
 
     # ── 1. Parsear timestamps ────────────────────────────────────────────────
-    DATE_COLS = [
-        'PO_DT', 'STA_DT', 'RECPT_DT',
-        'REQUESTED_DT', 'FIRST_SUBMITTED_DT',
-        'DT_APPT_FIRST_APPROVED', 'APPROVED_DT', 'DT_APPT_CURRENT_APPROVED',
-        'PREVIOUS_REQUEST_DT',
-        'TRAILER_ARRIVE_DT', 'CHECKIN_DT', 'CHECKOUT_DT', 'TRAILER_DEPART_DT'
-    ]
-    for col in DATE_COLS:
+    # Se leen de la constante de módulo (fuente de verdad de "qué columna es fecha").
+    for col in _DATE_INPUT_COLUMNS:
         df[col] = pd.to_datetime(df[col], errors='coerce')
 
     # ── 2. Flags de calidad ──────────────────────────────────────────────────
@@ -109,6 +153,43 @@ def cross_validate_deltas(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+# ── T3 · Persistencia de la salida limpia (contrato dual del handoff 1→2) ─────
+def save_clean_output(df: pd.DataFrame, path=None) -> Path:
+    """Persiste el DataFrame limpio COMPLETO a un CSV en data/processed/ (T3).
+
+    Espejo de save_classified_output() de Fase 2: bajo el contrato dual (§3-A), el CSV
+    de salida de F1 es IDÉNTICO al DataFrame que clean_po_data() deja en memoria — TODAS
+    las columnas (crudas + las que añade F1), no un subconjunto. Releerlo reconstruye lo
+    que F2 cargaría si corriera la cadena monolítica. F2 decide qué consume de ese conjunto.
+    Limitación de CSV: las fechas se escriben como texto; un lector que necesite datetime
+    las reparsea (el guard __main__ ofrece esa lectura opcional).
+
+    Resolución de ruta (mismo patrón que PO_CSV_PATH del guard __main__):
+      - `path` explícito tiene prioridad;
+      - si no, respeta la env var PO_CLEAN_OUTPUT_PATH;
+      - si no, default convencional: <repo>/data/processed/df_clean.csv.
+    data/processed/ está en .gitignore: el CSV NO se versiona, se regenera ejecutando.
+
+    Input:  df — DataFrame ya pasado por clean_po_data().
+            path — ruta destino opcional (str | Path).
+    Output: el Path donde se escribió.
+    """
+    if path is not None:
+        out_path = Path(path)
+    elif os.environ.get("PO_CLEAN_OUTPUT_PATH"):
+        out_path = Path(os.environ["PO_CLEAN_OUTPUT_PATH"])
+    else:
+        repo_root = Path(__file__).resolve().parent
+        if repo_root.name == "01_data_pipeline_and_eda":
+            repo_root = repo_root.parent
+        out_path = repo_root / "data" / "processed" / "df_clean.csv"
+
+    # Contrato dual: escribir el DataFrame ENTERO (todas las columnas, mismo orden).
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_csv(out_path, index=False)
+    return out_path
+
+
 # ── AGREGADO: Envolver el bloque de ejecución para proteger el módulo ────────
 if __name__ == "__main__":
     # Imports solo necesarios para la ejecución como script (no para importar el
@@ -162,7 +243,15 @@ if __name__ == "__main__":
     print(f'   Flag dock backlog:          {df_clean["flag_dock_backlog"].sum()}')
     print(f'   Flag carrier miss:          {df_clean["flag_carrier_miss"].sum()}')
 
-    # Cross-validation: deltas calculados vs columnas precalculadas
+    # Contrato dual del handoff 1→2 (T3): persistir el df limpio ANTES de la
+    # cross-validation. F2 consume la salida de clean_po_data(), no las columnas de
+    # diagnóstico (_yard_discrepancy/_dock_discrepancy) que añade cross_validate_deltas;
+    # así el CSV es idéntico a lo que F2 cargaría en memoria.
+    out_path = save_clean_output(df_clean)
+    print(f'\n[OK] Salida limpia escrita en: {out_path}')
+
+    # Cross-validation: deltas calculados vs columnas precalculadas (solo reporte; sus
+    # columnas de diagnóstico NO entran al CSV de handoff de arriba).
     print()
     df_clean = cross_validate_deltas(df_clean)
 

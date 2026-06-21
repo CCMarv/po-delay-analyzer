@@ -619,6 +619,14 @@ def main() -> None:
             "Alternativa: ANTHROPIC_API_KEY o DEEPSEEK_API_KEY en .env"
         )
     )
+    parser.add_argument(
+        "--from-csv", action="store_true",
+        help=(
+            "Leer el handoff de Fase 2 desde data/processed/df_classified.csv en vez de "
+            "recomputar la cadena clean->classify. Opt-in (contrato dual); por default se "
+            "recomputa. Tambien activable con la env var PO_USE_PREV_CSV."
+        )
+    )
     args = parser.parse_args()
 
     # --------------------------------------------------------
@@ -632,27 +640,42 @@ def main() -> None:
         if sub_path not in sys.path:
             sys.path.insert(0, sub_path)
 
-    from pipeline_core import clean_po_data       # noqa: E402
+    from pipeline_core import clean_po_data, _DATE_INPUT_COLUMNS  # noqa: E402
     from classifier_core import classify_po_stages  # noqa: E402
 
     print("=" * 60)
     print("Fase 3 — Integración con LLM (Producción)")
     print("=" * 60)
 
-    # Cargar datos
-    csv_path = repo_root / "data" / "raw" / "po_root_cause_synthetic.csv"
-    if not csv_path.exists():
-        print(f"❌ CSV no encontrado en {csv_path}")
-        sys.exit(1)
+    # Origen de los datos clasificados: por DEFAULT se recomputa la cadena completa
+    # (clean -> classify) — nunca se sirven datos rancios por defecto (H3). La lectura
+    # del handoff de F2 (df_classified.csv) es OPT-IN: --from-csv o env PO_USE_PREV_CSV.
+    # Si se pide y el CSV existe, se carga reparseando las fechas (texto en el CSV) para
+    # que sea funcionalmente idéntico a lo que la cadena dejaría en memoria.
+    from_csv = args.from_csv or bool(os.environ.get("PO_USE_PREV_CSV"))
+    classified_csv = repo_root / "data" / "processed" / "df_classified.csv"
 
-    print(f"📂 Cargando CSV: {csv_path}")
-    df_raw = pd.read_csv(csv_path, low_memory=False)
+    if from_csv and classified_csv.exists():
+        df_classified = pd.read_csv(
+            classified_csv, low_memory=False, parse_dates=list(_DATE_INPUT_COLUMNS)
+        )
+        print(f"📂 Handoff F2 leído desde CSV (opt-in): {classified_csv}")
+    else:
+        if from_csv:
+            print(f"⚠️ --from-csv pedido pero no existe {classified_csv}; se recomputa.")
+        csv_path = repo_root / "data" / "raw" / "po_root_cause_synthetic.csv"
+        if not csv_path.exists():
+            print(f"❌ CSV no encontrado en {csv_path}")
+            sys.exit(1)
 
-    print("🔧 Ejecutando pipeline de limpieza...")
-    df_clean = clean_po_data(df_raw)
+        print(f"📂 Cargando CSV: {csv_path}")
+        df_raw = pd.read_csv(csv_path, low_memory=False)
 
-    print("🔧 Ejecutando clasificador por etapa...")
-    df_classified = classify_po_stages(df_clean)
+        print("🔧 Ejecutando pipeline de limpieza...")
+        df_clean = clean_po_data(df_raw)
+
+        print("🔧 Ejecutando clasificador por etapa...")
+        df_classified = classify_po_stages(df_clean)
 
     # Resolver API key según el backend elegido
     claude_api_key = args.api_key if args.backend == "claude" else None
