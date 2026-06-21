@@ -11,8 +11,8 @@ Construir una plataforma integral que reciba datos transaccionales de órdenes d
 
 El repositorio está organizado siguiendo el orden cronológico de las cuatro etapas del ciclo de vida del proyecto, facilitando el seguimiento del progreso desde la investigación hasta el despliegue:
 
-> **Nota:** este árbol refleja el **estado real del repo hoy** (Fase 1). Las carpetas
-> `02/03/04` están reservadas para las fases siguientes y aún no tienen contenido.
+> **Nota:** este árbol refleja el **estado real del repo hoy**. Fases 1 y 2 implementadas
+> y cerradas; Fase 3 (integración LLM) implementada y en curso; Fase 4 (demo/app) pendiente.
 
 ```text
 ├── documentation/                      # Textos, PDFs, convenciones del equipo
@@ -22,13 +22,24 @@ El repositorio está organizado siguiendo el orden cronológico de las cuatro et
 ├── data/                               # raw/ y processed/ (gitignored; solo .gitkeep)
 ├── 01_data_pipeline_and_eda/           # Fase 1: pipeline + EDA
 │   ├── data_pipeline_and_EDA.ipynb     # Notebook combinado (pipeline + EDA)
-│   └── pipeline_core.py                # Función reutilizable clean_po_data() + cross_validate
-├── tests/                              # Suite de pytest de pipeline_core
-│   ├── conftest.py                     # Fixtures (DataFrame sintético de valores conocidos)
-│   └── test_pipeline_core.py
-├── 02_clasif_reglas_negocio/           # Fase 2: clasificación por etapa (pendiente)
-├── 03_llm_integration/                 # Fase 3: integración LLM (pendiente)
+│   └── pipeline_core.py                # clean_po_data() + cross_validate + save_clean_output
+├── 02_clasif_reglas_negocio/           # Fase 2: clasificación por etapa (implementada)
+│   ├── clasif_etapa.ipynb              # Notebook de presentación de la fase
+│   ├── classifier_core.py              # classify_po_stages() + severidad + persistencia
+│   ├── metrics_core.py                 # Validación: stage accuracy + reason agreement
+│   └── rules_config.json               # Umbrales externalizados (leídos por nombre)
+├── 03_llm_integration/                 # Fase 3: integración LLM (implementada, en curso)
+│   ├── llm_integration.py              # build_prompt + backends (Qwen/Claude/DeepSeek)
+│   └── prompt_template.txt             # Borrador de system prompt (ver README de la fase)
 ├── 04_app/                             # Fase 4: demo / app (pendiente)
+├── tests/                              # Suite de pytest (pipeline, clasificador, métricas,
+│   │                                   #   handoff, LLM); fixtures de valores conocidos
+│   ├── conftest.py
+│   ├── test_pipeline_core.py
+│   ├── test_classifier_core.py
+│   ├── test_metrics_core.py
+│   ├── test_handoff_contract.py
+│   └── test_llm_integration.py
 ├── requirements.txt                    # Dependencias (en la raíz)
 ├── pyproject.toml                      # Config de pytest (pythonpath, testpaths)
 ├── .env.example                        # Plantilla de variables de entorno
@@ -43,7 +54,7 @@ El repositorio está organizado siguiendo el orden cronológico de las cuatro et
 
 El proyecto se estructura en **4 fases secuenciales**:
 
-###  Fase 1 — Data Pipeline (Limpieza y Validación) `[ESTADO ACTUAL]`
+###  Fase 1 — Data Pipeline (Limpieza y Validación) `[cerrada]`
 
 * Procesamiento de un dataset inicial de 400 filas y 39 columnas que incluye anomalías intencionales.
 * "Cargar el CSV, limpiar timestamps, validar datos. EDA: cuantos POs tienen delay? Distribucion por vendor/DC."
@@ -56,16 +67,16 @@ El proyecto se estructura en **4 fases secuenciales**:
   * `carrier_lag` = `TRAILER_ARRIVE` - `APPROVED_DT`
 * **Output**: DataFrame limpio, con deltas calculados y banderas de calidad, listo como entrada para las siguientes fases.
 
-###  Fase 2 — Clasificación por Etapa (Reglas de Negocio)
-Implementación de un clasificador probabilístico basado en prioridades operativas para resolver la multicausalidad en órdenes retrasadas. Las reglas se evalúan de forma independiente y se consolidan según el ciclo de vida del PO. 
+###  Fase 2 — Clasificación por Etapa (Reglas de Negocio) `[cerrada]`
+Implementación de un clasificador **determinístico** basado en el exceso sobre el umbral de cada etapa (no probabilístico): la etapa primaria es el tramo de mayor exceso sobre su umbral del mentor, con vendor por señal directa de STA push. Las reglas se evalúan de forma reproducible y los umbrales viven externalizados en `rules_config.json`.
 "Implementar reglas que asignan vendor/carrier/DC a cada PO. Comparar con REASON_DSC. Documentar matches vs mismatches".
 
-###  Fase 3 — LLM Root Cause (Integración con API)
+###  Fase 3 — LLM Root Cause (Integración con API) `[implementada, en curso]`
 Auditoría cognitiva de cada orden retrasada mediante el consumo dinámico de LLMs.
 * **Prompt Engineering**: Construcción de un prompt enriquecido por fila con los hitos temporales de las fases 1 y 2.
 "Disenar prompt, generar root cause explanations para todos los POs delayed. Asignar severidad. Primera evaluacion".
 
-###  Fase 4 — Demo Interactiva + Evaluación Final
+###  Fase 4 — Demo Interactiva + Evaluación Final `[pendiente]`
 Construcción de una interfaz de usuario para el consumo de resultados del negocio.
 "Construir notebook/app demo: seleccionar PO > ver timeline, causa, explicacion. Medir metricas. Presentar hallazgos."
 
@@ -78,4 +89,4 @@ Construcción de una interfaz de usuario para el consumo de resultados del negoc
 * **Variables Críticas de Control**: `IS_LATE`, `VENDOR_NAME`, `DELAY_DAYS`, `REQUESTED_DT`, `RECPT_DT`, `REASON_DSC`, `HOT_PO_FLAG`.
 
 ---
-*Nota: Este documento refleja el progreso en tiempo real del desarrollo. Actualmente ejecutando tareas de ingeniería de datos en la Fase 1.*
+*Nota: Este documento refleja el progreso en tiempo real del desarrollo. Fases 1 y 2 cerradas; Fase 3 (integración LLM) en curso.*
