@@ -27,12 +27,12 @@ import pandas as pd
 import pytest
 
 # ── Import del módulo bajo prueba ────────────────────────────────────────────
-# pyproject.toml ya añade 01_data_pipeline_and_eda/ y 02_clasif_reglas_negocio/ al
-# pythonpath, así que estos imports funcionan pese a que las carpetas empiecen con
-# dígito. Mantenemos también estos inserts como red de seguridad por si alguien corre
-# pytest sin la config (p. ej. apuntando a un solo archivo desde otra carpeta).
+# pyproject.toml ya añade 01_/02_/03_ al pythonpath, así que estos imports funcionan
+# pese a que las carpetas empiecen con dígito. Mantenemos también estos inserts como
+# red de seguridad por si alguien corre pytest sin la config (p. ej. apuntando a un
+# solo archivo desde otra carpeta).
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-for _sub in ("01_data_pipeline_and_eda", "02_clasif_reglas_negocio"):
+for _sub in ("01_data_pipeline_and_eda", "02_clasif_reglas_negocio", "03_llm_integration"):
     _dir = _REPO_ROOT / _sub
     if str(_dir) not in sys.path:
         sys.path.insert(0, str(_dir))

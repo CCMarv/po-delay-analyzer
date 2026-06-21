@@ -183,7 +183,7 @@ de la anotación humana `REASON_DSC`; los nulos entre tardíos → "Unknown", fu
 
 El agreement < 100% es **esperado y deseado**: la anotación humana es ~20% incorrecta (dato del
 kickoff). Los **22 mismatches** son la evidencia de que el cómputo temporal supera a la
-anotación humana — el insumo few-shot de Fase 3.
+anotación humana — disponibles como posible insumo few-shot para Fase 3 (ver el estado en §6).
 
 ## 6. Mismatches seleccionados (#47) — evidencia temporal
 
@@ -208,7 +208,12 @@ cita se había aprobado días tarde y ese tramo no tenía exceso alguno. Patrón
 últimos): el cómputo detecta un exceso de tramo que la anotación humana confundió.
 
 `metrics_core.select_mismatches(df, n)` devuelve este ranking por fuerza de señal; los 8
-elegidos para el few-shot mezclan los tres tipos a propósito (decisión editorial del entregable).
+candidatos a few-shot mezclan los tres tipos a propósito (decisión editorial del entregable).
+
+> **Estado del few-shot (al cierre de Fase 2).** Estos mismatches están **disponibles** como
+> posible few-shot, pero **el prompt de Fase 3 es hoy zero-shot**: todavía NO los consume. El
+> cableado (inyectar estos ejemplos en el prompt) es una decisión de diseño de prompt, pendiente
+> en Fase 3. Aquí solo se produce y se justifica el insumo; usarlo o no lo decide F3.
 
 ## 7. Cómo correr
 

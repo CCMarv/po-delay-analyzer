@@ -163,7 +163,9 @@ def select_mismatches(df: pd.DataFrame, n: int = 8) -> pd.DataFrame:
     Un mismatch es un PO clasificable cuyo stage_primary ≠ reason_group_manual: los
     timestamps (cómputo) atribuyen el retraso a una etapa distinta de la que anotó el
     staff. Son la EVIDENCIA de la tesis del proyecto (el cómputo temporal es más preciso
-    que la anotación humana) y el insumo few-shot de Fase 3.
+    que la anotación humana) y están disponibles como POSIBLE insumo few-shot para Fase 3.
+    Estado actual: el prompt de F3 es ZERO-SHOT — todavía no consume estos ejemplos;
+    cablearlos como few-shot es decisión de diseño de prompt, pendiente en Fase 3.
 
     "Fuerza de señal" = la magnitud del exceso de la etapa que el cómputo eligió
     (excess_*_hrs de stage_primary). Ordenar por ella pone arriba los casos más

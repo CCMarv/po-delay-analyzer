@@ -132,6 +132,7 @@ El script espera el CSV crudo en `../data/raw/po_root_cause_synthetic.csv` relat
 
 ## Notas de diseño
 
+- **Fuente del prompt (T6).** El prompt que se envía al modelo lo arma `build_prompt()` en `llm_integration.py`: es el prompt **operativo**, el que realmente corre, e interpola los datos de cada PO. El archivo `prompt_template.txt` es un **borrador de system prompt** más elaborado (rol, contexto de negocio, criterios de calidad) que **hoy no se carga desde el código** — queda como insumo para el diseño del prompt de Fase 3 (decidir si adoptarlo como system prompt, añadir few-shot, etc.). Mientras F3 no lo cablee, la fuente única en uso es `build_prompt()`; el `.txt` no es código muerto sino material de diseño pendiente.
 - El parseo de la respuesta JSON del LLM está centralizado en `_parse_llm_json()` para evitar duplicar lógica entre backends.
 - El backend `local` (Qwen) tiene fallback a texto libre si el modelo no devuelve JSON válido; los backends cloud (`claude`, `deepseek`) no, porque se espera que sigan instrucciones de formato de forma más confiable.
 - Los tres backends comparten la misma interfaz (`call(prompt, max_retries)`), por lo que agregar un nuevo proveedor solo requiere implementar una clase nueva y registrarla en `create_backend()`.
