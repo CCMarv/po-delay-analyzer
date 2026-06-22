@@ -14,6 +14,10 @@ Entre los 3 (asíncrono, cualquier día) — label decisión-equipo · Necesita 
 <!-- Elige UNA, borra el resto. Va también como --label. -->
 pipeline · eda · analisis · infra · docs · llm · app
 
+## Rama sugerida
+<!-- Opcional: una Decisión casi nunca abre rama (es una elección, no trabajo). Si la implementación se hará en este mismo issue, propón: `tipo/<nombre>-<tarea-corta>` (tipo = feat · fix · docs · chore; la fase NO va en el nombre). Si no, deja "— sin rama". -->
+`tipo/<nombre>-<tarea-corta>`
+
 ## La decisión / pregunta
 <!-- ¿Qué hay que decidir, exactamente? Una pregunta clara que se pueda responder. -->
 

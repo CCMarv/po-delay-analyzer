@@ -43,6 +43,15 @@ body:
     validations:
       required: true
 
+  - type: input
+    id: rama-sugerida
+    attributes:
+      label: Rama sugerida
+      description: "Opcional: una Decisión casi nunca abre rama (es una elección, no trabajo). Si la implementación se hará en este mismo issue, propón `tipo/<nombre>-<tarea-corta>` (tipo = feat · fix · docs · chore; la fase NO va en el nombre). Si no, déjalo vacío o pon '— sin rama'."
+      placeholder: "— sin rama  ·  o feat/<nombre>-<tarea-corta>"
+    validations:
+      required: false
+
   - type: textarea
     id: pregunta
     attributes:

@@ -42,6 +42,15 @@ body:
     validations:
       required: true
 
+  - type: input
+    id: rama-sugerida
+    attributes:
+      label: Rama sugerida
+      description: "Propón el nombre de la rama desde aquí para que quien tome el issue no lo improvise: `tipo/<nombre>-<tarea-corta>` (tipo = feat · fix · docs · chore). La fase NO va en el nombre."
+      placeholder: "feat/<nombre>-<tarea-corta>  ·  ej. feat/vidaurri-csv-local"
+    validations:
+      required: false
+
   - type: textarea
     id: contexto
     attributes:
