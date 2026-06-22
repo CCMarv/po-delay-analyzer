@@ -178,7 +178,9 @@ Estos son los **acuerdos**; el cómo está en la
 
 - **Una rama por issue, nunca trabajar directo en `main`.** Nombre:
   `tipo/<nombre>-<tarea-corta>` (`feat` · `fix` · `docs` · `chore`). Ej.
-  `feat/vidaurri-csv-local`. La fase NO va en el nombre.
+  `feat/vidaurri-csv-local`. La fase NO va en el nombre. El nombre se **propone desde el
+  issue** (sección *Rama sugerida* del body), para que quien lo tome no lo improvise;
+  puedes ajustarlo si hace falta al empezar.
 - **Commits pequeños y frecuentes**, mensaje `area: descripción en imperativo (Closes #N)`.
   El `Closes #N` cierra el issue solo al mergear.
 - **Nunca se commitea:** secrets / API keys (van en `.env`, gitignored) · el CSV de

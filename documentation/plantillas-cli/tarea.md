@@ -19,6 +19,10 @@ pipeline · eda · analisis · infra · docs · llm · app
 <!-- Ponla también en el campo Milestone del issue (no se puede por CLI: hazlo en la web tras crear, o con --milestone "Fase 1 — Pipeline + EDA"). -->
 Fase 1 — Pipeline + EDA · Fase 2 — Clasificación por etapa (reglas) · Fase 3 — LLM (prompt, explicaciones, severidad) · Fase 4 — Demo + evaluación final
 
+## Rama sugerida
+<!-- Propón el nombre de la rama desde aquí: `tipo/<nombre>-<tarea-corta>` (tipo = feat · fix · docs · chore). La fase NO va en el nombre. Ej.: feat/vidaurri-csv-local. Opcional pero recomendado: deja la rama propuesta para que quien tome el issue no improvise. -->
+`tipo/<nombre>-<tarea-corta>`
+
 ## Contexto
 <!-- ¿Por qué existe esta tarea? El gap, hallazgo o mejora que la motiva. 1–3 líneas. Esto es lo que el mentor lee para entender el porqué. -->
 

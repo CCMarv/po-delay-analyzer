@@ -9,6 +9,10 @@ Uso:
 <!-- Elige UNA, borra el resto. Va también como --label. -->
 pipeline · eda · analisis · infra · docs · llm · app
 
+## Rama sugerida
+<!-- Propón el nombre de la rama desde aquí: `tipo/<nombre>-<tarea-corta>` (para un bug normalmente fix · chore; la fase NO va en el nombre). Ej.: fix/vidaurri-carrier-lag-nan. -->
+`tipo/<nombre>-<tarea-corta>`
+
 ## Qué pasa (síntoma)
 <!-- El problema en una o dos frases, sin teorizar todavía la causa. -->
 
