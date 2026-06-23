@@ -4,10 +4,11 @@ llm_integration.py
 
 Fase 3 — Integración con LLM para generar explicaciones de causa raíz.
 
-Soporta tres backends:
+Soporta CUATRO backends:
     - Qwen 2.5:7B (local, vía Ollama)     -> modo local
     - Claude (Anthropic API)               -> modo cloud
     - DeepSeek (DeepSeek API)              -> modo cloud
+    - OpenAI (OpenAI API)                  -> modo cloud
 
 Uso:
     # Modo local (Qwen con Ollama)
@@ -19,12 +20,16 @@ Uso:
     # Modo cloud (DeepSeek con API key)
     python llm_integration.py --mode test --backend deepseek --api-key sk-...
 
+    # Modo cloud (OpenAI con API key)
+    python llm_integration.py --mode test --backend openai --api-key sk-proj-...
+
     # Modo producción con Claude
     python llm_integration.py --mode full --backend claude
 
 Variables de entorno (recomendado):
     ANTHROPIC_API_KEY=sk-ant-...
     DEEPSEEK_API_KEY=sk-...
+    OPENAI_API_KEY=sk-proj-...
     OLLAMA_URL=http://localhost:11434/api/generate
 """
 
@@ -50,6 +55,7 @@ DEFAULT_OLLAMA_URL = "http://localhost:11434/api/generate"
 DEFAULT_OLLAMA_MODEL = "qwen2.5:7b"
 DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"   # alternativa: "deepseek-reasoner"
+DEFAULT_OPENAI_MODEL = "gpt-4o-mini"       # alternativa: "gpt-4", "gpt-4-turbo"
 DEFAULT_TEMPERATURE = 0.3
 DEFAULT_MAX_TOKENS = 512
 DEFAULT_DELAY_SECONDS = 0.5
@@ -421,6 +427,83 @@ class DeepSeekBackend:
 
 
 # ============================================================
+# Backend: OpenAI (Chat Completions API)
+# ============================================================
+
+class OpenAIBackend:
+    """Backend para OpenAI API (ChatGPT, GPT-4, etc)."""
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = DEFAULT_OPENAI_MODEL
+    ) -> None:
+        """
+        Inicializa el backend de OpenAI.
+
+        Args:
+            api_key: API key de OpenAI.
+            model: Modelo a utilizar ('gpt-4o-mini', 'gpt-4', 'gpt-4-turbo', etc).
+        """
+        self.api_key = api_key
+        self.model = model
+        self.url = "https://api.openai.com/v1/chat/completions"
+
+    def call(self, prompt: str, max_retries: int = 3) -> Optional[Dict]:
+        """
+        Llama a OpenAI y parsea la respuesta.
+
+        Args:
+            prompt: Texto a enviar al modelo.
+            max_retries: Número máximo de reintentos.
+
+        Returns:
+            Diccionario con la respuesta parseada o None si falló.
+        """
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json"
+        }
+        body = {
+            "model": self.model,
+            "max_tokens": DEFAULT_MAX_TOKENS,
+            "temperature": DEFAULT_TEMPERATURE,
+            "messages": [
+                {"role": "user", "content": prompt}
+            ]
+        }
+
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    self.url, headers=headers, json=body, timeout=60
+                )
+                response.raise_for_status()
+
+                result = response.json()
+                choices = result.get('choices', [])
+                # Guardia explícita contra lista vacía
+                raw_response = (
+                    choices[0].get('message', {}).get('content', '')
+                    if choices else ''
+                )
+                # fallback=False: se espera JSON estricto de OpenAI
+                return _parse_llm_json(raw_response, fallback=False)
+
+            except requests.exceptions.HTTPError as e:
+                print(f"  Error HTTP {e.response.status_code}: "
+                      f"{e.response.text[:100]}, "
+                      f"intento {attempt + 1}/{max_retries}")
+                time.sleep(RETRY_SLEEP_SECONDS)
+            except requests.exceptions.RequestException as e:
+                print(f"  Error de red: {e}, "
+                      f"intento {attempt + 1}/{max_retries}")
+                time.sleep(RETRY_SLEEP_SECONDS)
+
+        return None
+
+
+# ============================================================
 # Factory
 # ============================================================
 
@@ -431,23 +514,27 @@ def create_backend(
     claude_model: str = DEFAULT_CLAUDE_MODEL,
     claude_api_key: Optional[str] = None,
     deepseek_model: str = DEFAULT_DEEPSEEK_MODEL,
-    deepseek_api_key: Optional[str] = None
-) -> Union[QwenBackend, ClaudeBackend, DeepSeekBackend]:
+    deepseek_api_key: Optional[str] = None,
+    openai_model: str = DEFAULT_OPENAI_MODEL,
+    openai_api_key: Optional[str] = None
+) -> Union[QwenBackend, ClaudeBackend, DeepSeekBackend, OpenAIBackend]:
     """
     Crea el backend apropiado según la configuración.
 
     La API key se resuelve en este orden de prioridad:
         1. Argumento explícito (--api-key en CLI)
-        2. Variable de entorno (ANTHROPIC_API_KEY / DEEPSEEK_API_KEY)
+        2. Variable de entorno (ANTHROPIC_API_KEY / DEEPSEEK_API_KEY / OPENAI_API_KEY)
 
     Args:
-        backend_type: 'local', 'claude' o 'deepseek'.
+        backend_type: 'local', 'claude', 'deepseek' u 'openai'.
         ollama_model: Modelo de Ollama.
         ollama_url: URL de Ollama.
         claude_model: Modelo de Claude.
         claude_api_key: API key de Anthropic (opcional si está en .env).
         deepseek_model: Modelo de DeepSeek.
         deepseek_api_key: API key de DeepSeek (opcional si está en .env).
+        openai_model: Modelo de OpenAI.
+        openai_api_key: API key de OpenAI (opcional si está en .env).
 
     Returns:
         Instancia del backend configurado.
@@ -475,6 +562,16 @@ def create_backend(
         print(f"🔑 Usando DeepSeek API (modelo: {deepseek_model})")
         return DeepSeekBackend(api_key, deepseek_model)
 
+    if backend_type == "openai":
+        api_key = openai_api_key or os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            raise ValueError(
+                "❌ Se requiere API key de OpenAI. "
+                "Pásala con --api-key o define OPENAI_API_KEY en .env"
+            )
+        print(f"🔑 Usando OpenAI API (modelo: {openai_model})")
+        return OpenAIBackend(api_key, openai_model)
+
     # Default: backend local con Qwen/Ollama
     print(f"🖥️ Usando Qwen local (modelo: {ollama_model})")
     return QwenBackend(ollama_model, ollama_url)
@@ -486,7 +583,7 @@ def create_backend(
 
 def add_llm_explanations(
     df: pd.DataFrame,
-    backend: Union[QwenBackend, ClaudeBackend, DeepSeekBackend],
+    backend: Union[QwenBackend, ClaudeBackend, DeepSeekBackend, OpenAIBackend],
     delay_between_calls: float = DEFAULT_DELAY_SECONDS,
     test_mode: bool = False,
     test_limit: int = 10,
@@ -593,8 +690,8 @@ def main() -> None:
     )
     parser.add_argument(
         "--backend", type=str, default="local",
-        choices=["local", "claude", "deepseek"],
-        help="Backend: local (Qwen/Ollama), claude o deepseek"
+        choices=["local", "claude", "deepseek", "openai"],
+        help="Backend: local (Qwen/Ollama), claude, deepseek u openai"
     )
     parser.add_argument(
         "--ollama-model", type=str, default=DEFAULT_OLLAMA_MODEL,
@@ -613,10 +710,14 @@ def main() -> None:
         help="Modelo de DeepSeek (solo aplica con --backend deepseek)"
     )
     parser.add_argument(
+        "--openai-model", type=str, default=DEFAULT_OPENAI_MODEL,
+        help="Modelo de OpenAI (solo aplica con --backend openai)"
+    )
+    parser.add_argument(
         "--api-key", type=str, default=None,
         help=(
             "API key del backend seleccionado. "
-            "Alternativa: ANTHROPIC_API_KEY o DEEPSEEK_API_KEY en .env"
+            "Alternativa: ANTHROPIC_API_KEY, DEEPSEEK_API_KEY u OPENAI_API_KEY en .env"
         )
     )
     parser.add_argument(
@@ -680,6 +781,7 @@ def main() -> None:
     # Resolver API key según el backend elegido
     claude_api_key = args.api_key if args.backend == "claude" else None
     deepseek_api_key = args.api_key if args.backend == "deepseek" else None
+    openai_api_key = args.api_key if args.backend == "openai" else None
 
     try:
         backend = create_backend(
@@ -689,7 +791,9 @@ def main() -> None:
             claude_model=args.claude_model,
             claude_api_key=claude_api_key,
             deepseek_model=args.deepseek_model,
-            deepseek_api_key=deepseek_api_key
+            deepseek_api_key=deepseek_api_key,
+            openai_model=args.openai_model,
+            openai_api_key=openai_api_key
         )
     except ValueError as e:
         print(e)
