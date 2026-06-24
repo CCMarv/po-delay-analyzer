@@ -7,6 +7,11 @@ Construir una plataforma integral que reciba datos transaccionales de órdenes d
 
 ---
 
+## 📄 Registro de Decisiones de Arquitectura (ADR)
+Para conocer el rastro histórico, la justificación de las reglas de negocio avanzadas, la evolución de los umbrales y los debates del equipo técnicos validados por la mentoría, consulta el **[Log Índice de ADRs](documentation/decisiones/README.md)**.
+
+---
+
 ##  Estructura del Proyecto
 
 El repositorio está organizado siguiendo el orden cronológico de las cuatro etapas del ciclo de vida del proyecto, facilitando el seguimiento del progreso desde la investigación hasta el despliegue:
@@ -16,6 +21,10 @@ El repositorio está organizado siguiendo el orden cronológico de las cuatro et
 
 ```text
 ├── documentation/                      # Textos, PDFs, convenciones del equipo
+│   ├── decisiones/                     # Historial de decisiones de arquitectura (ADR)
+│   │   ├── README.md                   # Log índice de decisiones tomadas (ADR Log)
+│   │   ├── ADR-01.md                   # ADRs individuales (versiones vigentes y superadas)
+│   │   └── ...
 │   ├── kickoff_po_root_cause.html      # Especificaciones del proyecto (mentor)
 │   ├── convenciones-issues.md          # Acuerdos de gestión del equipo
 │   └── plantillas-cli/                 # Borradores de issues para `gh`
@@ -60,7 +69,7 @@ El proyecto se estructura en **4 fases secuenciales**:
 * "Cargar el CSV, limpiar timestamps, validar datos. EDA: cuantos POs tienen delay? Distribucion por vendor/DC."
 
 * **Carga y Parseo**: Uso de `pandas` con `errors='coerce'` para evitar rupturas por valores nulos (dejándolos como `NaT`).
-* **Auditoría de Calidad**: Detección de tiempos invertidos (ej. `CHECKIN_DT` < `TRAILER_ARRIVE_DT`) marcados bajo la flag `_ts_issue` sin eliminar registros.
+* **Auditoría de Calidad**: Detección de tiempos invertidos (ej. `CHECKIN_DT` < `TRAILER_ARRIVE_DT`) marcados bajo la flag `_ts_issue` sin elimin registros.
 * **Cálculo de Métricas Clave (Lead Times)**:
   * `yard_wait` = `CHECKIN` - `TRAILER_ARRIVE`
   * `dock_time` = `CHECKOUT` - `CHECKIN`
