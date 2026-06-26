@@ -1,0 +1,344 @@
+/* ── Ocultar elementos por defecto de Streamlit (Footer, Menú, Header) ── */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+
+/* ── Tipografía y colores base ─────────────────────────────────────────── */
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background-color: #f8f9fa;
+    color: #333;
+}
+
+h1, h2, h3 {
+    color: #1d3557;
+    font-weight: 600;
+}
+
+/* ── Header de página ──────────────────────────────────────────────────── */
+.page-header {
+    margin-bottom: 2rem;
+    padding: 1.5rem 0;
+}
+
+.page-header h1 {
+    color: #2d3748;
+    font-size: 2.25rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+/* ── Badges de Severidad ───────────────────────────────────────────────── */
+.badge-high {
+    background-color: rgba(230, 57, 70, 0.15);
+    color: #E63946;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.badge-medium {
+    background-color: rgba(244, 162, 97, 0.15);
+    color: #d97706;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+.badge-low {
+    background-color: rgba(42, 157, 143, 0.15);
+    color: #2A9D8F;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.85em;
+    font-weight: 600;
+}
+
+/* ── Tarjetas personalizadas (si usas HTML custom) ─────────────────────── */
+.custom-card {
+    background-color: #ffffff;
+    padding: 1.5rem;
+    border-radius: 0.75rem;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    border: 1px solid #e9ecef;
+    margin-bottom: 1rem;
+}
+
+/* ── Ajustes de tablas ─────────────────────────────────────────────────── */
+[data-testid="stDataFrame"] {
+    border-radius: 0.5rem;
+    overflow: hidden;
+}
+
+/* ── Sección de Dashboards ─────────────────────────────────────────────── */
+.dashboards-section {
+    margin: 2rem 0;
+}
+
+.dashboards-section h2 {
+    color: #2d3748;
+    font-size: 1.75rem;
+    margin-bottom: 0.5rem;
+}
+
+/* ── Dashboard cards ───────────────────────────────────────────────────── */
+.dashboard-card {
+    background-color: #ffffff;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e2e8f0;
+    min-height: 220px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.dashboard-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.dashboard-card h3 {
+    margin-top: 0;
+    margin-bottom: 0.5rem;
+    color: #2d3748;
+    font-size: 1.25rem;
+    font-weight: 600;
+}
+
+.dashboard-card h4 {
+    margin-top: 0;
+    margin-bottom: 1rem;
+    color: #4a5568;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.dashboard-card p {
+    color: #4a5568;
+    font-size: 0.95rem;
+    line-height: 1.6;
+    margin: 0;
+}
+
+/* ── Botones de dashboard ──────────────────────────────────────────────── */
+.stButton > button {
+    width: 100%;
+    background-color: #4299e1;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 0.75rem 1.5rem;
+    font-weight: 600;
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+    margin-top: 0.5rem;
+}
+
+.stButton > button:hover {
+    background-color: #3182ce;
+    box-shadow: 0 4px 12px rgba(66, 153, 225, 0.3);
+    transform: translateY(-1px);
+}
+
+/* Alinear botones al mismo nivel */
+.stButton {
+    margin-top: 0;
+}
+
+/* ── Footer simple ─────────────────────────────────────────────────────── */
+.simple-footer {
+    text-align: center;
+    padding: 2rem;
+    color: #718096;
+    font-size: 0.875rem;
+    margin-top: 3rem;
+}
+
+.simple-footer p {
+    margin: 0.25rem 0;
+}
+
+/* ── Responsive adjustments ────────────────────────────────────────────── */
+@media (max-width: 768px) {
+    .page-header h1 {
+        font-size: 1.75rem;
+    }
+    
+    .dashboard-card {
+        min-height: auto;
+        margin-bottom: 1.5rem;
+    }
+}
+
+/* Alinear tarjetas de dashboards */
+.dashboard-card {
+    display: flex;
+    flex-direction: column;
+    min-height: 280px;
+    height: 100%;
+}
+
+.dashboard-card p {
+    flex-grow: 1;
+}
+
+/* Alinear botones al fondo de las tarjetas */
+.stButton {
+    margin-top: auto;
+}
+
+
+/* ── Navbar superior ─────────────────────────────────────────────────────── */
+.top-navbar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 2rem;
+    z-index: 1000;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.navbar-brand {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.navbar-title {
+    color: #ffffff;
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin: 0;
+    letter-spacing: 0.3px;
+}
+
+.navbar-links {
+    display: flex;
+    gap: 0.75rem;
+    align-items: center;
+}
+
+.nav-link {
+    color: #e2e8f0;
+    text-decoration: none;
+    padding: 0.6rem 1.25rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    background-color: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.nav-link:hover {
+    background-color: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.nav-link.active {
+    background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
+    color: #ffffff;
+    font-weight: 700;
+    box-shadow: 0 4px 12px rgba(66, 153, 225, 0.4);
+    border-color: transparent;
+}
+
+/* Ajustar el contenido para que no quede debajo del navbar */
+.main .block-container {
+    padding-top: 80px !important;
+}
+
+/* Ocultar el header default de Streamlit si aparece */
+header[data-testid="stHeader"] {
+    display: none;
+}
+
+/* ── Cards de Análisis LLM ──────────────────────────────────────────────── */
+.llm-card {
+    background-color: #ffffff;
+    border-radius: 8px;
+    padding: 1.25rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    border: 1px solid #e2e8f0;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.llm-card:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+.llm-icon {
+    font-size: 2rem;
+    margin-bottom: 0.75rem;
+}
+
+.llm-card h4 {
+    margin: 0 0 0.75rem 0;
+    color: #2d3748;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.llm-text {
+    color: #4a5568;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    margin: 0;
+    flex-grow: 1;
+    overflow-y: auto;
+    max-height: 120px;
+}
+
+.llm-badge {
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-weight: 700;
+    text-align: center;
+    margin: 0;
+    font-size: 1rem;
+}
+
+/* Responsive para cards LLM */
+@media (max-width: 1200px) {
+    .llm-card {
+        margin-bottom: 1rem;
+    }
+}
+
+/* Ajustar scrollbar en texto largo */
+.llm-text::-webkit-scrollbar {
+    width: 6px;
+}
+
+.llm-text::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+.llm-text::-webkit-scrollbar-thumb {
+    background: #888;
+    border-radius: 3px;
+}
+
+.llm-text::-webkit-scrollbar-thumb:hover {
+    background: #555;
+}
