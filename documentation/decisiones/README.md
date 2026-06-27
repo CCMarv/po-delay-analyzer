@@ -24,6 +24,7 @@ Tras la aplicación rigurosa de los criterios de los ADRs vigentes (especialment
 | [ADR-06b](ADR-06b.md) | Umbral propio de vendor: Configuración definitiva de 24h | 🟢 Vigente | Consulta R2 (2026-06-18), Discussion #57, PRs #62, #66, #64 |
 | [ADR-07](ADR-07.md) | Taxonomía de Indeterminado | 🟢 Vigente | Consulta R2 (2026-06-18), Discussion #57, PR #62 |
 | [ADR-08](ADR-08.md) | `stage_modifiers`: concebido y eliminado | 📘 Superado | PR #74 |
+| [ADR-09](ARD-09.md) | User personas como criterio de diseño de la Fase 4 | 🔵 Borrador | Sync mentores 2026-06-26, Issues #102/#103, `../user_personas.md` |
 
 ## Notas de Proceso e Integración
 *   **Estándar de Documentación:** Todo el registro técnico del proyecto se rige bajo la plantilla **MADR (Markdown Architecture Decision Records)**, elegida formalmente por el equipo tras el debate documentado en la discusión [#79](#).
