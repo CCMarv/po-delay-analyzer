@@ -115,7 +115,9 @@ La corrida produce dos artefactos en `../data/processed/`:
 
 Es el insumo de trabajo y auditoría (incluye, p. ej., la `severity` determinística de F2 junto a la `llm_severidad`). También se generan guardados parciales cada 50 POs (configurable vía `DEFAULT_SAVE_EVERY`) para no perder progreso en corridas largas.
 
-**2. CSV-entregable** — `po_output.csv`, el artefacto del contrato que define el mentor (kickoff §09 / README §9). Tiene **exactamente cinco columnas**, en este orden:
+**2. CSV-entregable** — `po_output.csv`, el artefacto del **contrato F3→F4** (#100): el único input de Fase 4. Tiene dos bloques de columnas, en este orden.
+
+**Bloque 1 — Contrato del mentor (las 5 columnas que evalúa, primero y en orden):**
 
 | Columna | Origen | Nota |
 |---|---|---|
@@ -125,7 +127,17 @@ Es el insumo de trabajo y auditoría (incluye, p. ej., la `severity` determinís
 | `explanation` | `llm_causa_raiz` (F3) | explicación en lenguaje natural |
 | `action` | `llm_accion_recomendada` (F3) | acción concreta con responsable |
 
-**Alcance de filas:** solo los **POs tardíos** (`delay_days_calc > 0`) — los que el LLM explica y los que la app de Fase 4 ofrece en el selector. Los on-time no entran.
+**Bloque 2 — Soporte para la app de Fase 4 (para que LEA, no recompute):**
+
+| Grupo | Columnas | Para qué |
+|---|---|---|
+| Timeline | `PO_DT, STA_DT, APPROVED_DT, TRAILER_ARRIVE_DT, CHECKIN_DT, CHECKOUT_DT, RECPT_DT` | dibujar el recorrido del PO (selector, #102) |
+| Agravantes | `HOT_PO_FLAG, is_short_ship` | marcar hot PO / short ship en la vista |
+| Concordancia | `REASON_DSC, llm_coincide_con_reason` | mostrar si el diagnóstico coincide con la anotación humana |
+
+**Alcance de filas:** solo los **POs tardíos** (`delay_days_calc > 0`) — los que el LLM explica y los que la app ofrece en el selector. Los on-time no entran.
+
+**Regla del contrato F3→F4:** Fase 4 **lee** `po_output.csv` y nada más; **no recomputa** las reglas de F1/F2 ni vuelve a llamar al LLM. Por eso el artefacto trae ya el timeline y los agravantes: todo lo que la app necesita está en el CSV. (Una demo opcional de "regenerar este PO en vivo" sería la única excepción y va por separado del flujo principal.) El contrato está blindado por `tests/test_handoff_f3.py`.
 
 El `po_output.csv` del entregable se genera con el backend oficial, **OpenAI**:
 

@@ -25,6 +25,7 @@ from llm_integration import (
     save_llm_output,
     export_deliverable_csv,
     _DELIVERABLE_COLUMNS,
+    _MENTOR_COLUMNS,
 )
 
 
@@ -223,27 +224,54 @@ def test_add_llm_explanations_es_api_sin_cli():
 # ════════════════════════════════════════════════════════════════════════════
 def _df_con_llm() -> pd.DataFrame:
     """DataFrame mínimo con la clasificación de F2 y las columnas llm_* de F3:
-    dos POs tardíos y uno on-time (que NO debe salir al entregable)."""
-    return pd.DataFrame({
+    dos POs tardíos y uno on-time (que NO debe salir al entregable). Incluye las
+    columnas de soporte (timeline, agravantes, concordancia) del artefacto ampliado."""
+    base = {
         "PO_NBR": ["PO-1", "PO-2", "PO-ONTIME"],
         "stage_primary": ["Vendor", "Carrier", "On-Time"],
         "delay_days_calc": [4.0, 1.5, 0.0],
         "llm_severidad": ["HIGH", "MEDIUM", ""],
         "llm_causa_raiz": ["cita aprobada tarde", "tránsito lento", ""],
         "llm_accion_recomendada": ["contactar vendor", "escalar carrier", ""],
-        # columnas internas que NO deben aparecer en el entregable:
+        # soporte: agravantes y concordancia
+        "HOT_PO_FLAG": [1, 0, 0],
+        "is_short_ship": [False, True, False],
+        "REASON_DSC": ["Vendor late appt", "Carrier delay", ""],
+        "llm_coincide_con_reason": [True, False, False],
+        # columna interna que NO debe aparecer en el entregable:
         "severity": ["HIGH", "LOW", ""],
         "llm_confianza": [0.9, 0.5, 0.0],
-    })
+    }
+    # soporte: timeline (7 timestamps)
+    for col in ("PO_DT", "STA_DT", "APPROVED_DT", "TRAILER_ARRIVE_DT",
+                "CHECKIN_DT", "CHECKOUT_DT", "RECPT_DT"):
+        base[col] = ["2024-01-05 00:00", "2024-01-06 00:00", "2024-01-04 00:00"]
+    return pd.DataFrame(base)
 
 
 def test_export_deliverable_columnas_exactas_y_orden(tmp_path):
     out_path = tmp_path / "po_output.csv"
     export_deliverable_csv(_df_con_llm(), out_path)
     releido = pd.read_csv(out_path)
-    # Las 5 columnas canónicas del mentor, en orden, y nada más.
+    # El artefacto trae las columnas declaradas, en orden.
     assert list(releido.columns) == _DELIVERABLE_COLUMNS
-    assert _DELIVERABLE_COLUMNS == ["PO_NBR", "stage", "severity", "explanation", "action"]
+    # Las 5 del mentor van PRIMERO y en orden (contrato canónico inamovible).
+    assert list(releido.columns[:5]) == _MENTOR_COLUMNS
+    assert _MENTOR_COLUMNS == ["PO_NBR", "stage", "severity", "explanation", "action"]
+    # Columnas internas que NO deben filtrarse al artefacto (no aportan a la app).
+    assert "llm_confianza" not in releido.columns
+    assert "stage_primary" not in releido.columns   # se canoniza a 'stage'
+
+
+def test_export_deliverable_incluye_soporte_app(tmp_path):
+    # El artefacto ampliado (contrato F3→F4 #100) trae timeline + agravantes +
+    # concordancia para que la app NO recompute.
+    out_path = tmp_path / "po_output.csv"
+    export_deliverable_csv(_df_con_llm(), out_path)
+    releido = pd.read_csv(out_path)
+    for col in ("PO_DT", "RECPT_DT", "HOT_PO_FLAG", "is_short_ship",
+                "REASON_DSC", "llm_coincide_con_reason"):
+        assert col in releido.columns
 
 
 def test_export_deliverable_solo_tardios(tmp_path):
