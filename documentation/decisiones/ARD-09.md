@@ -1,6 +1,6 @@
 # ADR-09 · User personas como criterio de diseño de la Fase 4
 
-* **Estatus:** 🔵 **BORRADOR** (pendiente de cierre por el equipo)
+* **Estatus:** 🟢 **VIGENTE** (cerrado 2026-06-27)
 * **Contexto Técnico:** Diseño de la Fase 4 (Demo + aplicación) / Relevancia de negocio
 * **Referencias:** Recomendación de mentores (sync 2026-06-26); Issues #102, #103; contrato de handoff #100; `../user_personas.md`
 
@@ -25,3 +25,6 @@ Se elige la **Opción 1**. Las dos personas (Diego, Ravi), definidas por modo de
 ## Consecuencias
 * **Positivas:** Trazabilidad persona→vista→issue (#102/#103) y persona→columnas del artefacto. Cubre directamente la rúbrica *Business Relevance & Stakeholder Insight*. Da un criterio para no retrabajar la entrada de Fase 4 a ciegas.
 * **Negativas:** Reconoce explícitamente que el placeholder por entidad se rediseñará; el puente drill-down Ravi→Diego queda como diseño pendiente.
+
+## Cierre (2026-06-27)
+Ratificada como criterio de diseño de la Fase 4: la vista individual (#102) responde a Diego (consulta de un PO, consume la prosa del LLM) y la vista agregada (#103) a Ravi (reporte por lote, consume métricas y drill-down). El contrato F3→F4 (#100) ya cerró, de modo que el rediseño de la app contra estas personas —y la migración de su entrada al artefacto `po_output.csv`— procede sin esperar más. El detalle de las personas vive en `../user_personas.md`. La decisión pasa de Borrador a Vigente.
