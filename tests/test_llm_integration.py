@@ -15,8 +15,15 @@ llm_integration se importa gracias al pythonpath de pyproject.toml (03_llm_integ
 y al insert de red de seguridad de conftest.py.
 """
 import pandas as pd
+import pytest
 
-from llm_integration import build_prompt, _parse_llm_json
+import llm_integration
+from llm_integration import (
+    build_prompt,
+    _parse_llm_json,
+    prepare_classified_df,
+    save_llm_output,
+)
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -144,3 +151,66 @@ def test_parse_json_defaults_cuando_faltan_campos():
     assert out["severidad"] == "MEDIUM"       # default
     assert out["coincide_con_reason_code"] is False
     assert out["confianza"] == 0.5            # default
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# C. Orquestación separada del CLI (#90) — sin red
+# ════════════════════════════════════════════════════════════════════════════
+# Verifican que la lógica que se sacó de main() es invocable como API y que su
+# comportamiento (lectura del handoff, persistencia) no depende del CLI.
+
+def test_prepare_classified_df_lee_handoff_csv(tmp_path):
+    # Rama from_csv=True: prepare_classified_df relee el CSV de F2 tal cual, sin
+    # recomputar. Se inyecta repo_root al tmp para no tocar data/processed real.
+    # El CSV de F2 real trae las 13 columnas de fecha (que se reparsean al leer);
+    # el fixture las incluye para reflejar el artefacto real, no uno recortado.
+    from pipeline_core import _DATE_INPUT_COLUMNS
+
+    processed = tmp_path / "data" / "processed"
+    processed.mkdir(parents=True)
+    df_in = pd.DataFrame({
+        "PO_NBR": ["PO-A", "PO-B"],
+        "stage_primary": ["Carrier", "Vendor"],
+        "delay_days_calc": [2.0, 5.0],
+    })
+    for col in _DATE_INPUT_COLUMNS:
+        df_in[col] = ["2024-01-05 00:00", "2024-01-06 00:00"]
+    df_in.to_csv(processed / "df_classified.csv", index=False)
+
+    out = prepare_classified_df(from_csv=True, repo_root=tmp_path)
+
+    assert list(out["PO_NBR"]) == ["PO-A", "PO-B"]
+    assert list(out["stage_primary"]) == ["Carrier", "Vendor"]
+    # Las columnas de fecha quedan reparseadas a datetime (no strings).
+    assert pd.api.types.is_datetime64_any_dtype(out["PO_DT"])
+
+
+def test_prepare_classified_df_sin_crudo_lanza_filenotfound(tmp_path):
+    # from_csv=False (recomputar) pero el CSV crudo no existe en el repo_root
+    # inyectado → FileNotFoundError explícito (lo que main() traduce a exit 1).
+    with pytest.raises(FileNotFoundError):
+        prepare_classified_df(from_csv=False, repo_root=tmp_path)
+
+
+def test_save_llm_output_roundtrip(tmp_path):
+    # save_llm_output persiste el DataFrame completo y se relee idéntico (contrato
+    # interno df_with_llm_*.csv). Sin red, sin CLI.
+    out_path = tmp_path / "df_with_llm_test.csv"
+    df = pd.DataFrame({
+        "PO_NBR": ["PO-1", "PO-2"],
+        "llm_causa_raiz": ["causa uno", "causa dos"],
+        "llm_severidad": ["HIGH", "LOW"],
+    })
+    save_llm_output(df, out_path)
+
+    assert out_path.exists()
+    releido = pd.read_csv(out_path)
+    pd.testing.assert_frame_equal(releido, df)
+
+
+def test_add_llm_explanations_es_api_sin_cli():
+    # La integración LLM se importa y referencia como función pública, sin pasar
+    # por main()/argparse. (Smoke: el refactor de #90 no la dejó acoplada al CLI.)
+    assert callable(llm_integration.add_llm_explanations)
+    assert callable(llm_integration.prepare_classified_df)
+    assert callable(llm_integration.save_llm_output)
