@@ -1,6 +1,6 @@
 {
   "version": 3,
-  "_status": "umbrales del mentor confirmados (06-16): carrier 8h / yard 4h / dock 6h. Vendor lleva umbral propio vendor_gap_hrs=24h (consulta mentor 06-17): el push (APPROVED−STA) solo cuenta como exceso por encima de 24h, igual que carrier/DC — corrige la asimetría de construcción (vendor disparaba con cualquier push). 24h = un día completo, grano natural del dato (STA anclado a medianoche) y hueco vacío de la distribución; ver data/_local_notes/analisis-umbral-vendor.md. El argmax de _etapa_primaria mide EXCESO sobre estos thresholds. severity_delay_days/severity_low_days fijan los cortes de severidad (#48).",
+  "_status": "umbrales del mentor confirmados (06-16): carrier 8h / yard 4h / dock 6h. Vendor lleva umbral propio vendor_gap_hrs=24h (consulta mentor 06-17): el push (APPROVED−STA) solo cuenta como exceso por encima de 24h, igual que carrier/DC — corrige la asimetría de construcción (vendor disparaba con cualquier push). 24h = un día completo, grano natural del dato (STA anclado a medianoche) y hueco vacío de la distribución; ver documentation/decisiones/ARD-06b.md. El argmax de _etapa_primaria mide EXCESO sobre estos thresholds. severity_delay_days/severity_low_days fijan los cortes de severidad (#48).",
   "thresholds": {
     "vendor_gap_hrs":       { "value": 24.0, "comparison": "gt", "metric": "gap_vendor_hrs" },
     "yard_wait_hrs":        { "value": 4.0, "comparison": "gt", "metric": "yard_wait_calc_hrs" },

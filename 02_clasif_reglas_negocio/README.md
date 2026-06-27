@@ -174,7 +174,7 @@ es la unidad en que el problema está expresado; (2) cae en la **zona vacía** d
 → robusto a perturbaciones; (3) no fuerza el reparto hacia el ~20% del kickoff (que el mentor
 desaconsejó). Los POs que dejan de ser Vendor al subir el umbral migran **todos a
 `sin_causa_dominante`, ninguno a Carrier/DC** → el umbral no reatribuye, solo separa los push
-difusos. Detalle del análisis: `data/_local_notes/analisis-umbral-vendor.md`.
+difusos. Detalle del análisis: [`documentation/decisiones/ARD-06b.md`](../documentation/decisiones/ARD-06b.md).
 
 ### 5.4 Reason agreement (#47): la tesis del proyecto
 
