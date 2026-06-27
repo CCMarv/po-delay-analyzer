@@ -90,7 +90,7 @@ def _etapa_primaria(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
          culpar al vendor. Valor 24h: el push se mide en días porque STA_DT está anclado
          a medianoche (sin resolución sub-día), así que 24h = un día completo es el GRANO
          NATURAL del dato; además cae en un hueco vacío de la distribución (0 POs entre 6
-         y 18h) → robusto. Análisis de sensibilidad: data/_local_notes/analisis-umbral-vendor.md.
+         y 18h) → robusto. Análisis de sensibilidad: documentation/decisiones/ARD-06b.md.
          La señal directa sigue siendo mejor que el residual: no asume tramos aditivos ni
          excluyentes, y funciona en los 27 POs SIN hora de tráiler (reemplaza #57).
       3. Etapa primaria = argmax de {VENDOR, CARRIER, DC}. Si todos 0 y no es tardío
