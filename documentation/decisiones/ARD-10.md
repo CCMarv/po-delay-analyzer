@@ -1,6 +1,6 @@
 # Severidad híbrida: el LLM la emite, la regla de Fase 2 la audita
 
-* **Estatus:** 🔵 **BORRADOR** (pendiente de cierre por el equipo)
+* **Estatus:** 🟢 **VIGENTE** (cerrado 2026-06-27)
 * **Contexto Técnico:** Fase 3 / Integración LLM — fuente de la severidad en el output del entregable
 * **Referencias:** Issue #92, #93, #97, #98; kickoff (`documentation/kickoff_po_root_cause.html`, secciones 03 y 08); README mentor §6 (Severity Ranking >95%); `02_clasif_reglas_negocio/classifier_core.py` (`_severidad`); ADR-01 (principio determinístico)
 
@@ -36,3 +36,6 @@ Elegimos la **Opción C (híbrida)**.
 ## Consecuencias
 * **Positivas:** El entregable cumple el kickoff (severidad como output del LLM) sin perder auditabilidad: la regla de Fase 2 sigue presente como control y da contenido real a la métrica >95% (mide si el LLM respeta la regla, no la da por sentada). La discrepancia LLM-vs-regla se vuelve un hallazgo reportable, alineado con el espíritu del proyecto ("dónde el AI coincide o no con la referencia").
 * **Negativas:** El output arrastra dos columnas de severidad con roles distintos, lo que obliga a documentar con claridad cuál es la oficial y cuál la auditora para no confundir a quien consuma el dato aguas abajo (#97, #100). Si el LLM viola la regla en demasiados casos, el >95% lo expondrá y habrá que iterar el prompt (#93) o reportarlo como límite del modelo.
+
+## Cierre (2026-06-27)
+Verificado que la implementación materializa la decisión: el CSV-entregable mapea `severity ← llm_severidad` (`03_llm_integration/llm_integration.py`, `export_deliverable_csv`); la regla determinística de Fase 2 (`02_clasif_reglas_negocio/classifier_core.py`, `_severidad`, `flag_hot_late & delay_days_calc > 3.0`) se conserva como columna de auditoría fuera del entregable; y el umbral del prompt usa `> 3 días`, conforme al kickoff (§08) y al README (§6), no el `> 7 días` del andamiaje inicial. Con los tres compromisos cumplidos, la decisión pasa de Borrador a Vigente.
