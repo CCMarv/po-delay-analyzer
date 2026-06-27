@@ -122,10 +122,10 @@ def build_prompt(row: pd.Series) -> str:
         '  "coincide_con_reason_code": true o false,',
         '  "confianza": 0.0 a 1.0',
         "}\n",
-        "Reglas de severidad:",
-        "- HIGH: Hot PO con retraso, O retraso > 7 días, O short ship + retraso",
+        "Reglas de severidad (umbral del mentor):",
+        "- HIGH: Hot PO con retraso > 3 días, O short ship con retraso",
         "- MEDIUM: Retraso > 0 días sin agravantes",
-        "- LOW: Sin retraso\n",
+        "- LOW: Borderline (casi a tiempo, retraso < 1 día)\n",
         "Regla para coincide_con_reason_code:",
         "- true si tu causa_raiz coincide con el REASON_DSC del DC",
         "- false si discrepas"
