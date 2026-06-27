@@ -26,6 +26,7 @@ Tras la aplicación rigurosa de los criterios de los ADRs vigentes (especialment
 | [ADR-08](ADR-08.md) | `stage_modifiers`: concebido y eliminado | 📘 Superado | PR #74 |
 | [ADR-09](ARD-09.md) | User personas como criterio de diseño de la Fase 4 | 🟢 Vigente | Sync mentores 2026-06-26, Issues #102/#103, `../user_personas.md` |
 | [ADR-10](ARD-10.md) | Severidad híbrida: el LLM la emite, la regla de Fase 2 la audita | 🟢 Vigente | Issue #92, #93, kickoff §03/§08, `_severidad` |
+| [ADR-11](ARD-11.md) | Manejo de secretos y seguridad de API keys (multi-proveedor LLM) | 🔵 Borrador | Best Practices OpenAI, `llm_integration.py`, `.env.example`, `.gitignore` |
 
 ## Notas de Proceso e Integración
 *   **Estándar de Documentación:** Todo el registro técnico del proyecto se rige bajo la plantilla **MADR (Markdown Architecture Decision Records)**, elegida formalmente por el equipo tras el debate documentado en la discusión [#79](#).
