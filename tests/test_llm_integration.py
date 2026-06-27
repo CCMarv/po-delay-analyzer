@@ -23,6 +23,8 @@ from llm_integration import (
     _parse_llm_json,
     prepare_classified_df,
     save_llm_output,
+    export_deliverable_csv,
+    _DELIVERABLE_COLUMNS,
 )
 
 
@@ -214,3 +216,51 @@ def test_add_llm_explanations_es_api_sin_cli():
     assert callable(llm_integration.add_llm_explanations)
     assert callable(llm_integration.prepare_classified_df)
     assert callable(llm_integration.save_llm_output)
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# D. CSV-entregable del mentor (#97) — 5 columnas exactas, solo tardíos
+# ════════════════════════════════════════════════════════════════════════════
+def _df_con_llm() -> pd.DataFrame:
+    """DataFrame mínimo con la clasificación de F2 y las columnas llm_* de F3:
+    dos POs tardíos y uno on-time (que NO debe salir al entregable)."""
+    return pd.DataFrame({
+        "PO_NBR": ["PO-1", "PO-2", "PO-ONTIME"],
+        "stage_primary": ["Vendor", "Carrier", "On-Time"],
+        "delay_days_calc": [4.0, 1.5, 0.0],
+        "llm_severidad": ["HIGH", "MEDIUM", ""],
+        "llm_causa_raiz": ["cita aprobada tarde", "tránsito lento", ""],
+        "llm_accion_recomendada": ["contactar vendor", "escalar carrier", ""],
+        # columnas internas que NO deben aparecer en el entregable:
+        "severity": ["HIGH", "LOW", ""],
+        "llm_confianza": [0.9, 0.5, 0.0],
+    })
+
+
+def test_export_deliverable_columnas_exactas_y_orden(tmp_path):
+    out_path = tmp_path / "po_output.csv"
+    export_deliverable_csv(_df_con_llm(), out_path)
+    releido = pd.read_csv(out_path)
+    # Las 5 columnas canónicas del mentor, en orden, y nada más.
+    assert list(releido.columns) == _DELIVERABLE_COLUMNS
+    assert _DELIVERABLE_COLUMNS == ["PO_NBR", "stage", "severity", "explanation", "action"]
+
+
+def test_export_deliverable_solo_tardios(tmp_path):
+    out_path = tmp_path / "po_output.csv"
+    out = export_deliverable_csv(_df_con_llm(), out_path)
+    # El on-time (delay=0) se excluye: solo los 2 tardíos.
+    assert len(out) == 2
+    assert list(out["PO_NBR"]) == ["PO-1", "PO-2"]
+    assert "PO-ONTIME" not in set(out["PO_NBR"])
+
+
+def test_export_deliverable_severity_es_la_del_llm(tmp_path):
+    # ADR-10: la severity oficial del entregable es la del LLM (llm_severidad),
+    # no la determinística de F2. El fixture las hace distinguibles (PO-2: LLM
+    # dice MEDIUM, F2 dice LOW) para comprobar de cuál se toma.
+    out_path = tmp_path / "po_output.csv"
+    out = export_deliverable_csv(_df_con_llm(), out_path)
+    assert list(out["severity"]) == ["HIGH", "MEDIUM"]      # = llm_severidad
+    # dominio válido
+    assert set(out["severity"]).issubset({"HIGH", "MEDIUM", "LOW"})

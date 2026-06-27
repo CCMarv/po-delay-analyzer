@@ -18,9 +18,12 @@ Toma el DataFrame ya limpio y clasificado (fases 1 y 2), filtra los POs con retr
 
 | Backend | Motor | Requiere API key | Costo |
 |---|---|---|---|
+| `openai` | OpenAI API (`gpt-4o-mini`) | Sí | De pago — **backend oficial del entregable** |
 | `local` | Qwen 2.5:7B vía Ollama | No | Gratis (corre en tu máquina) |
 | `claude` | Claude (Anthropic API) | Sí | De pago |
 | `deepseek` | DeepSeek API | Sí | De pago |
+
+El `po_output.csv` del entregable se genera con `--backend openai`; los demás son alternativas (desarrollo local con `local`, o comparación con `claude`/`deepseek`).
 
 ## Requisitos previos
 
@@ -102,13 +105,33 @@ python llm_integration.py --mode full --backend claude
 
 ## Salida
 
-Los resultados se guardan como CSV en `../data/processed/`, con nombre según el modo y backend usados:
+La corrida produce dos artefactos en `../data/processed/`:
+
+**1. Artefacto interno** — el DataFrame completo con todas las columnas (las de F1/F2 más las `llm_*`), con nombre según modo y backend:
 
 - `df_with_llm_test_{backend}.csv`
 - `df_with_llm_full_{backend}.csv`
 - `df_with_llm_{limit}_{backend}.csv`
 
-También se generan guardados parciales cada 50 POs (configurable vía `DEFAULT_SAVE_EVERY` en el código) para no perder progreso si el proceso se interrumpe en corridas largas.
+Es el insumo de trabajo y auditoría (incluye, p. ej., la `severity` determinística de F2 junto a la `llm_severidad`). También se generan guardados parciales cada 50 POs (configurable vía `DEFAULT_SAVE_EVERY`) para no perder progreso en corridas largas.
+
+**2. CSV-entregable** — `po_output.csv`, el artefacto del contrato que define el mentor (kickoff §09 / README §9). Tiene **exactamente cinco columnas**, en este orden:
+
+| Columna | Origen | Nota |
+|---|---|---|
+| `PO_NBR` | `PO_NBR` | identidad |
+| `stage` | `stage_primary` (F2) | Vendor / Carrier / DC / Indeterminado |
+| `severity` | `llm_severidad` (F3) | la severidad **oficial es la del LLM** (ver [ADR-10](../documentation/decisiones/ARD-10.md)); la determinística de F2 queda como auditoría en el artefacto interno, no aquí |
+| `explanation` | `llm_causa_raiz` (F3) | explicación en lenguaje natural |
+| `action` | `llm_accion_recomendada` (F3) | acción concreta con responsable |
+
+**Alcance de filas:** solo los **POs tardíos** (`delay_days_calc > 0`) — los que el LLM explica y los que la app de Fase 4 ofrece en el selector. Los on-time no entran.
+
+El `po_output.csv` del entregable se genera con el backend oficial, **OpenAI**:
+
+```bash
+python llm_integration.py --mode full --backend openai
+```
 
 ## Manejo de errores
 
