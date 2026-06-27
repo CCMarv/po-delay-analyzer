@@ -33,7 +33,7 @@ El `po_output.csv` del entregable se genera con `--backend openai`; los demás s
   ```bash
   ollama pull qwen2.5:7b
   ```
-- Si usas `--backend claude` o `--backend deepseek`: una API key válida del proveedor correspondiente
+- Si usas `--backend claude`, `--backend openai` o `--backend deepseek`: una API key válida del proveedor correspondiente
 
 ## Configuración de API keys
 
@@ -43,9 +43,10 @@ Las keys **nunca** se escriben en el código ni se pasan como argumento en produ
    ```bash
    cp .env.example .env
    ```
-2. Edita `.env` con tus keys reales:
+2. Edita `.env` con tus keys reales (solo las del backend que vayas a usar):
    ```
    ANTHROPIC_API_KEY=sk-ant-...
+   OPENAI_API_KEY=sk-...
    DEEPSEEK_API_KEY=sk-...
    OLLAMA_URL=http://localhost:11434/api/generate
    ```
@@ -55,6 +56,11 @@ Las keys **nunca** se escriben en el código ni se pasan como argumento en produ
    ```
 
 El script carga estas variables automáticamente con `load_dotenv()`, así que no necesitas pasar `--api-key` en la terminal una vez configurado el `.env`.
+
+Cada persona usa su **propia** key (no se comparten; el nombre de la variable es estándar por
+proveedor). Ante sospecha de fuga, rotar la key de inmediato en el panel del proveedor y avisar
+al equipo. El detalle de la política de secretos está en
+[ADR-11](../documentation/decisiones/ARD-11.md).
 
 ## Uso
 
