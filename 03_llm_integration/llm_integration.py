@@ -671,6 +671,96 @@ def add_llm_explanations(
 
 
 # ============================================================
+# Orquestación del pipeline (handoff F2 → F3)
+# ============================================================
+
+def _ensure_pipeline_on_path() -> None:
+    """
+    Inserta los directorios de Fase 1 y 2 en sys.path para importar sus *_core.
+
+    Se hace en runtime (no al top-level) porque las rutas dependen de __file__,
+    que solo existe en tiempo de ejecución.
+    """
+    repo_root = Path(__file__).resolve().parent.parent
+    for sub in ("01_data_pipeline_and_eda", "02_clasif_reglas_negocio"):
+        sub_path = str(repo_root / sub)
+        if sub_path not in sys.path:
+            sys.path.insert(0, sub_path)
+
+
+def prepare_classified_df(
+    from_csv: bool = False,
+    repo_root: Optional[Path] = None,
+) -> pd.DataFrame:
+    """
+    Prepara el DataFrame clasificado que consume la integración LLM (handoff F2→F3).
+
+    Por DEFAULT recomputa la cadena completa (clean -> classify) — nunca se sirven
+    datos rancios por defecto. La lectura del handoff de F2 (df_classified.csv) es
+    OPT-IN: si `from_csv` es True y el CSV existe, se lee reparseando las fechas
+    para que sea funcionalmente idéntico a lo que la cadena dejaría en memoria.
+
+    Args:
+        from_csv: Si True, intenta leer data/processed/df_classified.csv en vez de
+                  recomputar. Si el CSV no existe, recae en recomputar.
+        repo_root: Raíz del repo (para resolver rutas de data/). Por defecto se
+                   deduce de __file__; se inyecta en tests para no tocar data/ real.
+
+    Returns:
+        DataFrame con los POs ya clasificados (salida de classify_po_stages).
+
+    Raises:
+        FileNotFoundError: Si hay que recomputar y el CSV crudo no existe.
+    """
+    _ensure_pipeline_on_path()
+    from pipeline_core import clean_po_data, _DATE_INPUT_COLUMNS  # noqa: E402
+    from classifier_core import classify_po_stages  # noqa: E402
+
+    if repo_root is None:
+        repo_root = Path(__file__).resolve().parent.parent
+    classified_csv = repo_root / "data" / "processed" / "df_classified.csv"
+
+    if from_csv and classified_csv.exists():
+        df_classified = pd.read_csv(
+            classified_csv, low_memory=False, parse_dates=list(_DATE_INPUT_COLUMNS)
+        )
+        print(f"📂 Handoff F2 leído desde CSV (opt-in): {classified_csv}")
+        return df_classified
+
+    if from_csv:
+        print(f"⚠️ --from-csv pedido pero no existe {classified_csv}; se recomputa.")
+
+    csv_path = repo_root / "data" / "raw" / "po_root_cause_synthetic.csv"
+    if not csv_path.exists():
+        raise FileNotFoundError(f"CSV crudo no encontrado en {csv_path}")
+
+    print(f"📂 Cargando CSV: {csv_path}")
+    df_raw = pd.read_csv(csv_path, low_memory=False)
+
+    print("🔧 Ejecutando pipeline de limpieza...")
+    df_clean = clean_po_data(df_raw)
+
+    print("🔧 Ejecutando clasificador por etapa...")
+    return classify_po_stages(df_clean)
+
+
+def save_llm_output(df: pd.DataFrame, output_path: Union[str, Path]) -> None:
+    """
+    Persiste el DataFrame con las columnas LLM a CSV (artefacto interno de F3).
+
+    Es el guardado del DataFrame completo `df_with_llm_*.csv`. El CSV-entregable
+    de las cinco columnas del mentor (PO_NBR, stage, severity, explanation, action)
+    lo produce una función de export aparte (#97).
+
+    Args:
+        df: DataFrame con las columnas llm_* ya añadidas.
+        output_path: Ruta destino del CSV.
+    """
+    df.to_csv(output_path, index=False)
+    print(f"\n💾 Resultado guardado en: {output_path}")
+
+
+# ============================================================
 # Script principal
 # ============================================================
 
@@ -730,53 +820,21 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    # --------------------------------------------------------
-    # Configurar sys.path para imports locales del proyecto.
-    # Se hace aquí (y no al top-level) porque las rutas dependen
-    # de __file__, que solo está disponible en tiempo de ejecución.
-    # --------------------------------------------------------
-    repo_root = Path(__file__).resolve().parent.parent
-    for sub in ("01_data_pipeline_and_eda", "02_clasif_reglas_negocio"):
-        sub_path = str(repo_root / sub)
-        if sub_path not in sys.path:
-            sys.path.insert(0, sub_path)
-
-    from pipeline_core import clean_po_data, _DATE_INPUT_COLUMNS  # noqa: E402
-    from classifier_core import classify_po_stages  # noqa: E402
-
     print("=" * 60)
     print("Fase 3 — Integración con LLM (Producción)")
     print("=" * 60)
 
     # Origen de los datos clasificados: por DEFAULT se recomputa la cadena completa
     # (clean -> classify) — nunca se sirven datos rancios por defecto (H3). La lectura
-    # del handoff de F2 (df_classified.csv) es OPT-IN: --from-csv o env PO_USE_PREV_CSV.
-    # Si se pide y el CSV existe, se carga reparseando las fechas (texto en el CSV) para
-    # que sea funcionalmente idéntico a lo que la cadena dejaría en memoria.
+    # del handoff de F2 es OPT-IN: --from-csv o env PO_USE_PREV_CSV.
     from_csv = args.from_csv or bool(os.environ.get("PO_USE_PREV_CSV"))
-    classified_csv = repo_root / "data" / "processed" / "df_classified.csv"
+    try:
+        df_classified = prepare_classified_df(from_csv=from_csv)
+    except FileNotFoundError as e:
+        print(f"❌ {e}")
+        sys.exit(1)
 
-    if from_csv and classified_csv.exists():
-        df_classified = pd.read_csv(
-            classified_csv, low_memory=False, parse_dates=list(_DATE_INPUT_COLUMNS)
-        )
-        print(f"📂 Handoff F2 leído desde CSV (opt-in): {classified_csv}")
-    else:
-        if from_csv:
-            print(f"⚠️ --from-csv pedido pero no existe {classified_csv}; se recomputa.")
-        csv_path = repo_root / "data" / "raw" / "po_root_cause_synthetic.csv"
-        if not csv_path.exists():
-            print(f"❌ CSV no encontrado en {csv_path}")
-            sys.exit(1)
-
-        print(f"📂 Cargando CSV: {csv_path}")
-        df_raw = pd.read_csv(csv_path, low_memory=False)
-
-        print("🔧 Ejecutando pipeline de limpieza...")
-        df_clean = clean_po_data(df_raw)
-
-        print("🔧 Ejecutando clasificador por etapa...")
-        df_classified = classify_po_stages(df_clean)
+    repo_root = Path(__file__).resolve().parent.parent
 
     # Resolver API key según el backend elegido
     claude_api_key = args.api_key if args.backend == "claude" else None
@@ -824,9 +882,8 @@ def main() -> None:
         output_path=str(output_path)
     )
 
-    # Guardar resultado final
-    df_with_llm.to_csv(output_path, index=False)
-    print(f"\n💾 Resultado guardado en: {output_path}")
+    # Guardar resultado final (artefacto interno df_with_llm_*.csv)
+    save_llm_output(df_with_llm, output_path)
 
     # Estadísticas finales
     total_delayed = (df_with_llm['delay_days_calc'] > 0).sum()
