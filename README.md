@@ -26,6 +26,8 @@ El repositorio está organizado siguiendo el orden cronológico de las cuatro et
 │   │   ├── ADR-01.md                   # ADRs individuales (versiones vigentes y superadas)
 │   │   └── ...
 │   ├── kickoff_po_root_cause.html      # Especificaciones del proyecto (mentor)
+│   ├── data_dictionary.md              # Diccionario de las 39 columnas + data card
+│   ├── user_personas.md                # Perfiles de usuario que guían el diseño de Fase 4
 │   ├── convenciones-issues.md          # Acuerdos de gestión del equipo
 │   └── plantillas-cli/                 # Borradores de issues para `gh`
 ├── data/                               # raw/ y processed/ (gitignored; solo .gitkeep)
