@@ -750,7 +750,7 @@ def save_llm_output(df: pd.DataFrame, output_path: Union[str, Path]) -> None:
 
     Es el guardado del DataFrame completo `df_with_llm_*.csv`. El CSV-entregable
     de las cinco columnas del mentor (PO_NBR, stage, severity, explanation, action)
-    lo produce una función de export aparte (#97).
+    lo produce `export_deliverable_csv` (#97).
 
     Args:
         df: DataFrame con las columnas llm_* ya añadidas.
@@ -760,9 +760,25 @@ def save_llm_output(df: pd.DataFrame, output_path: Union[str, Path]) -> None:
     print(f"\n💾 Resultado guardado en: {output_path}")
 
 
-# Columnas exactas del CSV-entregable del mentor (kickoff §09 / README §9), en orden.
+# Las cinco columnas canónicas del mentor (kickoff §09 / README §9), en orden.
+# Son el contrato exacto del entregable y van SIEMPRE primero en el artefacto.
 _MENTOR_COLUMNS = ["PO_NBR", "stage", "severity", "explanation", "action"]
-_DELIVERABLE_COLUMNS = _MENTOR_COLUMNS
+
+# Columnas de soporte para la app de Fase 4 (contrato F3→F4, #100): el timeline del
+# PO, los agravantes y la concordancia con la anotación humana. Permiten que la app
+# LEA el artefacto sin recomputar el pipeline ni llamar al LLM. Mapeo (origen → nombre
+# en el artefacto): se conserva el nombre de origen salvo donde el contrato canoniza.
+_TIMELINE_COLUMNS = [
+    "PO_DT", "STA_DT", "APPROVED_DT", "TRAILER_ARRIVE_DT",
+    "CHECKIN_DT", "CHECKOUT_DT", "RECPT_DT",
+]
+_AGGRAVANT_COLUMNS = ["HOT_PO_FLAG", "is_short_ship"]
+_AGREEMENT_COLUMNS = ["REASON_DSC", "llm_coincide_con_reason"]
+
+# Orden final del artefacto: las 5 del mentor primero, luego el bloque de soporte.
+_DELIVERABLE_COLUMNS = (
+    _MENTOR_COLUMNS + _TIMELINE_COLUMNS + _AGGRAVANT_COLUMNS + _AGREEMENT_COLUMNS
+)
 
 
 def export_deliverable_csv(
@@ -770,35 +786,48 @@ def export_deliverable_csv(
     output_path: Union[str, Path],
 ) -> pd.DataFrame:
     """
-    Escribe el CSV-entregable del mentor con las cinco columnas canónicas.
+    Escribe el CSV-entregable (`po_output.csv`), artefacto del contrato F3→F4 (#100).
 
-    Contrato (kickoff §09 / README §9): `PO_NBR, stage, severity, explanation,
-    action`, en ese orden. Alcance de filas: solo los POs tardíos
-    (`delay_days_calc > 0`), que son los que el LLM explica y los que la app de
-    Fase 4 (#102) ofrece en el selector.
+    Estructura (las 5 del mentor primero, en orden; luego soporte de la app):
+      1. Contrato del mentor (kickoff §09 / README §9): PO_NBR, stage, severity,
+         explanation, action.
+      2. Soporte de Fase 4 para que la app NO recompute: el timeline del PO, los
+         agravantes (hot PO, short ship) y la concordancia con REASON_DSC.
 
-    Mapeo (materializa ADR-10, severidad híbrida):
+    Alcance de filas: solo los POs tardíos (`delay_days_calc > 0`) — los que el LLM
+    explica y los que la app ofrece en el selector (#102).
+
+    Mapeo de las 5 del mentor (materializa ADR-10, severidad híbrida):
         stage       <- stage_primary
         severity    <- llm_severidad   (la OFICIAL es la del LLM; la determinística
                                         de F2 queda como auditoría, fuera de este CSV)
         explanation <- llm_causa_raiz
         action      <- llm_accion_recomendada
+    Las columnas de soporte conservan su nombre de origen.
 
     Args:
         df: DataFrame con la clasificación de F2 y las columnas llm_* de F3.
         output_path: Ruta destino del CSV-entregable (p. ej. po_output.csv).
 
     Returns:
-        El DataFrame entregable (5 columnas, solo tardíos) que se persistió.
+        El DataFrame entregable (solo tardíos) que se persistió, con las columnas
+        en el orden de `_DELIVERABLE_COLUMNS`.
     """
     tardios = df[df["delay_days_calc"] > 0]
-    out = pd.DataFrame({
+
+    datos = {
+        # 1. Contrato del mentor.
         "PO_NBR":      tardios["PO_NBR"].values,
         "stage":       tardios["stage_primary"].values,
         "severity":    tardios["llm_severidad"].values,
         "explanation": tardios["llm_causa_raiz"].values,
         "action":      tardios["llm_accion_recomendada"].values,
-    }, columns=_DELIVERABLE_COLUMNS)
+    }
+    # 2. Soporte de la app: timeline + agravantes + concordancia (nombre de origen).
+    for col in _TIMELINE_COLUMNS + _AGGRAVANT_COLUMNS + _AGREEMENT_COLUMNS:
+        datos[col] = tardios[col].values
+
+    out = pd.DataFrame(datos, columns=_DELIVERABLE_COLUMNS)
     out.to_csv(output_path, index=False)
     print(f"📦 CSV-entregable guardado en: {output_path} ({len(out)} POs tardíos)")
     return out
@@ -929,7 +958,8 @@ def main() -> None:
     # Guardar resultado final (artefacto interno df_with_llm_*.csv)
     save_llm_output(df_with_llm, output_path)
 
-    # Guardar el CSV-entregable del mentor (5 columnas, solo tardíos).
+    # Guardar el CSV-entregable del mentor (5 columnas, solo tardíos) — el artefacto
+    # que consume Fase 4 (contrato F3→F4, #100).
     deliverable_path = repo_root / "data" / "processed" / "po_output.csv"
     export_deliverable_csv(df_with_llm, deliverable_path)
 
