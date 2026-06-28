@@ -1,13 +1,9 @@
-"""Entry point de la aplicación Streamlit — Landing Page con análisis LLM."""
+"""Entry point de la aplicación Streamlit — Landing Page Fase 4 (User Personas)."""
 from pathlib import Path
 import streamlit as st
-import pandas as pd
-from config import COLORS, LLM_OUT_CSV
-from services.data_service import load_classified_data, load_llm_data
-from services.metrics_service import total_pos, total_tardios, pct_tardios
+from config import COLORS
+from services.data_service import load_po_output
 from components.navbar import render_navbar
-from components.metrics_cards import metric_card
-from utils.helpers import load_css
 
 # ── Configuración de página ─────────────────────────────────────────────────
 st.set_page_config(
@@ -21,263 +17,116 @@ st.set_page_config(
 render_navbar(active_page="home")
 
 # ── Cargar CSS personalizado ────────────────────────────────────────────────
-load_css()
+css_file = Path(__file__).parent / "assets" / "styles.css"
+if css_file.exists():
+    with open(css_file) as f:
+        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
 # ── Carga de datos ──────────────────────────────────────────────────────────
-@st.cache_data
-def get_llm_data():
-    """Carga datos LLM con caching."""
-    return load_llm_data()
-
-# Cargar datos clasificados (para KPIs globales)
-df_classified = load_classified_data()
-
-# Cargar datos LLM
-try:
-    df_llm = get_llm_data()
-except FileNotFoundError as e:
-    st.error(f"❌ {e}")
-    st.stop()
+df = load_po_output()
 
 # ── Header con título ──────────────────────────────────────────────────────
 st.markdown(
     """
     <div class="page-header">
-        <h1>🔍 PO Delay Root Cause Analyzer</h1>
+        <h1> PO Delay Root Cause Analyzer</h1>
         <p style="color: #718096; font-size: 1.1rem;">
-            Análisis inteligente de causas raíz con IA
+            Herramienta de análisis de causas raíz para POs tardíos
         </p>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
-# ── KPIs globales (del pipeline completo) ──────────────────────────────────
-st.markdown("### 📊 Resumen Global del Pipeline")
-col1, col2, col3 = st.columns(3)
+# ── KPIs globales ───────────────────────────────────────────────────────────
+st.markdown("### 📊 Resumen del Dataset")
+col1, col2 = st.columns(2)
 with col1:
-    st.metric(label="POs totales", value=total_pos(df_classified))
+    st.metric(label="POs tardíos procesados", value=len(df))
 with col2:
-    st.metric(label="POs tardíos", value=total_tardios(df_classified))
-with col3:
-    st.metric(label="% tardíos", value=f"{pct_tardios(df_classified):.1f}%")
+    # Distribución por severidad
+    severity_counts = df["severity"].value_counts()
+    high_pct = (severity_counts.get("HIGH", 0) / len(df) * 100) if len(df) > 0 else 0
+    st.metric(label="% Severidad Alta", value=f"{high_pct:.1f}%")
 
 st.markdown("---")
 
-# ── Selector de PO ─────────────────────────────────────────────────────────
-st.markdown("### 🎯 Análisis Detallado por PO")
-
-# Obtener lista única de POs disponibles en el CSV LLM
-po_list = sorted(df_llm["PO_NBR"].unique().tolist())
-
-# Selector desplegable
-selected_po = st.selectbox(
-    "Selecciona un número de PO para ver su análisis:",
-    options=po_list,
-    format_func=lambda x: f"PO #{x}",
-    index=0,  # Default: primer PO
-)
-
-# Filtrar datos del PO seleccionado
-po_data = df_llm[df_llm["PO_NBR"] == selected_po].iloc[0]
-
-# ── Cards de análisis LLM ──────────────────────────────────────────────────
-st.markdown("### 🤖 Análisis de Inteligencia Artificial")
-
-col1, col2, col3, col4, col5 = st.columns(5)
-
-# Card 1: Origen del Retraso
-with col1:
-    st.markdown(
-        f"""
-        <div class="llm-card" style="border-left: 4px solid #4299e1;">
-            <div class="llm-icon">🔍</div>
-            <h4>Origen del Retraso</h4>
-            <p class="llm-text">{po_data['llm_causa_raiz']}</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-# Card 2: Solución Sugerida
-with col2:
-    st.markdown(
-        f"""
-        <div class="llm-card" style="border-left: 4px solid #48bb78;">
-            <div class="llm-icon">🛠️</div>
-            <h4>Solución Sugerida</h4>
-            <p class="llm-text">{po_data['llm_accion_recomendada']}</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-# Card 3: Prioridad de Atención
-with col3:
-    severidad = po_data['llm_severidad']
-    color_sev = {
-        "HIGH": "#e53e3e",
-        "MEDIUM": "#dd6b20",
-        "LOW": "#38a169",
-    }.get(severidad, "#718096")
-    
-    st.markdown(
-        f"""
-        <div class="llm-card" style="border-left: 4px solid {color_sev};">
-            <div class="llm-icon">🚨</div>
-            <h4>Prioridad de Atención</h4>
-            <p class="llm-badge" style="background-color: {color_sev}20; color: {color_sev};">
-                {severidad}
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-# Card 4: Consistencia del Proveedor
-with col4:
-    coincide = po_data['llm_coincide_con_reason']
-    icono = "✅" if coincide else "⚠️"
-    texto = "Consistente" if coincide else "Inconsistente"
-    color = "#48bb78" if coincide else "#f56565"
-    
-    st.markdown(
-        f"""
-        <div class="llm-card" style="border-left: 4px solid {color};">
-            <div class="llm-icon">{icono}</div>
-            <h4>Consistencia del Proveedor</h4>
-            <p class="llm-badge" style="background-color: {color}20; color: {color};">
-                {texto}
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-# Card 5: Fiabilidad del Diagnóstico
-with col5:
-    confianza = po_data['llm_confianza']
-    confianza_pct = int(confianza * 100) if confianza <= 1 else int(confianza)
-    
-    # Determinar color según nivel de confianza
-    if confianza_pct >= 80:
-        color_conf = "#48bb78"  # Verde
-    elif confianza_pct >= 60:
-        color_conf = "#ecc94b"  # Amarillo
-    else:
-        color_conf = "#f56565"  # Rojo
-    
-    st.markdown(
-        f"""
-        <div class="llm-card" style="border-left: 4px solid {color_conf};">
-            <div class="llm-icon">🎯</div>
-            <h4>Fiabilidad del Diagnóstico</h4>
-            <p class="llm-badge" style="background-color: {color_conf}20; color: {color_conf}; font-size: 1.2rem;">
-                {confianza_pct}%
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-# ── Información adicional del PO seleccionado ──────────────────────────────
-st.markdown("---")
-st.markdown("### 📋 Información Complementaria del PO")
-
-col_info1, col_info2, col_info3 = st.columns(3)
-
-with col_info1:
-    st.info(f"""
-    **Vendor:** {po_data.get('VENDOR_NAME', 'N/A')}  
-    **Carrier:** {po_data.get('CARRIER_PARTY_NAME', 'N/A')}  
-    **DC:** {po_data.get('DC_LOC_NAME', 'N/A')}
-    """)
-
-with col_info2:
-    st.info(f"""
-    **Status:** {po_data.get('PO_STATUS_CD', 'N/A')}  
-    **Delay Days:** {po_data.get('delay_days_calc', 0):.1f} días  
-    **Severity:** {po_data.get('severity', 'N/A')}
-    """)
-
-with col_info3:
-    reason_cd = po_data.get('REASON_CD', 'N/A')
-    reason_dsc = po_data.get('REASON_DSC', 'N/A')
-    st.info(f"""
-    **Reason Code:** {reason_cd}  
-    **Description:** {reason_dsc}
-    """)
-
-# ── Sección Dashboards ──────────────────────────────────────────────────────
-st.markdown("---")
-st.markdown('<div class="dashboards-section"><h2>▤ Dashboards Especializados</h2></div>', unsafe_allow_html=True)
-
+# ── Sección de Vistas por User Persona ──────────────────────────────────────
 st.markdown(
-    "Cada dashboard consume el mismo DataFrame clasificado. "
-    "Sin duplicar lógica — solo cambia el foco de negocio."
+    """
+    <div class="dashboards-section">
+        <h2>▤ Vistas de Análisis</h2>
+        <p style="color: #4a5568; font-size: 1rem;">
+            La herramienta ofrece dos superficies de análisis según el modo de consumo:
+            consulta individual de excepciones o inteligencia agregada de red.
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True,
 )
 
-# Tarjetas de dashboards en 3 columnas
-col_v, col_c, col_d = st.columns(3)
+# Tarjetas de vistas en 2 columnas
+col_diego, col_ravi = st.columns(2)
 
-with col_v:
+# ── Vista Diego: Exception Workbench ────────────────────────────────────────
+with col_diego:
     st.markdown(
         """
-        <div class="dashboard-card" style="min-height: 280px; display: flex; flex-direction: column;">
-            <h3>📦 Vendor Management</h3>
-            <h4>Scorecard de vendors</h4>
+        <div class="dashboard-card" style="min-height: 320px; display: flex; flex-direction: column;">
+            <h3>🔍 Exception Workbench</h3>
+            <h4>Consulta Individual de POs</h4>
             <p style="flex-grow: 1;">
-                Ranking objetivo por STA push, short shipments y exceso acumulado.
-                Evidencia dura para renegociar SLAs y aplicar chargebacks.
+                <strong>Para:</strong> Coordinadores de excepciones inbound<br><br>
+                Analiza un PO tardío a la vez: timeline reconstruido, diagnóstico LLM, 
+                validación de causa raíz y acciones recomendadas. Ideal para cerrar 
+                excepciones caso por caso con evidencia completa.
             </p>
+            <ul style="color: #4a5568; font-size: 0.9rem; margin: 1rem 0; padding-left: 1.5rem;">
+                <li>Timeline del lifecycle del PO</li>
+                <li>Explicación y acción del LLM</li>
+                <li>Flag de desacuerdo con reason humano</li>
+                <li>Indicador de confianza del diagnóstico</li>
+            </ul>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    if st.button("Abrir dashboard →", key="btn_vendor", use_container_width=True):
-        st.switch_page("pages/1_📦_Vendor_Management.py")
+    if st.button("Abrir Exception Workbench →", key="btn_diego", use_container_width=True):
+        st.switch_page("pages/1_🔍_Exception_Workbench.py")
 
-with col_c:
+# ── Vista Ravi: Network Intelligence ────────────────────────────────────────
+with col_ravi:
     st.markdown(
         """
-        <div class="dashboard-card" style="min-height: 280px; display: flex; flex-direction: column;">
-            <h3>🚛 Carrier Logistics</h3>
-            <h4>Carrier adherence</h4>
+        <div class="dashboard-card" style="min-height: 320px; display: flex; flex-direction: column;">
+            <h3>📊 Network Intelligence</h3>
+            <h4>Inteligencia Agregada de Red</h4>
             <p style="flex-grow: 1;">
-                Carrier miss, appointment adherence y heatmap carrier × DC.
-                Distingue "miss real" de "sin datos de llegada" (problema de visibilidad).
+                <strong>Para:</strong> Analistas de supply chain y reporting<br><br>
+                Visualiza patrones sistémicos en la población de POs tardíos: 
+                distribución por etapa, severidad, tasa de desacuerdo y tendencias. 
+                Genera inteligencia accionable para decisiones estructurales.
             </p>
+            <ul style="color: #4a5568; font-size: 0.9rem; margin: 1rem 0; padding-left: 1.5rem;">
+                <li>Distribución Vendor/Carrier/DC/Indeterminado</li>
+                <li>Scorecards por entidad</li>
+                <li>Tasa de desacuerdo AI vs humano</li>
+                <li>Drill-down a casos individuales</li>
+            </ul>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    if st.button("Abrir dashboard →", key="btn_carrier", use_container_width=True):
-        st.switch_page("pages/2_🚛_Carrier_Logistics.py")
+    if st.button("Abrir Network Intelligence →", key="btn_ravi", use_container_width=True):
+        st.switch_page("pages/2__Network_Intelligence.py")
 
-with col_d:
-    st.markdown(
-        """
-        <div class="dashboard-card" style="min-height: 280px; display: flex; flex-direction: column;">
-            <h3>🏭 DC Operations</h3>
-            <h4>Throughput de muelle</h4>
-            <p style="flex-grow: 1;">
-                Control de yard congestion y dock backlog. Defensa contra culpas injustas
-                cuando el carrier o vendor son los responsables reales.
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    if st.button("Abrir dashboard →", key="btn_dc", use_container_width=True):
-        st.switch_page("pages/3_🏭_DC_Operations.py")
-
-# ── Footer simple ───────────────────────────────────────────────────────────
+# ── Footer ──────────────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown(
     """
     <div class="simple-footer">
-        <p>Supply Chain AI · June 2026</p>
-        <p>Análisis LLM disponible · 5 POs de muestra</p>
+        <p>Supply Chain AI · Fase 4 — Demo + Evaluación Final</p>
+        <p>Artefacto: po_output.csv (247 POs tardíos) · Contrato F3→F4</p>
     </div>
     """,
     unsafe_allow_html=True,

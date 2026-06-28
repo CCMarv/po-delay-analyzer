@@ -1,144 +1,71 @@
-"""Carga y clasificación de datos en tiempo real.
-Ejecuta el pipeline de Fase 1 (clean_po_data) y Fase 2 (classify_po_stages)
-cada vez que se lanza la app, con caching de Streamlit para no repetirlo
-en cada interacción del usuario.
+"""Carga de datos desde el artefacto de handoff F3→F4.
+
+La app consume exclusivamente po_output.csv (producido por Fase 3).
+No se ejecuta el pipeline de Fase 1 ni Fase 2 en tiempo real.
 """
-import sys
-from pathlib import Path
 import pandas as pd
 import streamlit as st
-from config import PHASE1_DIR, PHASE2_DIR, PO_RAW_CSV, LLM_OUT_CSV
-
-# ── Añadir fases al path al nivel del módulo ────────────────────────────────
-# Necesario para que Pylance resuelva los imports y para que los módulos
-# de Fase 1 y Fase 2 sean importables desde cualquier parte de la app.
-for _p in (PHASE1_DIR, PHASE2_DIR):
-    _s = str(_p)
-    if _s not in sys.path:
-        sys.path.insert(0, _s)
-
-# Fase 1
-from pipeline_core import clean_po_data
-
-# Fase 2
-from classifier_core import classify_po_stages, load_rules_config
+from config import PO_OUTPUT_CSV, COL_PO, COL_STAGE, COL_SEVERITY
 
 
-@st.cache_data(show_spinner="⏳ Ejecutando pipeline de clasificación...")
-def load_classified_data() -> pd.DataFrame:
-    """Carga el CSV crudo y ejecuta clean_po_data + classify_po_stages.
-
+@st.cache_data(show_spinner=" Cargando datos del artefacto F3→F4...")
+def load_po_output() -> pd.DataFrame:
+    """Carga el CSV de salida de Fase 3 (único input de la app).
+    
     Returns:
-        DataFrame completo con todas las columnas de Fase 1 + Fase 2.
+        DataFrame con todas las columnas del contrato F3→F4.
+    
+    Raises:
+        FileNotFoundError: Si no existe po_output.csv en data/processed/
     """
-    # 1. Cargar CSV crudo
-    if not PO_RAW_CSV.exists():
+    if not PO_OUTPUT_CSV.exists():
         raise FileNotFoundError(
-            f"No se encontró el CSV crudo en:\n{PO_RAW_CSV}\n\n"
-            "Coloca el archivo 'po_root_cause_synthetic.csv' en data/raw/ "
-            "o define PO_CSV_PATH en el .env."
-        )
-
-    df_raw = pd.read_csv(PO_RAW_CSV, low_memory=False)
-
-    # 2. Limpiar (Fase 1)
-    df_clean = clean_po_data(df_raw)
-
-    # 3. Clasificar (Fase 2)
-    rules = load_rules_config()
-    df_classified = classify_po_stages(df_clean, rules)
-
-    return df_classified
-
-
-def get_tardios(df: pd.DataFrame) -> pd.DataFrame:
-    """Filtra solo los POs tardíos (delay_days_calc > 0)."""
-    return df[df["delay_days_calc"] > 0].copy()
-
-
-def get_por_etapa(df: pd.DataFrame, etapa: str) -> pd.DataFrame:
-    """Filtra por stage_primary."""
-    return df[df["stage_primary"] == etapa].copy()
-
-
-# ── Funciones para datos LLM ──────────────────────────────────────────────
-
-def load_llm_data() -> pd.DataFrame:
-    """Carga el CSV con análisis LLM desde data/processed/llm_out.csv."""
-    if not LLM_OUT_CSV.exists():
-        raise FileNotFoundError(
-            f"No se encontró llm_out.csv en:\n{LLM_OUT_CSV}\n\n"
-            "Asegúrate de tener el archivo en data/processed/"
+            f"No se encontró po_output.csv en:\n{PO_OUTPUT_CSV}\n\n"
+            "Este archivo es el artefacto de handoff de Fase 3.\n"
+            "Ejecuta el pipeline de Fase 3 para generarlo."
         )
     
-    df_llm = pd.read_csv(LLM_OUT_CSV, low_memory=False)
-    
-    # Validar columnas requeridas
-    required_cols = [
-        "PO_NBR",
-        "llm_causa_raiz",
-        "llm_accion_recomendada",
-        "llm_severidad",
-        "llm_coincide_con_reason",
-        "llm_confianza",
-    ]
-    
-    missing = [col for col in required_cols if col not in df_llm.columns]
-    if missing:
-        raise ValueError(f"Columnas faltantes en llm_out.csv: {missing}")
-    
-    return df_llm
-
-# ── Funciones para datos LLM ──────────────────────────────────────────────
-
-def load_llm_data() -> pd.DataFrame:
-    """Carga el CSV con análisis LLM desde data/processed/llm_out.csv.
-    
-    Intenta varias codificaciones (utf-8, cp1252, latin-1) porque el archivo
-    suele venir en Windows-1252 desde entornos en español.
-    """
-    if not LLM_OUT_CSV.exists():
-        raise FileNotFoundError(
-            f"No se encontró llm_out.csv en:\n{LLM_OUT_CSV}\n\n"
-            "Asegúrate de tener el archivo en data/processed/"
-        )
-    
-    # Lista de codificaciones a intentar, en orden de preferencia
+    # Intentar múltiples codificaciones (Windows-1252 es común en español)
     encodings_to_try = ["utf-8", "cp1252", "latin-1", "iso-8859-1"]
     
-    df_llm = None
-    last_error = None
-    
+    df = None
     for enc in encodings_to_try:
         try:
-            df_llm = pd.read_csv(LLM_OUT_CSV, low_memory=False, encoding=enc)
-            # Si llegamos aquí, la lectura fue exitosa
+            df = pd.read_csv(PO_OUTPUT_CSV, low_memory=False, encoding=enc)
             break
-        except UnicodeDecodeError as e:
-            last_error = e
+        except UnicodeDecodeError:
             continue
     
-    # Fallback: si ninguna codificación funcionó, leer reemplazando errores
-    if df_llm is None:
-        df_llm = pd.read_csv(
-            LLM_OUT_CSV, 
-            low_memory=False, 
-            encoding="utf-8", 
+    # Fallback: leer reemplazando errores
+    if df is None:
+        df = pd.read_csv(
+            PO_OUTPUT_CSV,
+            low_memory=False,
+            encoding="utf-8",
             errors="replace"
         )
     
-    # Validar columnas requeridas
-    required_cols = [
-        "PO_NBR",
-        "llm_causa_raiz",
-        "llm_accion_recomendada",
-        "llm_severidad",
-        "llm_coincide_con_reason",
-        "llm_confianza",
+    # Parsear columnas de fecha para el timeline
+    date_cols = [
+        "PO_DT", "STA_DT", "APPROVED_DT", "TRAILER_ARRIVE_DT",
+        "CHECKIN_DT", "CHECKOUT_DT", "RECPT_DT"
     ]
     
-    missing = [col for col in required_cols if col not in df_llm.columns]
-    if missing:
-        raise ValueError(f"Columnas faltantes en llm_out.csv: {missing}")
+    for col in date_cols:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce")
     
-    return df_llm
+    return df
+
+
+def get_po_by_number(df: pd.DataFrame, po_nbr: int) -> pd.Series:
+    """Obtiene un PO específico por número."""
+    result = df[df[COL_PO] == po_nbr]
+    if result.empty:
+        raise ValueError(f"PO {po_nbr} no encontrado en el artefacto")
+    return result.iloc[0]
+
+
+def get_unique_po_list(df: pd.DataFrame) -> list:
+    """Retorna lista ordenada de POs únicos para el selector."""
+    return sorted(df[COL_PO].unique().tolist())

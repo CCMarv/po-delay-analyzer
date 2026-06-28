@@ -1,12 +1,11 @@
-"""Navbar superior para navegación entre páginas."""
+"""Navbar superior para navegación entre páginas — Fase 4 (User Personas)."""
 import streamlit as st
 
-
 def render_navbar(active_page: str = "home"):
-    """Renderiza el navbar superior con navegación entre páginas.
+    """Renderiza el navbar superior con navegación basada en User Personas.
     
     Args:
-        active_page: Página activa ('home', 'vendor', 'carrier', 'dc')
+        active_page: Página activa ('home', 'diego', 'ravi')
     """
     navbar_html = f"""
     <div class="top-navbar">
@@ -16,16 +15,13 @@ def render_navbar(active_page: str = "home"):
         </div>
         <div class="navbar-links">
             <a href="/" class="nav-link {'active' if active_page == 'home' else ''}">
-                🏠 Home
+               🏠 Home
             </a>
-            <a href="/Vendor_Management" class="nav-link {'active' if active_page == 'vendor' else ''}">
-                📦 Vendor Management
+            <a href="/Exception_Workbench" class="nav-link {'active' if active_page == 'diego' else ''}">
+               🔍 Exception Workbench
             </a>
-            <a href="/Carrier_Logistics" class="nav-link {'active' if active_page == 'carrier' else ''}">
-                🚛 Carrier Logistics
-            </a>
-            <a href="/DC_Operations" class="nav-link {'active' if active_page == 'dc' else ''}">
-                🏭 DC Operations
+            <a href="/Network_Intelligence" class="nav-link {'active' if active_page == 'ravi' else ''}">
+               📊 Network Intelligence
             </a>
         </div>
     </div>
