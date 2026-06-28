@@ -94,6 +94,25 @@ def test_build_prompt_pide_json_estricto():
     assert "JSON" in out
 
 
+def test_build_prompt_prohibe_calcular():
+    # Lineamiento del mentor (#91): el modelo INTERPRETA, no calcula. El prompt debe
+    # instruir explícitamente que no recalcule/invente y que cite las cifras dadas.
+    out = build_prompt(_row_ejemplo())
+    assert "INTERPRETAR" in out
+    assert "No recalcules" in out or "no recalcules" in out
+    assert "no inventes" in out.lower()
+
+
+def test_build_prompt_pide_estructura_de_explicacion():
+    # La explicación (causa_raiz) debe pedir 2-3 oraciones con los elementos del mentor:
+    # etapa exacta, delay citado, coincidencia con REASON_DSC y agravantes.
+    out = build_prompt(_row_ejemplo())
+    assert "2-3 oraciones" in out
+    assert "etapa exacta" in out
+    # la acción debe exigir responsable, no genérica
+    assert "responsable" in out
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # B. _parse_llm_json — extracción/normalización de la respuesta del LLM
 # ════════════════════════════════════════════════════════════════════════════

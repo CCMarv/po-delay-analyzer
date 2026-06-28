@@ -74,8 +74,16 @@ def build_prompt(row: pd.Series) -> str:
     """
     Construye el prompt para el LLM a partir de una fila del DataFrame.
 
+    Sigue el lineamiento del mentor (kickoff §03 / README §5): inyecta toda la
+    aritmética ya resuelta (timeline + MÉTRICAS CALCULADAS) e instruye al modelo a
+    INTERPRETAR sin recalcular, citando textualmente las cifras dadas. La explicación
+    pedida (`causa_raiz`) son 2-3 oraciones con los elementos del mentor: etapa exacta,
+    delay cuantificado citado, coincidencia con REASON_DSC y agravantes.
+
     Args:
-        row: Una fila del DataFrame con los datos de una PO.
+        row: Una fila del DataFrame con los datos de una PO. Campos leídos vía
+            row.get(..., default), por lo que una fila incompleta no rompe (los
+            faltantes caen a 'N/A'/0).
 
     Returns:
         Prompt formateado listo para enviar al LLM.
@@ -112,12 +120,21 @@ def build_prompt(row: pd.Series) -> str:
         f"- ¿Es short ship (envío incompleto)? {short_ship}",
         f"- Código de motivo registrado por el DC: {row.get('REASON_DSC', 'No registrado')}\n",
         "INSTRUCCIONES:",
+        "Tu trabajo es INTERPRETAR los datos dados, NO calcular. Usa ÚNICAMENTE las "
+        "cifras de las secciones MÉTRICAS CALCULADAS y TIMELINE. No estimes, no "
+        "recalcules fechas ni horas, no inventes números. Toda cifra que menciones en "
+        "tu explicación debe ser una de las dadas arriba, citada textualmente "
+        "(p. ej. \"un retraso de 4.2 días\").\n",
         "Genera un análisis en formato JSON. "
         "Responde ÚNICAMENTE con el JSON, sin texto adicional.\n",
         "Formato requerido:",
         "{",
-        '  "causa_raiz": "Explicación de 1-2 líneas",',
-        '  "accion_recomendada": "Acción concreta. Menciona al responsable",',
+        '  "causa_raiz": "2-3 oraciones que: (a) nombren la etapa exacta del retraso '
+        '(Vendor, Carrier o DC); (b) citen el retraso cuantificado tomado de los datos '
+        'dados; (c) digan si la evidencia coincide o no con el REASON_DSC del DC; '
+        '(d) mencionen agravantes si los hay (hot PO, short ship)",',
+        '  "accion_recomendada": "Acción concreta y operable, nombrando al responsable '
+        '(vendor, carrier o equipo del DC). Evita recomendaciones genéricas",',
         '  "severidad": "HIGH o MEDIUM o LOW",',
         '  "coincide_con_reason_code": true o false,',
         '  "confianza": 0.0 a 1.0',
