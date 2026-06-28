@@ -1,0 +1,209 @@
+#!/usr/bin/env python3
+"""
+eval_quality.py — Benchmark de calidad de explicación del LLM (#94).
+
+Construye el benchmark *LLM Explanation Quality* del mentor (README §6): selecciona
+20 POs tardíos **estratificados por etapa**, corre el prompt alineado (#91/#67) sobre
+ellos y arma una tabla con los tres checks del mentor por PO:
+
+    (a) etapa correcta   — la explicación nombra la etapa = stage_primary; para los
+                           'Indeterminado', acierta si LO DECLARA indeterminado, no si
+                           copia la etapa del reason code (hallazgo de #95).
+    (b) cuantifica delay — cita una cifra y esa cifra coincide con delay_days_calc.
+    (c) acción viable    — nombra un responsable (vendor/carrier/DC) y es operable
+                           (NO se autoevalúa: lo valida el humano).
+
+Meta del mentor: 4/5 (80%).
+
+Los checks (a) y (b) se PRE-evalúan de forma heurística para acelerar el etiquetado;
+(c) y el veredicto final los confirma una persona a mano. La selección es reproducible
+(semilla fija): #99 reusa el MISMO conjunto para comparar combinaciones de few-shot.
+
+Uso:
+    # Solo seleccionar y mostrar los 20 POs (SIN llamar a la API):
+    python eval_quality.py --dry-run
+
+    # Correr el benchmark contra OpenAI (20 llamadas reales) y escribir la tabla:
+    python eval_quality.py --backend openai
+"""
+
+import argparse
+import sys
+import unicodedata
+from pathlib import Path
+
+import pandas as pd
+
+# Reusar la infraestructura de F3 (mismo dir): no se reimplementa la corrida del LLM.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from llm_integration import build_prompt, create_backend, prepare_classified_df  # noqa: E402
+
+# Composición estratificada de la muestra (#94, OK del usuario): sobrerrepresenta los
+# minoritarios para probar los 4 tipos de explicación con muestra suficiente cada uno.
+# El universo de tardíos es ~ Vendor 131 / Carrier 40 / Indeterminado 39 / DC 37.
+STRATA = {"Vendor": 8, "Carrier": 4, "Indeterminado": 4, "DC": 4}
+RANDOM_STATE = 42  # semilla fija → muestra reproducible (la reusa #99)
+
+# Versionado (junto al script): es el entregable del benchmark, evidencia que reusa #99.
+OUTPUT_MD = Path(__file__).resolve().parent / "eval_quality_20pos.md"
+
+
+def select_sample(df: pd.DataFrame) -> pd.DataFrame:
+    """Selecciona la muestra estratificada de 20 POs tardíos (semilla fija).
+
+    Args:
+        df: DataFrame clasificado (salida de classify_po_stages).
+
+    Returns:
+        Sub-DataFrame con los POs seleccionados, ordenados por etapa.
+    """
+    tardios = df[df["delay_days_calc"] > 0]
+    partes = []
+    for etapa, n in STRATA.items():
+        grupo = tardios[tardios["stage_primary"] == etapa]
+        if len(grupo) < n:
+            raise ValueError(
+                f"Etapa '{etapa}' tiene {len(grupo)} POs tardíos, se pidieron {n}."
+            )
+        partes.append(grupo.sample(n=n, random_state=RANDOM_STATE))
+    return pd.concat(partes).sort_values("stage_primary")
+
+
+def _norm(texto: str) -> str:
+    """Minúsculas sin acentos, para comparar texto del LLM de forma robusta."""
+    sin_acentos = "".join(
+        c for c in unicodedata.normalize("NFD", str(texto))
+        if unicodedata.category(c) != "Mn"
+    )
+    return sin_acentos.lower()
+
+
+def _check_etapa(explicacion: str, stage: str) -> bool:
+    """(a) ¿La explicación nombra la etapa correcta?
+
+    Para 'Indeterminado' acierta si DECLARA indeterminación (no atribuible a una sola
+    etapa), no si nombra una etapa concreta tomada del reason code.
+    """
+    e = _norm(explicacion)
+    if stage == "Indeterminado":
+        return any(k in e for k in ("indetermin", "no atribuible", "no se puede atribuir",
+                                    "multiples etapas", "multiple", "no concluyente"))
+    return _norm(stage) in e
+
+
+def _check_cuantifica(explicacion: str, delay_days: float) -> bool:
+    """(b) ¿Cita el delay y la cifra coincide con la dada (±0.1 día)?"""
+    e = _norm(explicacion)
+    # Busca el número de días dado (con 1-2 decimales) textualmente en la explicación.
+    objetivo = f"{delay_days:.2f}"
+    objetivo_1 = f"{delay_days:.1f}"
+    return objetivo in e or objetivo_1 in e
+
+
+def evaluate(df_sample: pd.DataFrame, backend) -> pd.DataFrame:
+    """Corre el LLM sobre la muestra y pre-evalúa los checks objetivos (a) y (b).
+
+    Args:
+        df_sample: muestra estratificada (20 POs).
+        backend: backend de LLM (de create_backend).
+
+    Returns:
+        DataFrame con una fila por PO: datos dados, explicación del LLM y los
+        pre-veredictos de (a)/(b). (c) y el veredicto final quedan vacíos para el humano.
+    """
+    filas = []
+    for _, row in df_sample.iterrows():
+        prompt = build_prompt(row)
+        resp = backend.call(prompt) or {}
+        causa = resp.get("causa_raiz", "")
+        delay = float(row["delay_days_calc"])
+        filas.append({
+            "PO_NBR": row["PO_NBR"],
+            "stage_primary": row["stage_primary"],
+            "delay_days_calc": round(delay, 2),
+            "REASON_DSC": row.get("REASON_DSC", ""),
+            "llm_causa_raiz": causa,
+            "llm_accion": resp.get("accion_recomendada", ""),
+            "chk_a_etapa": _check_etapa(causa, row["stage_primary"]),
+            "chk_b_cuantifica": _check_cuantifica(causa, delay),
+            "chk_c_accion_viable": "",   # ← lo valida el humano
+            "veredicto": "",             # ← lo confirma el humano (PASA si a&b&c)
+        })
+    return pd.DataFrame(filas)
+
+
+def to_markdown(df_eval: pd.DataFrame) -> str:
+    """Arma el documento .md del benchmark: criterio + tabla + resumen pre-evaluado."""
+    pre_ok = (df_eval["chk_a_etapa"] & df_eval["chk_b_cuantifica"]).sum()
+    lineas = [
+        "# Benchmark de calidad de explicación del LLM — 20 POs (#94)",
+        "",
+        "Métrica del mentor *LLM Explanation Quality* (README §6). Muestra estratificada "
+        f"8/4/4/4 (Vendor/Carrier/Indeterminado/DC), semilla `{RANDOM_STATE}` (reproducible; "
+        "la reusa #99). Backend: el oficial del entregable.",
+        "",
+        "## Criterio (binario por PO; PASA si cumple los 3)",
+        "- **(a) etapa correcta:** nombra la etapa = `stage_primary`. Para `Indeterminado`, "
+        "acierta si lo declara indeterminado (no si copia la etapa del reason code).",
+        "- **(b) cuantifica el delay:** cita una cifra y coincide con `delay_days_calc`.",
+        "- **(c) acción viable:** nombra responsable y es operable (NO genérica). *Validación humana.*",
+        "",
+        f"## Pre-evaluación automática (a & b): {pre_ok}/20",
+        "_(c) y el veredicto final los confirma una persona; rellenar las columnas vacías._",
+        "",
+        "| PO | etapa | delay (d) | REASON_DSC | explicación LLM | acción LLM | (a) | (b) | (c)? | veredicto |",
+        "|---|---|--:|---|---|---|:--:|:--:|:--:|:--:|",
+    ]
+    for _, r in df_eval.iterrows():
+        causa = str(r["llm_causa_raiz"]).replace("|", "\\|").replace("\n", " ")
+        accion = str(r["llm_accion"]).replace("|", "\\|").replace("\n", " ")
+        reason = str(r["REASON_DSC"]).replace("|", "\\|")
+        a = "✅" if r["chk_a_etapa"] else "❌"
+        b = "✅" if r["chk_b_cuantifica"] else "❌"
+        lineas.append(
+            f"| {r['PO_NBR']} | {r['stage_primary']} | {r['delay_days_calc']:.2f} | "
+            f"{reason} | {causa} | {accion} | {a} | {b} |  |  |"
+        )
+    lineas += [
+        "",
+        "## Resultado (a completar tras validación humana)",
+        "- POs que PASAN: __/20  →  equivalente sobre 5: __/5  (meta del mentor: 4/5).",
+        "- Fallos y por qué: _(documentar aquí)_.",
+        "",
+    ]
+    return "\n".join(lineas)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Benchmark de calidad LLM (20 POs, #94)")
+    parser.add_argument("--backend", default="openai",
+                        choices=["local", "claude", "deepseek", "openai"])
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Solo seleccionar y mostrar los 20 POs, sin llamar a la API.")
+    args = parser.parse_args()
+
+    df = prepare_classified_df(from_csv=False)
+    sample = select_sample(df)
+
+    print(f"Muestra estratificada (20 POs, semilla {RANDOM_STATE}):")
+    print(sample["stage_primary"].value_counts().to_string())
+
+    if args.dry_run:
+        cols = ["PO_NBR", "stage_primary", "delay_days_calc", "REASON_DSC"]
+        print("\n" + sample[cols].to_string(index=False))
+        print("\n(dry-run: no se llamó a la API.)")
+        return
+
+    backend = create_backend(backend_type=args.backend)
+    print(f"\nCorriendo {len(sample)} POs por el LLM ({args.backend})...")
+    df_eval = evaluate(sample, backend)
+
+    OUTPUT_MD.write_text(to_markdown(df_eval), encoding="utf-8")
+    pre_ok = int((df_eval["chk_a_etapa"] & df_eval["chk_b_cuantifica"]).sum())
+    print(f"Pre-evaluación (a & b): {pre_ok}/20")
+    print(f"Tabla escrita en: {OUTPUT_MD}")
+    print("Falta validar a mano (c) y el veredicto final.")
+
+
+if __name__ == "__main__":
+    main()
