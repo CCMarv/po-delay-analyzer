@@ -78,7 +78,9 @@ def build_prompt(row: pd.Series) -> str:
     aritmética ya resuelta (timeline + MÉTRICAS CALCULADAS) e instruye al modelo a
     INTERPRETAR sin recalcular, citando textualmente las cifras dadas. La explicación
     pedida (`causa_raiz`) son 2-3 oraciones con los elementos del mentor: etapa exacta,
-    delay cuantificado citado, coincidencia con REASON_DSC y agravantes.
+    delay cuantificado citado, coincidencia con REASON_DSC y agravantes. La
+    reprogramación de cita (`is_rescheduled`, #67) se pasa como contexto neutro —un
+    evento, no una causa de etapa—, no como agravante automático.
 
     Args:
         row: Una fila del DataFrame con los datos de una PO. Campos leídos vía
@@ -90,6 +92,9 @@ def build_prompt(row: pd.Series) -> str:
     """
     hot_flag = "Sí" if row.get('HOT_PO_FLAG', 0) == 1 else "No"
     short_ship = "Sí" if row.get('_short_ship', False) else "No"
+    # Contexto neutro (#67): la reprogramación de cita es un evento, NO una causa de
+    # etapa. Se muestra como dato para juzgar el REASON_DSC; no implica culpa del vendor.
+    rescheduled = "Sí" if row.get('is_rescheduled', False) else "No"
 
     prompt_lines = [
         "Eres un analista experto en cadena de suministro. "
@@ -118,6 +123,7 @@ def build_prompt(row: pd.Series) -> str:
         "CONTEXTO ADICIONAL:",
         f"- ¿Es Hot PO (urgente)? {hot_flag}",
         f"- ¿Es short ship (envío incompleto)? {short_ship}",
+        f"- ¿Se reprogramó la cita de entrega? {rescheduled}",
         f"- Código de motivo registrado por el DC: {row.get('REASON_DSC', 'No registrado')}\n",
         "INSTRUCCIONES:",
         "Tu trabajo es INTERPRETAR los datos dados, NO calcular. Usa ÚNICAMENTE las "

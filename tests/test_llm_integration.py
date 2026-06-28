@@ -54,6 +54,7 @@ def _row_ejemplo() -> pd.Series:
         "stage_multi": "Carrier",
         "HOT_PO_FLAG": 1,
         "_short_ship": False,
+        "is_rescheduled": True,
         "REASON_DSC": "Carrier delivery delay",
     })
 
@@ -101,6 +102,20 @@ def test_build_prompt_prohibe_calcular():
     assert "INTERPRETAR" in out
     assert "No recalcules" in out or "no recalcules" in out
     assert "no inventes" in out.lower()
+
+
+def test_build_prompt_incluye_rescheduled_como_contexto():
+    # #67: is_rescheduled se cablea como CONTEXTO neutro (Sí/No), no como etapa ni
+    # agravante. El fixture tiene is_rescheduled=True → debe verse "Sí".
+    out = build_prompt(_row_ejemplo())
+    assert "¿Se reprogramó la cita de entrega? Sí" in out
+
+
+def test_build_prompt_rescheduled_ausente_cae_a_no():
+    # Sin la columna, row.get(..., False) → "No" (robustez, no rompe).
+    row = pd.Series({"PO_NBR": "PO-MIN"})
+    out = build_prompt(row)
+    assert "¿Se reprogramó la cita de entrega? No" in out
 
 
 def test_build_prompt_pide_estructura_de_explicacion():
