@@ -40,7 +40,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import pandas as pd
 import requests
@@ -70,7 +70,101 @@ load_dotenv()
 # Prompt builder
 # ============================================================
 
-def build_prompt(row: pd.Series) -> str:
+# Mapeo etapa → (campo de exceso que la justifica, campo del responsable a nombrar).
+# Es la curación de #99 (D2.1): el ejemplo few-shot muestra SOLO la señal de la etapa
+# elegida y el nombre de su responsable, para enseñar el razonamiento sin ruido.
+_STAGE_SIGNAL = {
+    "Vendor":  ("excess_vendor_hrs",  "VENDOR_NAME"),
+    "Carrier": ("excess_carrier_hrs", "CARRIER_PARTY_NAME"),
+    "DC":      ("excess_dc_hrs",      "DC_LOC_NAME"),
+}
+
+
+def _format_example(ex: Dict[str, Any]) -> str:
+    """Formatea un ejemplo few-shot como espejo de forma + JSON ideal (#99, D2.1).
+
+    El ejemplo replica los BLOQUES de `build_prompt` (DATOS / MÉTRICAS / CLASIFICACIÓN /
+    CONTEXTO) pero curado en contenido: solo los campos que enseñan el razonamiento de la
+    acción (la señal de exceso de la etapa elegida, el delay citado, el responsable a
+    nombrar, el reason que se discute, y los agravantes activos). NO incluye el timeline de
+    fechas (mostrarlo reenseñaría a recalcular, contra #91) ni campos de ruido.
+
+    NOTA DE CURACIÓN (auditar a futuro): `is_rescheduled` se incluye SOLO cuando el ejemplo
+    lo trae activo, y SIEMPRE como contexto neutro — la `accion_recomendada` ideal del
+    ejemplo no debe culpar al vendor por la reprogramación (sesgo que ADR-05/#67 corrigieron).
+    Cada ejemplo nuevo se revisa con este criterio antes de entrar al pool.
+
+    Args:
+        ex: dict con los campos del ejemplo (stage_primary, delay_days_calc, REASON_DSC,
+            el excess_* y el nombre del responsable según la etapa, agravantes opcionales)
+            y la salida ideal (causa_raiz, accion_recomendada, severidad,
+            coincide_con_reason_code, confianza).
+
+    Returns:
+        Bloque de texto del ejemplo: entrada curada + "ANÁLISIS CORRECTO:" + JSON ideal.
+    """
+    stage = ex.get("stage_primary", "Desconocido")
+    exc_field, resp_field = _STAGE_SIGNAL.get(stage, (None, None))
+
+    lineas = ["EJEMPLO RESUELTO:", "DATOS DE LA PO:"]
+    if resp_field and ex.get(resp_field):
+        etiqueta = {"VENDOR_NAME": "Proveedor",
+                    "CARRIER_PARTY_NAME": "Transportista",
+                    "DC_LOC_NAME": "Centro de distribución"}[resp_field]
+        lineas.append(f"- {etiqueta}: {ex[resp_field]}")
+
+    lineas.append("MÉTRICAS CALCULADAS:")
+    lineas.append(f"- Días de retraso: {ex.get('delay_days_calc', 0):.2f} días")
+    if exc_field and exc_field in ex:
+        etiqueta_exc = {"excess_vendor_hrs": "Exceso del proveedor",
+                        "excess_carrier_hrs": "Exceso del transportista",
+                        "excess_dc_hrs": "Exceso del centro de distribución"}[exc_field]
+        lineas.append(f"- {etiqueta_exc}: {ex[exc_field]:.1f} horas")
+
+    lineas.append("CLASIFICACIÓN AUTOMÁTICA:")
+    lineas.append(f"- Etapa primaria del retraso: {stage}")
+
+    lineas.append("CONTEXTO ADICIONAL:")
+    lineas.append(f"- ¿Es Hot PO (urgente)? {'Sí' if ex.get('HOT_PO_FLAG', 0) == 1 else 'No'}")
+    lineas.append(f"- ¿Es short ship (envío incompleto)? {'Sí' if ex.get('_short_ship', False) else 'No'}")
+    # Contexto neutro (#67): solo se muestra si el ejemplo lo trae activo (ver NOTA).
+    if ex.get("is_rescheduled", False):
+        lineas.append("- ¿Se reprogramó la cita de entrega? Sí")
+    lineas.append(f"- Código de motivo registrado por el DC: {ex.get('REASON_DSC', 'No registrado')}")
+
+    ideal = {
+        "causa_raiz": ex.get("causa_raiz", ""),
+        "accion_recomendada": ex.get("accion_recomendada", ""),
+        "severidad": ex.get("severidad", "MEDIUM"),
+        "coincide_con_reason_code": ex.get("coincide_con_reason_code", False),
+        "confianza": ex.get("confianza", 0.8),
+    }
+    lineas.append("ANÁLISIS CORRECTO:")
+    lineas.append(json.dumps(ideal, ensure_ascii=False, indent=2))
+    return "\n".join(lineas)
+
+
+def _examples_block(examples: Optional[List[Dict[str, Any]]]) -> str:
+    """Arma el bloque EJEMPLOS DE RAZONAMIENTO para few-shot (#99), o "" si no hay.
+
+    El encabezado dirige la atención del modelo a lo que los ejemplos enseñan: que la
+    etapa sale de la señal temporal (no del REASON_DSC) y que la acción ataca la causa
+    medida sin pedir investigar lo que el reason ya explica. Devuelve "" en zero-shot, de
+    modo que al unir con el resto del prompt no altera el comportamiento histórico.
+    """
+    if not examples:
+        return ""
+    partes = [
+        "EJEMPLOS DE RAZONAMIENTO:",
+        "Estudia estos casos resueltos. Observa cómo la etapa se decide por la señal "
+        "temporal medida (no por el REASON_DSC del DC, que puede equivocarse) y cómo la "
+        "acción ataca la causa real sin pedir investigar lo que el motivo ya explica.\n",
+    ]
+    partes.extend(_format_example(ex) + "\n" for ex in examples)
+    return "\n".join(partes)
+
+
+def build_prompt(row: pd.Series, examples: Optional[List[Dict[str, Any]]] = None) -> str:
     """
     Construye el prompt para el LLM a partir de una fila del DataFrame.
 
@@ -82,10 +176,18 @@ def build_prompt(row: pd.Series) -> str:
     reprogramación de cita (`is_rescheduled`, #67) se pasa como contexto neutro —un
     evento, no una causa de etapa—, no como agravante automático.
 
+    Few-shot (#99): si se pasan `examples`, se antepone un bloque EJEMPLOS DE RAZONAMIENTO
+    (antes de INSTRUCCIONES) que enseña a derivar la acción de la señal temporal y a no
+    copiar el REASON_DSC. Sin `examples` (default), el prompt es idéntico al zero-shot
+    histórico — no cambia el comportamiento existente.
+
     Args:
         row: Una fila del DataFrame con los datos de una PO. Campos leídos vía
             row.get(..., default), por lo que una fila incompleta no rompe (los
             faltantes caen a 'N/A'/0).
+        examples: lista opcional de ejemplos resueltos (few-shot). Cada uno es un dict
+            con los campos curados de entrada y la salida ideal (ver `_format_example`).
+            None o lista vacía → zero-shot.
 
     Returns:
         Prompt formateado listo para enviar al LLM.
@@ -125,6 +227,7 @@ def build_prompt(row: pd.Series) -> str:
         f"- ¿Es short ship (envío incompleto)? {short_ship}",
         f"- ¿Se reprogramó la cita de entrega? {rescheduled}",
         f"- Código de motivo registrado por el DC: {row.get('REASON_DSC', 'No registrado')}\n",
+        _examples_block(examples),
         "INSTRUCCIONES:",
         "Tu trabajo es INTERPRETAR los datos dados, NO calcular. Usa ÚNICAMENTE las "
         "cifras de las secciones MÉTRICAS CALCULADAS y TIMELINE. No estimes, no "

@@ -40,8 +40,8 @@ El repositorio está organizado siguiendo el orden cronológico de las cuatro et
 │   ├── metrics_core.py                 # Validación: stage accuracy + reason agreement
 │   └── rules_config.json               # Umbrales externalizados (leídos por nombre)
 ├── 03_llm_integration/                 # Fase 3: integración LLM (implementada, en curso)
-│   ├── llm_integration.py              # build_prompt + backends (Qwen/Claude/DeepSeek)
-│   └── prompt_template.txt             # Borrador de system prompt (ver README de la fase)
+│   ├── llm_integration.py              # build_prompt + backends (Qwen/Claude/DeepSeek/OpenAI)
+│   └── eval_quality.py                 # Benchmark de calidad de explicación (20 POs, #94/#99)
 ├── 04_app/                             # Fase 4: demo / app (pendiente)
 ├── tests/                              # Suite de pytest (pipeline, clasificador, métricas,
 │   │                                   #   handoff, LLM); fixtures de valores conocidos

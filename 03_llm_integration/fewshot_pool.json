@@ -1,0 +1,65 @@
+[
+  {
+    "_meta": {
+      "po_origen": 100280,
+      "stage": "Vendor",
+      "tipo_mismatch": "el reason humano apunta a cita perdida; la señal es un push de vendor dominante",
+      "auditado": true,
+      "nota_rescheduled": "is_rescheduled=False en el PO origen; no aplica al ejemplo"
+    },
+    "stage_primary": "Vendor",
+    "delay_days_calc": 5.54,
+    "excess_vendor_hrs": 100.57,
+    "VENDOR_NAME": "MEDIQ",
+    "REASON_DSC": "Missed appointment window",
+    "HOT_PO_FLAG": 0,
+    "_short_ship": false,
+    "causa_raiz": "La etapa exacta del retraso es Vendor, con un retraso de 5.54 días. La evidencia no coincide con el REASON_DSC del DC ('Missed appointment window'): el exceso medido corresponde al proveedor (100.57 horas), que es la causa dominante del retraso. No hay agravantes.",
+    "accion_recomendada": "Solicitar al proveedor MEDIQ un plan de recuperación con fecha firme, dado que el retraso se origina en su exceso de tránsito y no en una simple ventana de cita perdida en el DC.",
+    "severidad": "MEDIUM",
+    "coincide_con_reason_code": false,
+    "confianza": 0.85
+  },
+  {
+    "_meta": {
+      "po_origen": 100244,
+      "stage": "Carrier",
+      "tipo_mismatch": "el reason humano culpa a la congestión del patio (DC); el exceso medido está en el transportista",
+      "auditado": true,
+      "nota_rescheduled": "is_rescheduled=False en el PO origen; no aplica al ejemplo"
+    },
+    "stage_primary": "Carrier",
+    "delay_days_calc": 1.63,
+    "excess_carrier_hrs": 30.85,
+    "CARRIER_PARTY_NAME": "FedEx Freight",
+    "REASON_DSC": "Yard congestion - no available door",
+    "HOT_PO_FLAG": 0,
+    "_short_ship": false,
+    "causa_raiz": "La etapa exacta del retraso es Carrier, con un retraso de 1.63 días. La evidencia no coincide con el REASON_DSC del DC ('Yard congestion - no available door'): el exceso medido corresponde al transportista (30.85 horas), no a la congestión del patio del DC. No hay agravantes.",
+    "accion_recomendada": "Contactar al transportista FedEx Freight para que explique el exceso de tránsito medido y comprometa una mejora, en lugar de atribuir el retraso a la congestión del patio del DC.",
+    "severidad": "MEDIUM",
+    "coincide_con_reason_code": false,
+    "confianza": 0.8
+  },
+  {
+    "_meta": {
+      "po_origen": 100058,
+      "stage": "DC",
+      "tipo_mismatch": "el reason humano culpa a un problema de equipo del transportista; el exceso medido está en el DC",
+      "auditado": true,
+      "nota_rescheduled": "is_rescheduled=False en el PO origen; no aplica al ejemplo"
+    },
+    "stage_primary": "DC",
+    "delay_days_calc": 0.82,
+    "excess_dc_hrs": 19.32,
+    "DC_LOC_NAME": "Phoenix DC",
+    "REASON_DSC": "Equipment/trailer issue",
+    "HOT_PO_FLAG": 0,
+    "_short_ship": false,
+    "causa_raiz": "La etapa exacta del retraso es DC, con un retraso de 0.82 días. La evidencia no coincide con el REASON_DSC del DC ('Equipment/trailer issue'): el exceso medido está en el centro de distribución (19.32 horas), no en el equipo del transportista. No hay agravantes.",
+    "accion_recomendada": "El equipo del Phoenix DC debe revisar su operación de recepción y descarga, donde se concentró el exceso medido, en lugar de atribuir el retraso a un problema de equipo del transportista.",
+    "severidad": "LOW",
+    "coincide_con_reason_code": false,
+    "confianza": 0.8
+  }
+]

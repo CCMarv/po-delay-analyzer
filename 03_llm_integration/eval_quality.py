@@ -37,6 +37,18 @@ import pandas as pd
 # Reusar la infraestructura de F3 (mismo dir): no se reimplementa la corrida del LLM.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from llm_integration import build_prompt, create_backend, prepare_classified_df  # noqa: E402
+from fewshot import select_examples  # noqa: E402
+
+# Combinaciones few-shot del benchmark (#99): C0=zero-shot (ya medido), C1/C2/C3 añaden
+# 1/2/3 ejemplos del pool auditado, en progresión anidada por fuerza de etapa
+# (Vendor ⊂ Vendor+Carrier ⊂ Vendor+Carrier+DC). Así C1⊂C2⊂C3 y se ve el efecto marginal
+# de cada ejemplo añadido. Cada combinación corre los MISMOS 20 POs (semilla 42).
+COMBOS = {
+    "C0": lambda: None,
+    "C1": lambda: select_examples(1, stages=["Vendor"]),
+    "C2": lambda: select_examples(2, stages=["Vendor", "Carrier"]),
+    "C3": lambda: select_examples(3, stages=["Vendor", "Carrier", "DC"]),
+}
 
 # Composición estratificada de la muestra (#94, OK del usuario): sobrerrepresenta los
 # minoritarios para probar los 4 tipos de explicación con muestra suficiente cada uno.
@@ -100,12 +112,15 @@ def _check_cuantifica(explicacion: str, delay_days: float) -> bool:
     return objetivo in e or objetivo_1 in e
 
 
-def evaluate(df_sample: pd.DataFrame, backend) -> pd.DataFrame:
+def evaluate(df_sample: pd.DataFrame, backend, examples=None) -> pd.DataFrame:
     """Corre el LLM sobre la muestra y pre-evalúa los checks objetivos (a) y (b).
 
     Args:
         df_sample: muestra estratificada (20 POs).
         backend: backend de LLM (de create_backend).
+        examples: ejemplos few-shot a anteponer (#99). None → zero-shot (C0). Se pasan tal
+            cual a build_prompt; las MISMAS condiciones (semilla 42, muestra) en todas las
+            combinaciones, solo cambia el número de ejemplos.
 
     Returns:
         DataFrame con una fila por PO: datos dados, explicación del LLM y los
@@ -113,7 +128,7 @@ def evaluate(df_sample: pd.DataFrame, backend) -> pd.DataFrame:
     """
     filas = []
     for _, row in df_sample.iterrows():
-        prompt = build_prompt(row)
+        prompt = build_prompt(row, examples=examples)
         resp = backend.call(prompt) or {}
         causa = resp.get("causa_raiz", "")
         delay = float(row["delay_days_calc"])
@@ -180,28 +195,43 @@ def main() -> None:
                         choices=["local", "claude", "deepseek", "openai"])
     parser.add_argument("--dry-run", action="store_true",
                         help="Solo seleccionar y mostrar los 20 POs, sin llamar a la API.")
+    parser.add_argument("--combo", default="C0", choices=list(COMBOS),
+                        help="Combinación few-shot (#99): C0=zero-shot, C1/C2/C3=1/2/3 "
+                             "ejemplos del pool. Cada una corre los mismos 20 POs.")
     args = parser.parse_args()
+
+    examples = COMBOS[args.combo]()
 
     df = prepare_classified_df(from_csv=False)
     sample = select_sample(df)
 
     print(f"Muestra estratificada (20 POs, semilla {RANDOM_STATE}):")
     print(sample["stage_primary"].value_counts().to_string())
+    n_ej = 0 if examples is None else len(examples)
+    print(f"Combinación: {args.combo} ({n_ej} ejemplo(s) few-shot)")
 
     if args.dry_run:
         cols = ["PO_NBR", "stage_primary", "delay_days_calc", "REASON_DSC"]
         print("\n" + sample[cols].to_string(index=False))
+        if examples:
+            origen = [e.get("_meta", {}).get("po_origen") for e in examples]
+            print(f"\nEjemplos few-shot de la combinación {args.combo}: POs {origen}")
         print("\n(dry-run: no se llamó a la API.)")
         return
 
     backend = create_backend(backend_type=args.backend)
     print(f"\nCorriendo {len(sample)} POs por el LLM ({args.backend})...")
-    df_eval = evaluate(sample, backend)
+    df_eval = evaluate(sample, backend, examples=examples)
 
-    OUTPUT_MD.write_text(to_markdown(df_eval), encoding="utf-8")
+    # Nombre de salida por combinación: no sobreescribir resultados entre corridas.
+    # C0 (zero-shot) es el benchmark principal versionado junto al script; las combinaciones
+    # few-shot son fixtures de evidencia y van a fixtures/.
+    out_md = OUTPUT_MD if args.combo == "C0" else (
+        OUTPUT_MD.parent / "fixtures" / f"eval_quality_20pos_{args.combo}.md")
+    out_md.write_text(to_markdown(df_eval), encoding="utf-8")
     pre_ok = int((df_eval["chk_a_etapa"] & df_eval["chk_b_cuantifica"]).sum())
     print(f"Pre-evaluación (a & b): {pre_ok}/20")
-    print(f"Tabla escrita en: {OUTPUT_MD}")
+    print(f"Tabla escrita en: {out_md}")
     print("Falta validar a mano (c) y el veredicto final.")
 
 

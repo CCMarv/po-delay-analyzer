@@ -128,6 +128,80 @@ def test_build_prompt_pide_estructura_de_explicacion():
     assert "responsable" in out
 
 
+# ── few-shot (#99): el parámetro examples y la curación del ejemplo ───────────
+def _ejemplo_dc() -> dict:
+    """Ejemplo few-shot mínimo de etapa DC (mismatch: reason culpa al vendor)."""
+    return {
+        "stage_primary": "DC",
+        "delay_days_calc": 0.19,
+        "excess_dc_hrs": 4.6,
+        "DC_LOC_NAME": "DC-GDL",
+        "REASON_DSC": "Vendor delayed shipment",
+        "causa_raiz": "La etapa exacta es DC, retraso de 0.19 días; no coincide con el reason.",
+        "accion_recomendada": "El equipo del DC-GDL debe revisar el exceso de descarga medido.",
+        "severidad": "MEDIUM",
+        "coincide_con_reason_code": False,
+        "confianza": 0.8,
+    }
+
+
+def test_build_prompt_zero_shot_por_defecto_sin_ejemplos():
+    # Sin examples → comportamiento histórico: NO se antepone el bloque de ejemplos.
+    out = build_prompt(_row_ejemplo())
+    assert "EJEMPLOS DE RAZONAMIENTO" not in out
+
+
+def test_build_prompt_examples_vacios_equivale_a_zero_shot():
+    # Lista vacía es falsy → mismo prompt que zero-shot (no rompe el default).
+    assert build_prompt(_row_ejemplo(), examples=[]) == build_prompt(_row_ejemplo())
+
+
+def test_build_prompt_few_shot_antepone_bloque_antes_de_instrucciones():
+    # El bloque de ejemplos va ANTES de INSTRUCCIONES (las reglas se leen al final).
+    out = build_prompt(_row_ejemplo(), examples=[_ejemplo_dc()])
+    assert "EJEMPLOS DE RAZONAMIENTO" in out
+    assert "ANÁLISIS CORRECTO" in out
+    assert out.index("EJEMPLOS DE RAZONAMIENTO") < out.index("INSTRUCCIONES:")
+
+
+def test_build_prompt_ejemplo_nombra_responsable_y_senal():
+    # El ejemplo muestra el responsable de la etapa y la señal de exceso que la justifica.
+    out = build_prompt(_row_ejemplo(), examples=[_ejemplo_dc()])
+    bloque = out[out.index("EJEMPLOS"):out.index("INSTRUCCIONES:")]
+    assert "Centro de distribución: DC-GDL" in bloque
+    assert "Exceso del centro de distribución: 4.6 horas" in bloque
+
+
+def test_build_prompt_ejemplo_excluye_timeline():
+    # Curación #99/D2.1: el ejemplo NO trae el timeline de fechas (contra #91).
+    out = build_prompt(_row_ejemplo(), examples=[_ejemplo_dc()])
+    bloque = out[out.index("EJEMPLOS"):out.index("INSTRUCCIONES:")]
+    assert "TIMELINE" not in bloque
+    assert "Fecha prometida" not in bloque
+
+
+def test_build_prompt_ejemplo_json_ideal_con_5_claves():
+    # El JSON ideal del ejemplo lleva las 5 claves (refuerza que deben existir siempre).
+    out = build_prompt(_row_ejemplo(), examples=[_ejemplo_dc()])
+    bloque = out[out.index("EJEMPLOS"):out.index("INSTRUCCIONES:")]
+    for clave in ("causa_raiz", "accion_recomendada", "severidad",
+                  "coincide_con_reason_code", "confianza"):
+        assert clave in bloque
+
+
+def test_build_prompt_ejemplo_rescheduled_solo_si_activo():
+    # is_rescheduled aparece en el ejemplo SOLO cuando está activo (decisión caso a caso).
+    sin = build_prompt(_row_ejemplo(), examples=[_ejemplo_dc()])
+    bloque_sin = sin[sin.index("EJEMPLOS"):sin.index("INSTRUCCIONES:")]
+    assert "¿Se reprogramó la cita de entrega?" not in bloque_sin
+
+    ej = _ejemplo_dc()
+    ej["is_rescheduled"] = True
+    con = build_prompt(_row_ejemplo(), examples=[ej])
+    bloque_con = con[con.index("EJEMPLOS"):con.index("INSTRUCCIONES:")]
+    assert "¿Se reprogramó la cita de entrega? Sí" in bloque_con
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # B. _parse_llm_json — extracción/normalización de la respuesta del LLM
 # ════════════════════════════════════════════════════════════════════════════
