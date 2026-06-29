@@ -728,7 +728,8 @@ def create_backend(
     deepseek_model: Optional[str] = None,
     deepseek_api_key: Optional[str] = None,
     openai_model: Optional[str] = None,
-    openai_api_key: Optional[str] = None
+    openai_api_key: Optional[str] = None,
+    temperature: Optional[float] = None,
 ) -> Union[QwenBackend, ClaudeBackend, DeepSeekBackend, OpenAIBackend]:
     """
     Crea el backend apropiado según la configuración.
@@ -748,6 +749,7 @@ def create_backend(
             None usa el de llm_config.json["models"].
         ollama_url: URL de Ollama (endpoint operativo, no en el JSON de inferencia).
         claude_api_key/deepseek_api_key/openai_api_key: API key (opcional si está en .env).
+        temperature: override de temperatura para esta corrida; None usa llm_config.json.
 
     Returns:
         Instancia del backend configurado.
@@ -757,7 +759,7 @@ def create_backend(
     """
     cfg = load_llm_config()
     inference = {
-        "temperature": cfg["temperature"],
+        "temperature": temperature if temperature is not None else cfg["temperature"],
         "max_tokens": cfg["max_tokens"],
         "timeout_seconds": cfg["timeout_seconds"],
         "max_retries": cfg["max_retries"],

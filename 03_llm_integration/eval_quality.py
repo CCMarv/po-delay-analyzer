@@ -31,6 +31,7 @@ import argparse
 import sys
 import unicodedata
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 
@@ -58,6 +59,17 @@ RANDOM_STATE = 42  # semilla fija → muestra reproducible (la reusa #99)
 
 # Versionado (junto al script): es el entregable del benchmark, evidencia que reusa #99.
 OUTPUT_MD = Path(__file__).resolve().parent / "eval_quality_20pos.md"
+
+# Temperatura ancla del benchmark: 0.3 (la que fija llm_config.json como default).
+# Los fixtures generados con esta temperatura no llevan sufijo y no se pisan.
+ANCHOR_TEMP = 0.3
+
+
+def _temp_suffix(temperature: Optional[float]) -> str:
+    """Sufijo '_tXX' cuando la temperatura difiere del ancla; vacío si coincide o es None."""
+    if temperature is None or abs(temperature - ANCHOR_TEMP) < 1e-9:
+        return ""
+    return f"_t{int(round(temperature * 10)):02d}"
 
 
 def select_sample(df: pd.DataFrame) -> pd.DataFrame:
@@ -198,6 +210,10 @@ def main() -> None:
     parser.add_argument("--combo", default="C0", choices=list(COMBOS),
                         help="Combinación few-shot (#99): C0=zero-shot, C1/C2/C3=1/2/3 "
                              "ejemplos del pool. Cada una corre los mismos 20 POs.")
+    parser.add_argument("--temperature", type=float, default=None,
+                        help="Override de temperatura (default: la de llm_config.json, "
+                             "actualmente 0.3). Se codifica en el nombre del fixture "
+                             "cuando difiere del ancla.")
     args = parser.parse_args()
 
     examples = COMBOS[args.combo]()
@@ -210,24 +226,29 @@ def main() -> None:
     n_ej = 0 if examples is None else len(examples)
     print(f"Combinación: {args.combo} ({n_ej} ejemplo(s) few-shot)")
 
+    temp_suffix = _temp_suffix(args.temperature)
+    # Nombre de salida: C0 sin override de temperatura → benchmark principal (junto al
+    # script); cualquier otra combinación o temperatura distinta al ancla → fixtures/.
+    if args.combo == "C0" and not temp_suffix:
+        out_md = OUTPUT_MD
+    else:
+        out_md = OUTPUT_MD.parent / "fixtures" / f"eval_quality_20pos_{args.combo}{temp_suffix}.md"
+
     if args.dry_run:
         cols = ["PO_NBR", "stage_primary", "delay_days_calc", "REASON_DSC"]
         print("\n" + sample[cols].to_string(index=False))
         if examples:
             origen = [e.get("_meta", {}).get("po_origen") for e in examples]
             print(f"\nEjemplos few-shot de la combinación {args.combo}: POs {origen}")
+        t_display = args.temperature if args.temperature is not None else f"{ANCHOR_TEMP} (llm_config.json)"
+        print(f"\nTemperatura: {t_display}")
+        print(f"Fixture de salida: {out_md}")
         print("\n(dry-run: no se llamó a la API.)")
         return
 
-    backend = create_backend(backend_type=args.backend)
+    backend = create_backend(backend_type=args.backend, temperature=args.temperature)
     print(f"\nCorriendo {len(sample)} POs por el LLM ({args.backend})...")
     df_eval = evaluate(sample, backend, examples=examples)
-
-    # Nombre de salida por combinación: no sobreescribir resultados entre corridas.
-    # C0 (zero-shot) es el benchmark principal versionado junto al script; las combinaciones
-    # few-shot son fixtures de evidencia y van a fixtures/.
-    out_md = OUTPUT_MD if args.combo == "C0" else (
-        OUTPUT_MD.parent / "fixtures" / f"eval_quality_20pos_{args.combo}.md")
     out_md.write_text(to_markdown(df_eval), encoding="utf-8")
     pre_ok = int((df_eval["chk_a_etapa"] & df_eval["chk_b_cuantifica"]).sum())
     print(f"Pre-evaluación (a & b): {pre_ok}/20")
