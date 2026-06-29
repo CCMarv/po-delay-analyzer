@@ -88,3 +88,47 @@ clasificación (a: 19/20) ni la cuantificación (b: 20/20), sino la **calidad de
 La debilidad del prompt zero-shot no está en (a)/(b) —que ya cumplen holgadamente— sino en
 la **genericidad de las acciones** (la queja del roadmap #126). Es justo lo que #99 debe
 atacar con few-shot, usando este mismo benchmark (semilla 42) como métrica de comparación.
+
+## Resultado de #99 — few-shot contra el mismo benchmark
+
+Se probaron tres combinaciones few-shot contra el mismo conjunto (semilla 42), con ejemplos
+del pool auditado (`fewshot_pool.json`), disjunto de estos 20 POs. El pool es estratificado:
+el mismatch más fuerte de cada etapa (Vendor 100280 / Carrier 100244 / DC 100058). Cada
+combinación añade un ejemplo en progresión anidada (C1 ⊂ C2 ⊂ C3).
+
+| Combinación | ejemplos | (a) | (b) | (c) | veredicto (a&b&c) | /5 |
+|---|---|:--:|:--:|:--:|:--:|:--:|
+| C0 zero-shot | 0 | 19/20 | 20/20 | 13/20 | 13/20 | 3.25 |
+| C1 | 1 (Vendor) | 19/20 | 20/20 | 15/20 | 15/20 | 3.75 |
+| C2 | 2 (+Carrier) | 19/20 | 20/20 | 15/20 | 15/20 | 3.75 |
+| **C3** | **3 (+DC)** | **19/20** | **20/20** | **19/20** | **19/20** | **4.75** |
+
+**Combinación ganadora: C3 (4.75/5), supera la meta del mentor (4/5).** El few-shot no
+degradó (a) ni (b) en ninguna combinación. El salto en (c) viene de convertir las acciones
+genéricas del zero-shot en acciones específicas que citan la señal medida y dirigen al
+responsable correcto. El ejemplo DC (añadido en C3) es el que cierra los casos DC, donde C1
+y C2 aún daban acciones genéricas — de ahí el salto 15 → 19.
+
+Único fallo persistente de C3: **100182** (Indeterminado, `sin_datos`, reason "Vendor delayed
+shipment"), que falla por (a): el prompt no entrega la sub-categoría de indeterminación, así
+que el modelo resuelve la ambigüedad copiando el reason. No es un déficit del few-shot; se
+ataca cableando `indeterminado_substage` al prompt (#135).
+
+Tablas por combinación (fixtures de evidencia): `fixtures/eval_quality_20pos_C1.md`,
+`_C2.md`, `_C3.md`. Pasada zero-shot de los 8 mismatches (insumo de #95):
+`fixtures/mismatches_llm_zeroshot.csv`. Diseño del prompt: ADR-12.
+
+### Limitación conocida — homogeneización de acciones por temperatura
+
+El few-shot mejora (c) de forma clara, pero las acciones de C3 tienden a converger a una
+misma forma ("solicitar al responsable una explicación / un plan con fecha firme") incluso
+ante entradas variadas. En PO 100278 (Carrier, reason "Weather/road conditions") esto produce
+una acción genérica del tipo que el zero-shot marcaba como reprobable por falta de coherencia.
+La hipótesis es que la temperatura baja del backend (0.3, fija) homogeneiza la salida pese a
+la diversidad de entrada.
+
+No se corrige aquí: tocar la temperatura cambia todas las respuestas, así que la comparación
+C0–C3 (toda medida a temperatura constante) seguiría siendo válida pero el caso puntual debe
+reevaluarse con una corrida nueva, no parcharse. Queda para la experimentación de
+hiperparámetros, que depende de externalizar la temperatura (#122). Este benchmark documenta
+el resultado a temperatura 0.3; la temperatura óptima se decide en ese trabajo posterior.

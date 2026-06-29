@@ -12,6 +12,12 @@ data/**
 *.json
 # Excepción: permitir el config de reglas
 !**/rules_config.json
+# Excepción: el pool auditado de ejemplos few-shot es DATO versionado (no output), #99
+!**/fewshot_pool.json
+# Excepción: fixtures de evidencia (corridas de LLM congeladas como insumo, no output
+# efímero): se versionan a propósito para reuso sin re-gastar API (#99 → #95).
+!03_llm_integration/fixtures/
+!03_llm_integration/fixtures/**
 
 # == CREDENCIALES Y SECRETOS ==
 .env
