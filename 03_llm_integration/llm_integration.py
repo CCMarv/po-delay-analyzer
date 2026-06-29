@@ -130,6 +130,9 @@ def _format_example(ex: Dict[str, Any]) -> str:
     # Contexto neutro (#67): solo se muestra si el ejemplo lo trae activo (ver NOTA).
     if ex.get("is_rescheduled", False):
         lineas.append("- ¿Se reprogramó la cita de entrega? Sí")
+    # Espejo del comportamiento de build_prompt (#135): substage solo cuando INDETERMINADO.
+    if ex.get("stage_primary") == "INDETERMINADO" and ex.get("indeterminado_substage"):
+        lineas.append(f"- Sub-categoría INDETERMINADO: {ex['indeterminado_substage']}")
     lineas.append(f"- Código de motivo registrado por el DC: {ex.get('REASON_DSC', 'No registrado')}")
 
     ideal = {
