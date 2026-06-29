@@ -189,6 +189,32 @@ def test_build_prompt_ejemplo_json_ideal_con_5_claves():
         assert clave in bloque
 
 
+def test_build_prompt_indeterminado_substage_aparece_cuando_activo():
+    # #135: la sub-categoría se muestra SOLO cuando stage=INDETERMINADO y el campo existe.
+    row = _row_ejemplo()
+    row["stage_primary"] = "INDETERMINADO"
+    row["indeterminado_substage"] = "sin_datos"
+    out = build_prompt(row)
+    assert "Sub-categoría INDETERMINADO: sin_datos" in out
+
+
+def test_build_prompt_indeterminado_substage_no_aparece_en_otras_etapas():
+    # #135: para Carrier/Vendor/DC el campo no debe aparecer aunque esté en la fila.
+    row = _row_ejemplo()   # stage_primary = "Carrier" por defecto
+    row["indeterminado_substage"] = "sin_datos"
+    out = build_prompt(row)
+    assert "Sub-categoría INDETERMINADO" not in out
+
+
+def test_build_prompt_indeterminado_sin_substage_no_agrega_linea():
+    # #135: etapa INDETERMINADO pero campo vacío → no se agrega la línea.
+    row = _row_ejemplo()
+    row["stage_primary"] = "INDETERMINADO"
+    row["indeterminado_substage"] = ""
+    out = build_prompt(row)
+    assert "Sub-categoría INDETERMINADO" not in out
+
+
 def test_build_prompt_ejemplo_rescheduled_solo_si_activo():
     # is_rescheduled aparece en el ejemplo SOLO cuando está activo (decisión caso a caso).
     sin = build_prompt(_row_ejemplo(), examples=[_ejemplo_dc()])
