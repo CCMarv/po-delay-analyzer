@@ -207,8 +207,12 @@ Patrón estrella (los 5 primeros): el humano culpó al eslabón visible (carrier
 cita se había aprobado días tarde y ese tramo no tenía exceso alguno. Patrón interno (3
 últimos): el cómputo detecta un exceso de tramo que la anotación humana confundió.
 
-`metrics_core.select_mismatches(df, n)` devuelve este ranking por fuerza de señal; los 8
-candidatos a few-shot mezclan los tres tipos a propósito (decisión editorial del entregable).
+`metrics_core.select_mismatches(df, n)` devuelve este ranking por fuerza de señal. Con
+`stratify=True` reparte `n` entre las etapas presentes (Vendor/Carrier/DC) y toma el más
+fuerte de cada una, en vez de los `n` más fuertes en bruto: como el universo de mismatches
+está dominado por Vendor, el ranking plano tiende a ser casi todo Vendor, y la selección
+estratificada asegura que el few-shot (#99) y la narración de mismatches (#95) cubran las
+tres etapas. El default (`stratify=False`) conserva el ranking plano histórico.
 
 > **Estado del few-shot (al cierre de Fase 2).** Estos mismatches están **disponibles** como
 > posible few-shot, pero **el prompt de Fase 3 es hoy zero-shot**: todavía NO los consume. El
