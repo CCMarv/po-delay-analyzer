@@ -137,3 +137,25 @@ def test_select_mismatches_respeta_n(df_clean):
         out.loc[i, "reason_group_manual"] = reason
     ms = mc.select_mismatches(out, n=2)
     assert len(ms) == 2
+
+
+def test_select_mismatches_stratify_cubre_etapas(df_clean):
+    # stratify=True con n=3 y un mismatch por etapa → uno de cada etapa (no solo el fuerte).
+    out = classify_po_stages(df_clean).copy()
+    for po, reason in (("PO-VENDOR-LATE", "Carrier"),   # cómputo Vendor (señal alta)
+                       ("PO-CARRIER-LATE", "DC"),       # cómputo Carrier
+                       ("PO-DOCK-LATE", "Vendor")):     # cómputo DC
+        i = out.index[out["PO_NBR"] == po][0]
+        out.loc[i, "reason_group_manual"] = reason
+    ms = mc.select_mismatches(out, n=3, stratify=True)
+    assert set(ms["stage_primary"]) == {"Vendor", "Carrier", "DC"}
+
+
+def test_select_mismatches_stratify_no_cambia_default(df_clean):
+    # Con un único mismatch, estratificar o no da el mismo resultado (no rompe el default).
+    out = classify_po_stages(df_clean).copy()
+    i = out.index[out["PO_NBR"] == "PO-VENDOR-LATE"][0]
+    out.loc[i, "reason_group_manual"] = "Carrier"
+    plano = mc.select_mismatches(out, n=8)
+    estrat = mc.select_mismatches(out, n=8, stratify=True)
+    assert list(plano["PO_NBR"]) == list(estrat["PO_NBR"])

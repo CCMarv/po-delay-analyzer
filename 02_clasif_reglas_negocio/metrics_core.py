@@ -157,22 +157,34 @@ def reason_agreement(df: pd.DataFrame) -> dict:
     }
 
 
-def select_mismatches(df: pd.DataFrame, n: int = 8) -> pd.DataFrame:
+def select_mismatches(
+    df: pd.DataFrame, n: int = 8, stratify: bool = False
+) -> pd.DataFrame:
     """#47 · Los `n` mismatches más fuertes donde el cómputo discrepa del reason humano.
 
     Un mismatch es un PO clasificable cuyo stage_primary ≠ reason_group_manual: los
     timestamps (cómputo) atribuyen el retraso a una etapa distinta de la que anotó el
     staff. Son la EVIDENCIA de la tesis del proyecto (el cómputo temporal es más preciso
-    que la anotación humana) y están disponibles como POSIBLE insumo few-shot para Fase 3.
-    Estado actual: el prompt de F3 es ZERO-SHOT — todavía no consume estos ejemplos;
-    cablearlos como few-shot es decisión de diseño de prompt, pendiente en Fase 3.
+    que la anotación humana) y se usan como insumo few-shot para Fase 3 (#99).
 
     "Fuerza de señal" = la magnitud del exceso de la etapa que el cómputo eligió
     (excess_*_hrs de stage_primary). Ordenar por ella pone arriba los casos más
     contundentes (p.ej. STA push de 5 días que el humano atribuyó a "yard congestion").
 
+    Selección:
+      - stratify=False (default): los `n` mismatches más fuertes por señal, sin importar
+        la etapa. Es el comportamiento histórico (lo usa el notebook/README de F2). Como
+        el universo de mismatches está dominado por Vendor, el top-n tiende a ser casi
+        todo Vendor.
+      - stratify=True: reparte `n` entre las etapas presentes (Vendor/Carrier/DC) para que
+        la selección cubra las tres, no solo la dominante. Cuota equitativa (n // etapas)
+        y el residuo va a las etapas de señal más alta; con tope por disponibilidad (si una
+        etapa tiene menos mismatches que su cuota, no se fuerza: se reparte a las demás).
+        Dentro de cada etapa se toman los más fuertes. Usado por #99 (pool few-shot) para
+        enseñar las tres etapas con el caso más contundente de cada una.
+
     Devuelve un DataFrame con PO_NBR, ambas etiquetas, REASON_DSC, los excess_*_hrs y la
-    fuerza de señal — listo para presentar/exportar. NO imprime.
+    fuerza de señal, ordenado por señal global (desc). NO imprime.
     """
     es_tardio = df["delay_days_calc"] > 0
     clasificable = (
@@ -201,7 +213,41 @@ def select_mismatches(df: pd.DataFrame, n: int = 8) -> pd.DataFrame:
     ]
 
     out = out.sort_values("senal_computo_hrs", ascending=False)
-    return out.head(n).reset_index(drop=True)
+
+    if not stratify:
+        return out.head(n).reset_index(drop=True)
+
+    # Estratificado: reparte n entre las etapas presentes (cuota equitativa + residuo a las
+    # de señal más alta), con tope por disponibilidad. Dentro de cada etapa, los más fuertes.
+    etapas_presentes = [e for e in _STAGES if (out["stage_primary"] == e).any()]
+    if not etapas_presentes:
+        return out.head(0).reset_index(drop=True)
+
+    # Orden de prioridad de las etapas por su señal máxima (para asignar el residuo).
+    etapas_por_fuerza = sorted(
+        etapas_presentes,
+        key=lambda e: out.loc[out["stage_primary"] == e, "senal_computo_hrs"].max(),
+        reverse=True,
+    )
+    base, residuo = divmod(n, len(etapas_presentes))
+    cuota = dict.fromkeys(etapas_presentes, base)
+    for e in etapas_por_fuerza[:residuo]:
+        cuota[e] += 1
+
+    elegidos = []
+    for e in etapas_presentes:
+        elegidos.append(out[out["stage_primary"] == e].head(cuota[e]))
+    seleccion = pd.concat(elegidos)
+
+    # Si alguna etapa no llenó su cuota (tope por disponibilidad), completar con los
+    # mismatches más fuertes que aún no estén elegidos, hasta alcanzar n.
+    faltan = n - len(seleccion)
+    if faltan > 0:
+        resto = out[~out["PO_NBR"].isin(seleccion["PO_NBR"])].head(faltan)
+        seleccion = pd.concat([seleccion, resto])
+
+    seleccion = seleccion.sort_values("senal_computo_hrs", ascending=False)
+    return seleccion.head(n).reset_index(drop=True)
 
 
 # ── Análisis del umbral de activación de Vendor (consulta mentor 06-17) ───────
