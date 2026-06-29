@@ -51,6 +51,14 @@ from tqdm import tqdm
 # Constantes (PEP 8: mayúsculas con guión bajo)
 # ============================================================
 
+# Cargar variables de entorno antes de derivar las constantes operativas que leen
+# de .env (el orden importa: load_dotenv puebla os.environ).
+load_dotenv()
+
+# --- Inferencia (comportamiento del modelo) ---
+# Reproducible y auditable: se externaliza a llm_config.json y se lee por nombre vía
+# load_llm_config(). Estas constantes quedan como default de los backends
+# (construcción directa) y como degradación si faltara una clave del JSON.
 DEFAULT_OLLAMA_URL = "http://localhost:11434/api/generate"
 DEFAULT_OLLAMA_MODEL = "qwen2.5:7b"
 DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6"
@@ -58,12 +66,47 @@ DEFAULT_DEEPSEEK_MODEL = "deepseek-chat"   # alternativa: "deepseek-reasoner"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"       # alternativa: "gpt-4", "gpt-4-turbo"
 DEFAULT_TEMPERATURE = 0.3
 DEFAULT_MAX_TOKENS = 512
-DEFAULT_DELAY_SECONDS = 0.5
-DEFAULT_SAVE_EVERY = 50
-RETRY_SLEEP_SECONDS = 2
+DEFAULT_TIMEOUT_SECONDS = 60
+DEFAULT_MAX_RETRIES = 3
 
-# Cargar variables de entorno
-load_dotenv()
+# --- Operativo (despliegue) ---
+# Cambia por entorno, no por lógica del producto: se lee de .env con default en
+# código. Documentadas en .env.example.
+DEFAULT_DELAY_SECONDS = float(os.environ.get("LLM_DELAY_SECONDS", "0.5"))
+RETRY_SLEEP_SECONDS = float(os.environ.get("LLM_RETRY_SLEEP_SECONDS", "2"))
+DEFAULT_SAVE_EVERY = int(os.environ.get("LLM_SAVE_EVERY", "50"))
+
+# --- Fallbacks del parser (_parse_llm_json) ---
+# Rutas de degradación cuando el modelo no devuelve JSON usable; no son config
+# calibrable, solo nombran lo que antes eran literales sueltos.
+FALLBACK_SEVERITY = "MEDIUM"
+FALLBACK_CONFIDENCE = 0.5             # JSON válido pero sin 'confianza'
+FALLBACK_RAW_CHARS = 200             # recorte del texto crudo en el dict de emergencia
+FALLBACK_ACTION = "Revisar manualmente con el equipo"
+FALLBACK_EMERGENCY_CONFIDENCE = 0.3  # sin JSON parseable (modo local, texto libre)
+
+
+# ============================================================
+# Configuración de inferencia (Twelve-Factor §III) — externalizada a JSON
+# ============================================================
+# Espeja load_rules_config()/_thr de Fase 2 (classifier_core): ruta resuelta desde
+# __file__ (no del cwd), para que funcione igual desde la suite, un notebook o una
+# ejecución directa. Temperatura, max_tokens, timeout, reintentos y modelos por
+# backend viven en llm_config.json (versionado), no como literales en el código.
+_DEFAULT_LLM_CONFIG_PATH = Path(__file__).resolve().parent / "llm_config.json"
+
+
+def load_llm_config(path=None) -> dict:
+    """Carga llm_config.json y devuelve el dict de configuración de inferencia.
+
+    Input:  path opcional (str | Path) para sobreescribir la ubicación; None usa el
+            JSON convencional junto a este módulo.
+    Output: dict con las claves de inferencia (`temperature`, `max_tokens`,
+            `timeout_seconds`, `max_retries`, `models`, ...).
+    """
+    config_path = Path(path) if path else _DEFAULT_LLM_CONFIG_PATH
+    with open(config_path, encoding="utf-8") as f:
+        return json.load(f)
 
 
 # ============================================================
@@ -316,7 +359,7 @@ def _parse_llm_json(
                 "severidad": (
                     parsed.get('severidad')
                     or parsed.get('severity')
-                    or 'MEDIUM'
+                    or FALLBACK_SEVERITY
                 ).upper(),
                 "coincide_con_reason_code": bool(
                     parsed.get('coincide_con_reason_code')
@@ -324,7 +367,7 @@ def _parse_llm_json(
                 ),
                 "confianza": float(
                     parsed.get('confianza')
-                    or parsed.get('confidence', 0.5)
+                    or parsed.get('confidence', FALLBACK_CONFIDENCE)
                 )
             }
         except (json.JSONDecodeError, ValueError):
@@ -332,11 +375,11 @@ def _parse_llm_json(
 
     if fallback:
         return {
-            "causa_raiz": raw_response[:200],
-            "accion_recomendada": "Revisar manualmente con el equipo",
-            "severidad": "MEDIUM",
+            "causa_raiz": raw_response[:FALLBACK_RAW_CHARS],
+            "accion_recomendada": FALLBACK_ACTION,
+            "severidad": FALLBACK_SEVERITY,
             "coincide_con_reason_code": False,
-            "confianza": 0.3
+            "confianza": FALLBACK_EMERGENCY_CONFIDENCE
         }
 
     return None
@@ -352,7 +395,11 @@ class QwenBackend:
     def __init__(
         self,
         model: str = DEFAULT_OLLAMA_MODEL,
-        url: str = DEFAULT_OLLAMA_URL
+        url: str = DEFAULT_OLLAMA_URL,
+        temperature: float = DEFAULT_TEMPERATURE,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+        timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+        max_retries: int = DEFAULT_MAX_RETRIES,
     ) -> None:
         """
         Inicializa el backend de Qwen.
@@ -363,19 +410,22 @@ class QwenBackend:
         """
         self.model = model
         self.url = url
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.timeout_seconds = timeout_seconds
+        self.max_retries = max_retries
 
-    def call(self, prompt: str, max_retries: int = 3) -> Optional[Dict]:
+    def call(self, prompt: str) -> Optional[Dict]:
         """
         Llama a Qwen y parsea la respuesta.
 
         Args:
             prompt: Texto a enviar al modelo.
-            max_retries: Número máximo de reintentos.
 
         Returns:
             Diccionario con la respuesta parseada o None si falló.
         """
-        for attempt in range(max_retries):
+        for attempt in range(self.max_retries):
             try:
                 response = requests.post(
                     self.url,
@@ -384,11 +434,11 @@ class QwenBackend:
                         "prompt": prompt,
                         "stream": False,
                         "options": {
-                            "temperature": DEFAULT_TEMPERATURE,
-                            "num_predict": DEFAULT_MAX_TOKENS
+                            "temperature": self.temperature,
+                            "num_predict": self.max_tokens
                         }
                     },
-                    timeout=60
+                    timeout=self.timeout_seconds
                 )
                 response.raise_for_status()
 
@@ -399,11 +449,11 @@ class QwenBackend:
 
             except requests.exceptions.HTTPError as e:
                 print(f"  Error HTTP {e.response.status_code}, "
-                      f"intento {attempt + 1}/{max_retries}")
+                      f"intento {attempt + 1}/{self.max_retries}")
                 time.sleep(RETRY_SLEEP_SECONDS)
             except requests.exceptions.RequestException as e:
                 print(f"  Error de red: {e}, "
-                      f"intento {attempt + 1}/{max_retries}")
+                      f"intento {attempt + 1}/{self.max_retries}")
                 time.sleep(RETRY_SLEEP_SECONDS)
 
         return None
@@ -419,7 +469,11 @@ class ClaudeBackend:
     def __init__(
         self,
         api_key: str,
-        model: str = DEFAULT_CLAUDE_MODEL
+        model: str = DEFAULT_CLAUDE_MODEL,
+        temperature: float = DEFAULT_TEMPERATURE,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+        timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+        max_retries: int = DEFAULT_MAX_RETRIES,
     ) -> None:
         """
         Inicializa el backend de Claude.
@@ -431,14 +485,17 @@ class ClaudeBackend:
         self.api_key = api_key
         self.model = model
         self.url = "https://api.anthropic.com/v1/messages"
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.timeout_seconds = timeout_seconds
+        self.max_retries = max_retries
 
-    def call(self, prompt: str, max_retries: int = 3) -> Optional[Dict]:
+    def call(self, prompt: str) -> Optional[Dict]:
         """
         Llama a Claude y parsea la respuesta.
 
         Args:
             prompt: Texto a enviar al modelo.
-            max_retries: Número máximo de reintentos.
 
         Returns:
             Diccionario con la respuesta parseada o None si falló.
@@ -450,17 +507,17 @@ class ClaudeBackend:
         }
         body = {
             "model": self.model,
-            "max_tokens": DEFAULT_MAX_TOKENS,
-            "temperature": DEFAULT_TEMPERATURE,
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
             "messages": [
                 {"role": "user", "content": prompt}
             ]
         }
 
-        for attempt in range(max_retries):
+        for attempt in range(self.max_retries):
             try:
                 response = requests.post(
-                    self.url, headers=headers, json=body, timeout=60
+                    self.url, headers=headers, json=body, timeout=self.timeout_seconds
                 )
                 response.raise_for_status()
 
@@ -474,11 +531,11 @@ class ClaudeBackend:
             except requests.exceptions.HTTPError as e:
                 print(f"  Error HTTP {e.response.status_code}: "
                       f"{e.response.text[:100]}, "
-                      f"intento {attempt + 1}/{max_retries}")
+                      f"intento {attempt + 1}/{self.max_retries}")
                 time.sleep(RETRY_SLEEP_SECONDS)
             except requests.exceptions.RequestException as e:
                 print(f"  Error de red: {e}, "
-                      f"intento {attempt + 1}/{max_retries}")
+                      f"intento {attempt + 1}/{self.max_retries}")
                 time.sleep(RETRY_SLEEP_SECONDS)
 
         return None
@@ -500,7 +557,11 @@ class DeepSeekBackend:
     def __init__(
         self,
         api_key: str,
-        model: str = DEFAULT_DEEPSEEK_MODEL
+        model: str = DEFAULT_DEEPSEEK_MODEL,
+        temperature: float = DEFAULT_TEMPERATURE,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+        timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+        max_retries: int = DEFAULT_MAX_RETRIES,
     ) -> None:
         """
         Inicializa el backend de DeepSeek.
@@ -512,14 +573,17 @@ class DeepSeekBackend:
         self.api_key = api_key
         self.model = model
         self.url = "https://api.deepseek.com/v1/chat/completions"
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.timeout_seconds = timeout_seconds
+        self.max_retries = max_retries
 
-    def call(self, prompt: str, max_retries: int = 3) -> Optional[Dict]:
+    def call(self, prompt: str) -> Optional[Dict]:
         """
         Llama a DeepSeek y parsea la respuesta.
 
         Args:
             prompt: Texto a enviar al modelo.
-            max_retries: Número máximo de reintentos.
 
         Returns:
             Diccionario con la respuesta parseada o None si falló.
@@ -530,17 +594,17 @@ class DeepSeekBackend:
         }
         body = {
             "model": self.model,
-            "max_tokens": DEFAULT_MAX_TOKENS,
-            "temperature": DEFAULT_TEMPERATURE,
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
             "messages": [
                 {"role": "user", "content": prompt}
             ]
         }
 
-        for attempt in range(max_retries):
+        for attempt in range(self.max_retries):
             try:
                 response = requests.post(
-                    self.url, headers=headers, json=body, timeout=60
+                    self.url, headers=headers, json=body, timeout=self.timeout_seconds
                 )
                 response.raise_for_status()
 
@@ -557,11 +621,11 @@ class DeepSeekBackend:
             except requests.exceptions.HTTPError as e:
                 print(f"  Error HTTP {e.response.status_code}: "
                       f"{e.response.text[:100]}, "
-                      f"intento {attempt + 1}/{max_retries}")
+                      f"intento {attempt + 1}/{self.max_retries}")
                 time.sleep(RETRY_SLEEP_SECONDS)
             except requests.exceptions.RequestException as e:
                 print(f"  Error de red: {e}, "
-                      f"intento {attempt + 1}/{max_retries}")
+                      f"intento {attempt + 1}/{self.max_retries}")
                 time.sleep(RETRY_SLEEP_SECONDS)
 
         return None
@@ -577,7 +641,11 @@ class OpenAIBackend:
     def __init__(
         self,
         api_key: str,
-        model: str = DEFAULT_OPENAI_MODEL
+        model: str = DEFAULT_OPENAI_MODEL,
+        temperature: float = DEFAULT_TEMPERATURE,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
+        timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
+        max_retries: int = DEFAULT_MAX_RETRIES,
     ) -> None:
         """
         Inicializa el backend de OpenAI.
@@ -589,14 +657,17 @@ class OpenAIBackend:
         self.api_key = api_key
         self.model = model
         self.url = "https://api.openai.com/v1/chat/completions"
+        self.temperature = temperature
+        self.max_tokens = max_tokens
+        self.timeout_seconds = timeout_seconds
+        self.max_retries = max_retries
 
-    def call(self, prompt: str, max_retries: int = 3) -> Optional[Dict]:
+    def call(self, prompt: str) -> Optional[Dict]:
         """
         Llama a OpenAI y parsea la respuesta.
 
         Args:
             prompt: Texto a enviar al modelo.
-            max_retries: Número máximo de reintentos.
 
         Returns:
             Diccionario con la respuesta parseada o None si falló.
@@ -607,17 +678,17 @@ class OpenAIBackend:
         }
         body = {
             "model": self.model,
-            "max_tokens": DEFAULT_MAX_TOKENS,
-            "temperature": DEFAULT_TEMPERATURE,
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
             "messages": [
                 {"role": "user", "content": prompt}
             ]
         }
 
-        for attempt in range(max_retries):
+        for attempt in range(self.max_retries):
             try:
                 response = requests.post(
-                    self.url, headers=headers, json=body, timeout=60
+                    self.url, headers=headers, json=body, timeout=self.timeout_seconds
                 )
                 response.raise_for_status()
 
@@ -634,11 +705,11 @@ class OpenAIBackend:
             except requests.exceptions.HTTPError as e:
                 print(f"  Error HTTP {e.response.status_code}: "
                       f"{e.response.text[:100]}, "
-                      f"intento {attempt + 1}/{max_retries}")
+                      f"intento {attempt + 1}/{self.max_retries}")
                 time.sleep(RETRY_SLEEP_SECONDS)
             except requests.exceptions.RequestException as e:
                 print(f"  Error de red: {e}, "
-                      f"intento {attempt + 1}/{max_retries}")
+                      f"intento {attempt + 1}/{self.max_retries}")
                 time.sleep(RETRY_SLEEP_SECONDS)
 
         return None
@@ -650,17 +721,22 @@ class OpenAIBackend:
 
 def create_backend(
     backend_type: str,
-    ollama_model: str = DEFAULT_OLLAMA_MODEL,
+    ollama_model: Optional[str] = None,
     ollama_url: str = DEFAULT_OLLAMA_URL,
-    claude_model: str = DEFAULT_CLAUDE_MODEL,
+    claude_model: Optional[str] = None,
     claude_api_key: Optional[str] = None,
-    deepseek_model: str = DEFAULT_DEEPSEEK_MODEL,
+    deepseek_model: Optional[str] = None,
     deepseek_api_key: Optional[str] = None,
-    openai_model: str = DEFAULT_OPENAI_MODEL,
+    openai_model: Optional[str] = None,
     openai_api_key: Optional[str] = None
 ) -> Union[QwenBackend, ClaudeBackend, DeepSeekBackend, OpenAIBackend]:
     """
     Crea el backend apropiado según la configuración.
+
+    Inferencia (temperatura, max_tokens, timeout, reintentos, modelo por backend)
+    se lee de llm_config.json vía load_llm_config(): es config reproducible, no
+    literales en el código. El modelo se resuelve con prioridad: argumento explícito
+    (p. ej. --claude-model) por encima del de llm_config.json.
 
     La API key se resuelve en este orden de prioridad:
         1. Argumento explícito (--api-key en CLI)
@@ -668,14 +744,10 @@ def create_backend(
 
     Args:
         backend_type: 'local', 'claude', 'deepseek' u 'openai'.
-        ollama_model: Modelo de Ollama.
-        ollama_url: URL de Ollama.
-        claude_model: Modelo de Claude.
-        claude_api_key: API key de Anthropic (opcional si está en .env).
-        deepseek_model: Modelo de DeepSeek.
-        deepseek_api_key: API key de DeepSeek (opcional si está en .env).
-        openai_model: Modelo de OpenAI.
-        openai_api_key: API key de OpenAI (opcional si está en .env).
+        ollama_model/claude_model/deepseek_model/openai_model: override del modelo;
+            None usa el de llm_config.json["models"].
+        ollama_url: URL de Ollama (endpoint operativo, no en el JSON de inferencia).
+        claude_api_key/deepseek_api_key/openai_api_key: API key (opcional si está en .env).
 
     Returns:
         Instancia del backend configurado.
@@ -683,6 +755,15 @@ def create_backend(
     Raises:
         ValueError: Si el backend requiere API key y no se encuentra.
     """
+    cfg = load_llm_config()
+    inference = {
+        "temperature": cfg["temperature"],
+        "max_tokens": cfg["max_tokens"],
+        "timeout_seconds": cfg["timeout_seconds"],
+        "max_retries": cfg["max_retries"],
+    }
+    models = cfg["models"]
+
     if backend_type == "claude":
         api_key = claude_api_key or os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
@@ -690,8 +771,9 @@ def create_backend(
                 "❌ Se requiere API key de Claude. "
                 "Pásala con --api-key o define ANTHROPIC_API_KEY en .env"
             )
-        print(f"🔑 Usando Claude API (modelo: {claude_model})")
-        return ClaudeBackend(api_key, claude_model)
+        model = claude_model or models["claude"]
+        print(f"🔑 Usando Claude API (modelo: {model})")
+        return ClaudeBackend(api_key, model, **inference)
 
     if backend_type == "deepseek":
         api_key = deepseek_api_key or os.environ.get("DEEPSEEK_API_KEY")
@@ -700,8 +782,9 @@ def create_backend(
                 "❌ Se requiere API key de DeepSeek. "
                 "Pásala con --api-key o define DEEPSEEK_API_KEY en .env"
             )
-        print(f"🔑 Usando DeepSeek API (modelo: {deepseek_model})")
-        return DeepSeekBackend(api_key, deepseek_model)
+        model = deepseek_model or models["deepseek"]
+        print(f"🔑 Usando DeepSeek API (modelo: {model})")
+        return DeepSeekBackend(api_key, model, **inference)
 
     if backend_type == "openai":
         api_key = openai_api_key or os.environ.get("OPENAI_API_KEY")
@@ -710,12 +793,14 @@ def create_backend(
                 "❌ Se requiere API key de OpenAI. "
                 "Pásala con --api-key o define OPENAI_API_KEY en .env"
             )
-        print(f"🔑 Usando OpenAI API (modelo: {openai_model})")
-        return OpenAIBackend(api_key, openai_model)
+        model = openai_model or models["openai"]
+        print(f"🔑 Usando OpenAI API (modelo: {model})")
+        return OpenAIBackend(api_key, model, **inference)
 
     # Default: backend local con Qwen/Ollama
-    print(f"🖥️ Usando Qwen local (modelo: {ollama_model})")
-    return QwenBackend(ollama_model, ollama_url)
+    model = ollama_model or models["local"]
+    print(f"🖥️ Usando Qwen local (modelo: {model})")
+    return QwenBackend(model, ollama_url, **inference)
 
 
 # ============================================================
@@ -998,24 +1083,24 @@ def main() -> None:
         help="Backend: local (Qwen/Ollama), claude, deepseek u openai"
     )
     parser.add_argument(
-        "--ollama-model", type=str, default=DEFAULT_OLLAMA_MODEL,
-        help="Modelo de Ollama (solo aplica con --backend local)"
+        "--ollama-model", type=str, default=None,
+        help="Modelo de Ollama (override; default desde llm_config.json)"
     )
     parser.add_argument(
         "--ollama-url", type=str, default=DEFAULT_OLLAMA_URL,
         help="URL de la API de Ollama"
     )
     parser.add_argument(
-        "--claude-model", type=str, default=DEFAULT_CLAUDE_MODEL,
-        help="Modelo de Claude (solo aplica con --backend claude)"
+        "--claude-model", type=str, default=None,
+        help="Modelo de Claude (override; default desde llm_config.json)"
     )
     parser.add_argument(
-        "--deepseek-model", type=str, default=DEFAULT_DEEPSEEK_MODEL,
-        help="Modelo de DeepSeek (solo aplica con --backend deepseek)"
+        "--deepseek-model", type=str, default=None,
+        help="Modelo de DeepSeek (override; default desde llm_config.json)"
     )
     parser.add_argument(
-        "--openai-model", type=str, default=DEFAULT_OPENAI_MODEL,
-        help="Modelo de OpenAI (solo aplica con --backend openai)"
+        "--openai-model", type=str, default=None,
+        help="Modelo de OpenAI (override; default desde llm_config.json)"
     )
     parser.add_argument(
         "--api-key", type=str, default=None,

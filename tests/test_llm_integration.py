@@ -21,6 +21,7 @@ import llm_integration
 from llm_integration import (
     build_prompt,
     _parse_llm_json,
+    load_llm_config,
     prepare_classified_df,
     save_llm_output,
     export_deliverable_csv,
@@ -465,3 +466,27 @@ def test_export_deliverable_severity_es_la_del_llm(tmp_path):
     assert list(out["severity"]) == ["HIGH", "MEDIUM"]      # = llm_severidad
     # dominio válido
     assert set(out["severity"]).issubset({"HIGH", "MEDIUM", "LOW"})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# E. load_llm_config — contrato de config de inferencia (#122)
+# ════════════════════════════════════════════════════════════════════════════
+def test_load_llm_config_trae_claves_de_inferencia():
+    # El JSON versionado expone temperatura/max_tokens/timeout/reintentos y modelos
+    # por backend: el código de llamada los lee de aquí, no como literales. Los
+    # valores son los del entregable (no cambia el comportamiento histórico).
+    cfg = load_llm_config()
+    assert cfg["temperature"] == 0.3
+    assert cfg["max_tokens"] == 512
+    assert cfg["timeout_seconds"] == 60
+    assert cfg["max_retries"] == 3
+    for backend in ("claude", "local", "deepseek", "openai"):
+        assert backend in cfg["models"]
+
+
+def test_load_llm_config_path_explicito(tmp_path):
+    # path override: load_llm_config lee el JSON indicado (no solo el sibling del módulo).
+    import json
+    p = tmp_path / "llm_config.json"
+    p.write_text(json.dumps({"temperature": 0.9}), encoding="utf-8")
+    assert load_llm_config(p)["temperature"] == 0.9
