@@ -228,6 +228,45 @@ def test_build_prompt_ejemplo_rescheduled_solo_si_activo():
     assert "¿Se reprogramó la cita de entrega? Sí" in bloque_con
 
 
+def test_format_example_indeterminado_muestra_substage():
+    # #136: _format_example espeja el comportamiento de build_prompt (#135): el substage
+    # aparece en CONTEXTO ADICIONAL del ejemplo cuando stage=INDETERMINADO y el campo existe.
+    ej_sin_datos = {
+        "stage_primary": "INDETERMINADO",
+        "indeterminado_substage": "sin_datos",
+        "delay_days_calc": 2.10,
+        "REASON_DSC": "Vendor delivery delay",
+        "causa_raiz": "INDETERMINADO por falta de timestamps.",
+        "accion_recomendada": "Completar registro de timestamps.",
+        "severidad": "MEDIUM",
+        "coincide_con_reason_code": False,
+        "confianza": 0.5,
+    }
+    out = build_prompt(_row_ejemplo(), examples=[ej_sin_datos])
+    bloque = out[out.index("EJEMPLOS"):out.index("INSTRUCCIONES:")]
+    assert "Sub-categoría INDETERMINADO: sin_datos" in bloque
+
+
+def test_format_example_indeterminado_no_muestra_exceso_ni_responsable():
+    # #136: INDETERMINADO no tiene señal de exceso medible → _format_example no debe
+    # incluir líneas de responsable ni exceso (cae al branch (None, None) de _STAGE_SIGNAL).
+    ej = {
+        "stage_primary": "INDETERMINADO",
+        "indeterminado_substage": "sin_causa_dominante",
+        "delay_days_calc": 3.40,
+        "REASON_DSC": "Multiple delays - carrier and DC",
+        "causa_raiz": "Ambigüedad entre Carrier y DC.",
+        "accion_recomendada": "Revisión conjunta.",
+        "severidad": "MEDIUM",
+        "coincide_con_reason_code": True,
+        "confianza": 0.65,
+    }
+    out = build_prompt(_row_ejemplo(), examples=[ej])
+    bloque = out[out.index("EJEMPLOS"):out.index("INSTRUCCIONES:")]
+    assert "Exceso del" not in bloque
+    assert "Sub-categoría INDETERMINADO: sin_causa_dominante" in bloque
+
+
 # ════════════════════════════════════════════════════════════════════════════
 # B. _parse_llm_json — extracción/normalización de la respuesta del LLM
 # ════════════════════════════════════════════════════════════════════════════
