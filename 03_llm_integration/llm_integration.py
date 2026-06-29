@@ -198,6 +198,22 @@ def build_prompt(row: pd.Series, examples: Optional[List[Dict[str, Any]]] = None
     # etapa. Se muestra como dato para juzgar el REASON_DSC; no implica culpa del vendor.
     rescheduled = "Sí" if row.get('is_rescheduled', False) else "No"
 
+    context_lines = [
+        "CONTEXTO ADICIONAL:",
+        f"- ¿Es Hot PO (urgente)? {hot_flag}",
+        f"- ¿Es short ship (envío incompleto)? {short_ship}",
+        f"- ¿Se reprogramó la cita de entrega? {rescheduled}",
+    ]
+    # Solo cuando el clasificador no pudo resolver la etapa (#135): indicar si fue
+    # por falta de señal temporal (sin_datos) o por empate entre etapas (sin_causa_dominante).
+    if row.get("stage_primary") == "INDETERMINADO":
+        substage = row.get("indeterminado_substage", "")
+        if substage:
+            context_lines.append(f"- Sub-categoría INDETERMINADO: {substage}")
+    context_lines.append(
+        f"- Código de motivo registrado por el DC: {row.get('REASON_DSC', 'No registrado')}"
+    )
+
     prompt_lines = [
         "Eres un analista experto en cadena de suministro. "
         "Analiza este Purchase Order retrasado.\n",
@@ -222,11 +238,7 @@ def build_prompt(row: pd.Series, examples: Optional[List[Dict[str, Any]]] = None
         "CLASIFICACIÓN AUTOMÁTICA:",
         f"- Etapa primaria del retraso: {row.get('stage_primary', 'Desconocido')}",
         f"- Causas múltiples: {row.get('stage_multi', 'Ninguna')}\n",
-        "CONTEXTO ADICIONAL:",
-        f"- ¿Es Hot PO (urgente)? {hot_flag}",
-        f"- ¿Es short ship (envío incompleto)? {short_ship}",
-        f"- ¿Se reprogramó la cita de entrega? {rescheduled}",
-        f"- Código de motivo registrado por el DC: {row.get('REASON_DSC', 'No registrado')}\n",
+        "\n".join(context_lines) + "\n",
         _examples_block(examples),
         "INSTRUCCIONES:",
         "Tu trabajo es INTERPRETAR los datos dados, NO calcular. Usa ÚNICAMENTE las "
