@@ -193,7 +193,7 @@ def test_build_prompt_ejemplo_json_ideal_con_5_claves():
 def test_build_prompt_indeterminado_substage_aparece_cuando_activo():
     # #135: la sub-categoría se muestra SOLO cuando stage=INDETERMINADO y el campo existe.
     row = _row_ejemplo()
-    row["stage_primary"] = "INDETERMINADO"
+    row["stage_primary"] = "Indeterminado"
     row["indeterminado_substage"] = "sin_datos"
     out = build_prompt(row)
     assert "Sub-categoría INDETERMINADO: sin_datos" in out
@@ -210,7 +210,7 @@ def test_build_prompt_indeterminado_substage_no_aparece_en_otras_etapas():
 def test_build_prompt_indeterminado_sin_substage_no_agrega_linea():
     # #135: etapa INDETERMINADO pero campo vacío → no se agrega la línea.
     row = _row_ejemplo()
-    row["stage_primary"] = "INDETERMINADO"
+    row["stage_primary"] = "Indeterminado"
     row["indeterminado_substage"] = ""
     out = build_prompt(row)
     assert "Sub-categoría INDETERMINADO" not in out
@@ -233,7 +233,7 @@ def test_format_example_indeterminado_muestra_substage():
     # #136: _format_example espeja el comportamiento de build_prompt (#135): el substage
     # aparece en CONTEXTO ADICIONAL del ejemplo cuando stage=INDETERMINADO y el campo existe.
     ej_sin_datos = {
-        "stage_primary": "INDETERMINADO",
+        "stage_primary": "Indeterminado",
         "indeterminado_substage": "sin_datos",
         "delay_days_calc": 2.10,
         "REASON_DSC": "Vendor delivery delay",
@@ -252,7 +252,7 @@ def test_format_example_indeterminado_no_muestra_exceso_ni_responsable():
     # #136: INDETERMINADO no tiene señal de exceso medible → _format_example no debe
     # incluir líneas de responsable ni exceso (cae al branch (None, None) de _STAGE_SIGNAL).
     ej = {
-        "stage_primary": "INDETERMINADO",
+        "stage_primary": "Indeterminado",
         "indeterminado_substage": "sin_causa_dominante",
         "delay_days_calc": 3.40,
         "REASON_DSC": "Multiple delays - carrier and DC",

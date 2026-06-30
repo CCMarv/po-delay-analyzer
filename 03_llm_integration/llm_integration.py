@@ -174,7 +174,7 @@ def _format_example(ex: Dict[str, Any]) -> str:
     if ex.get("is_rescheduled", False):
         lineas.append("- ¿Se reprogramó la cita de entrega? Sí")
     # Espejo del comportamiento de build_prompt (#135): substage solo cuando INDETERMINADO.
-    if ex.get("stage_primary") == "INDETERMINADO" and ex.get("indeterminado_substage"):
+    if ex.get("stage_primary") == "Indeterminado" and ex.get("indeterminado_substage"):
         lineas.append(f"- Sub-categoría INDETERMINADO: {ex['indeterminado_substage']}")
     lineas.append(f"- Código de motivo registrado por el DC: {ex.get('REASON_DSC', 'No registrado')}")
 
@@ -193,18 +193,22 @@ def _format_example(ex: Dict[str, Any]) -> str:
 def _examples_block(examples: Optional[List[Dict[str, Any]]]) -> str:
     """Arma el bloque EJEMPLOS DE RAZONAMIENTO para few-shot (#99), o "" si no hay.
 
-    El encabezado dirige la atención del modelo a lo que los ejemplos enseñan: que la
-    etapa sale de la señal temporal (no del REASON_DSC) y que la acción ataca la causa
-    medida sin pedir investigar lo que el reason ya explica. Devuelve "" en zero-shot, de
-    modo que al unir con el resto del prompt no altera el comportamiento histórico.
+    El encabezado presenta los ejemplos como ILUSTRACIONES del razonamiento, no como
+    plantillas, y advierte que son una muestra parcial del espacio de situaciones (#143:
+    los tres ejemplos del pool son casos de discrepancia reason↔etapa; sin esa advertencia
+    el modelo infiere que siempre hay discrepancia y copia la redacción). Devuelve "" en
+    zero-shot, de modo que al unir con el resto del prompt no altera el comportamiento
+    histórico.
     """
     if not examples:
         return ""
     partes = [
         "EJEMPLOS DE RAZONAMIENTO:",
-        "Estudia estos casos resueltos. Observa cómo la etapa se decide por la señal "
-        "temporal medida (no por el REASON_DSC del DC, que puede equivocarse) y cómo la "
-        "acción ataca la causa real sin pedir investigar lo que el motivo ya explica.\n",
+        "Estudia estos casos resueltos como ilustraciones del razonamiento, no como "
+        "plantillas. Observa cómo la etapa se decide por la señal temporal medida (no por "
+        "el REASON_DSC del DC) y cómo la acción cita datos concretos del PO en lugar de una "
+        "fórmula. Los ejemplos son una muestra parcial del espacio de situaciones posibles; "
+        "razona cada PO con sus propios datos.\n",
     ]
     partes.extend(_format_example(ex) + "\n" for ex in examples)
     return "\n".join(partes)
@@ -226,6 +230,13 @@ def build_prompt(row: pd.Series, examples: Optional[List[Dict[str, Any]]] = None
     (antes de INSTRUCCIONES) que enseña a derivar la acción de la señal temporal y a no
     copiar el REASON_DSC. Sin `examples` (default), el prompt es idéntico al zero-shot
     histórico — no cambia el comportamiento existente.
+
+    Anti-overfitting (#143): un bloque CÓMO RAZONAR (entre INSTRUCCIONES y el formato JSON)
+    enseña la combinatoria de dominio que los ejemplos no muestran —las cuatro etapas y las
+    tres relaciones posibles con el REASON_DSC (coincide / discrepa / vacío)—, porque los
+    ejemplos del pool son todos de discrepancia y el modelo, sin esta guía, copiaba esa
+    redacción como plantilla. Las descripciones de campo del JSON remiten a esta guía para
+    no duplicarla.
 
     Args:
         row: Una fila del DataFrame con los datos de una PO. Campos leídos vía
@@ -252,13 +263,33 @@ def build_prompt(row: pd.Series, examples: Optional[List[Dict[str, Any]]] = None
     ]
     # Solo cuando el clasificador no pudo resolver la etapa (#135): indicar si fue
     # por falta de señal temporal (sin_datos) o por empate entre etapas (sin_causa_dominante).
-    if row.get("stage_primary") == "INDETERMINADO":
+    if row.get("stage_primary") == "Indeterminado":
         substage = row.get("indeterminado_substage", "")
         if substage:
             context_lines.append(f"- Sub-categoría INDETERMINADO: {substage}")
     context_lines.append(
         f"- Código de motivo registrado por el DC: {row.get('REASON_DSC', 'No registrado')}"
     )
+
+    # El exceso por etapa (proveedor/transportista/CD) es la SEÑAL DE ATRIBUCIÓN de Fase 2:
+    # solo es válida cuando el clasificador atribuyó una etapa. En Indeterminado la atribución
+    # se retiró a propósito (sin_datos = faltan timestamps que aíslen la etapa; sin_causa_
+    # dominante = ningún tramo destaca), así que mostrar un exceso crudo —p. ej. el push de
+    # vendor que sobrevive en un sin_datos— invitaría a sobre-escribir el veredicto. Se omiten
+    # esas líneas para Indeterminado; yard/dock crudos sí se muestran (observación, no atribución).
+    metric_lines = [
+        "MÉTRICAS CALCULADAS:",
+        f"- Días de retraso: {row.get('delay_days_calc', 0):.2f} días",
+        f"- Espera en patio (yard): {row.get('yard_wait_calc_hrs', 0):.1f} horas",
+        f"- Tiempo de descarga (dock): {row.get('dock_calc_hrs', 0):.1f} horas",
+    ]
+    if row.get("stage_primary") != "Indeterminado":
+        metric_lines += [
+            f"- Exceso del proveedor: {row.get('excess_vendor_hrs', 0):.1f} horas",
+            f"- Exceso del transportista: {row.get('excess_carrier_hrs', 0):.1f} horas",
+            f"- Exceso del centro de distribución: {row.get('excess_dc_hrs', 0):.1f} horas",
+        ]
+    metric_lines[-1] += "\n"
 
     prompt_lines = [
         "Eres un analista experto en cadena de suministro. "
@@ -275,12 +306,7 @@ def build_prompt(row: pd.Series, examples: Optional[List[Dict[str, Any]]] = None
         f"- Llegada del tráiler: {row.get('TRAILER_ARRIVE_DT', 'N/A')}",
         f"- Check-in (inicio descarga): {row.get('CHECKIN_DT', 'N/A')}",
         f"- Check-out (fin descarga): {row.get('CHECKOUT_DT', 'N/A')}\n",
-        "MÉTRICAS CALCULADAS:",
-        f"- Días de retraso: {row.get('delay_days_calc', 0):.2f} días",
-        f"- Espera en patio (yard): {row.get('yard_wait_calc_hrs', 0):.1f} horas",
-        f"- Tiempo de descarga (dock): {row.get('dock_calc_hrs', 0):.1f} horas",
-        f"- Exceso del transportista: {row.get('excess_carrier_hrs', 0):.1f} horas",
-        f"- Exceso del centro de distribución: {row.get('excess_dc_hrs', 0):.1f} horas\n",
+        *metric_lines,
         "CLASIFICACIÓN AUTOMÁTICA:",
         f"- Etapa primaria del retraso: {row.get('stage_primary', 'Desconocido')}",
         f"- Causas múltiples: {row.get('stage_multi', 'Ninguna')}\n",
@@ -292,16 +318,40 @@ def build_prompt(row: pd.Series, examples: Optional[List[Dict[str, Any]]] = None
         "recalcules fechas ni horas, no inventes números. Toda cifra que menciones en "
         "tu explicación debe ser una de las dadas arriba, citada textualmente "
         "(p. ej. \"un retraso de 4.2 días\").\n",
+        "CÓMO RAZONAR ESTE PO (guía, no texto a copiar):",
+        "La 'Etapa primaria del retraso' de la CLASIFICACIÓN AUTOMÁTICA es la fuente de verdad, "
+        "ya medida por la señal temporal: la etapa que nombres en tu explicación DEBE ser "
+        "exactamente esa. El REASON_DSC es una nota humana que puede fallar; sirve para "
+        "CONTRASTAR, nunca para sustituir la etapa, y no lo promuevas a etapa aunque nombre una "
+        "(p. ej. 'Vendor delayed shipment'). Contrasta el motivo con la etapa medida:\n"
+        "- Vendor: el retraso nace antes del tránsito (envío tardío o cita reprogramada).\n"
+        "- Carrier: el exceso está en el tránsito del transportista hacia el DC.\n"
+        "- DC: el exceso está en la recepción del centro (espera en patio o descarga).\n"
+        "- Indeterminado: la señal no aísla una etapa. Declara la etapa como indeterminada y "
+        "explica por qué (sin_datos = faltan timestamps que la aíslen; sin_causa_dominante = "
+        "varias etapas pesan sin una dominante). Aunque el REASON_DSC nombre una etapa, NO la "
+        "adoptes: no hay señal medible que la confirme.\n",
+        "Al comparar el REASON_DSC con la etapa medida puede que coincidan (el motivo apunta "
+        "a la misma etapa → la evidencia lo respalda), que discrepen (apunta a otra causa → "
+        "di en qué difieren) o que el motivo sea vacío o 'Not applicable' (indícalo sin "
+        "evaluarlo). Decide con los datos de ESTE PO, no por la forma de los ejemplos.\n",
+        "La acción se dirige al responsable de la etapa MEDIDA —no al que sugiere el motivo "
+        "si discrepa— y su firmeza depende del impacto: la magnitud del exceso/retraso y los "
+        "agravantes (hot PO, short ship) marcan si toca un escalamiento urgente o una "
+        "revisión operativa ligera. El fraseo y el tono varían según el caso; estas dos "
+        "líneas solo ilustran el rango, no son plantillas:\n"
+        "- \"Abrir un reclamo con [transportista] por las 30.8 h de exceso de tránsito y "
+        "exigir un plan correctivo con fecha.\"\n"
+        "- \"Revisar con el equipo del [DC] el tiempo de descarga, que concentra el grueso "
+        "del retraso.\"\n",
         "Genera un análisis en formato JSON. "
         "Responde ÚNICAMENTE con el JSON, sin texto adicional.\n",
         "Formato requerido:",
         "{",
-        '  "causa_raiz": "2-3 oraciones que: (a) nombren la etapa exacta del retraso '
-        '(Vendor, Carrier o DC); (b) citen el retraso cuantificado tomado de los datos '
-        'dados; (c) digan si la evidencia coincide o no con el REASON_DSC del DC; '
-        '(d) mencionen agravantes si los hay (hot PO, short ship)",',
-        '  "accion_recomendada": "Acción concreta y operable, nombrando al responsable '
-        '(vendor, carrier o equipo del DC). Evita recomendaciones genéricas",',
+        '  "causa_raiz": "2-3 oraciones: etapa exacta, retraso citado de los datos, '
+        'relación con el REASON_DSC (ver CÓMO RAZONAR) y agravantes si los hay",',
+        '  "accion_recomendada": "Acción concreta al responsable de la etapa medida, '
+        'anclada en los datos de este PO (ver CÓMO RAZONAR). No genérica",',
         '  "severidad": "HIGH o MEDIUM o LOW",',
         '  "coincide_con_reason_code": true o false,',
         '  "confianza": 0.0 a 1.0',
