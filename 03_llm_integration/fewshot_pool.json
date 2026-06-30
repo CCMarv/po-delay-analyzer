@@ -14,7 +14,7 @@
     "REASON_DSC": "Missed appointment window",
     "HOT_PO_FLAG": 0,
     "_short_ship": false,
-    "causa_raiz": "La etapa exacta del retraso es Vendor, con un retraso de 5.54 días. La evidencia no coincide con el REASON_DSC del DC ('Missed appointment window'): el exceso medido corresponde al proveedor (100.57 horas), que es la causa dominante del retraso. No hay agravantes.",
+    "causa_raiz": "La etapa exacta del retraso es Vendor, con un retraso de 5.54 días. El exceso se concentra en el proveedor (100.57 horas), lo que contradice el REASON_DSC del DC ('Missed appointment window'), que apunta a una ventana de cita perdida. No hay agravantes.",
     "accion_recomendada": "Solicitar al proveedor MEDIQ un plan de recuperación con fecha firme, dado que el retraso se origina en su exceso de tránsito y no en una simple ventana de cita perdida en el DC.",
     "severidad": "MEDIUM",
     "coincide_con_reason_code": false,
@@ -35,8 +35,8 @@
     "REASON_DSC": "Yard congestion - no available door",
     "HOT_PO_FLAG": 0,
     "_short_ship": false,
-    "causa_raiz": "La etapa exacta del retraso es Carrier, con un retraso de 1.63 días. La evidencia no coincide con el REASON_DSC del DC ('Yard congestion - no available door'): el exceso medido corresponde al transportista (30.85 horas), no a la congestión del patio del DC. No hay agravantes.",
-    "accion_recomendada": "Contactar al transportista FedEx Freight para que explique el exceso de tránsito medido y comprometa una mejora, en lugar de atribuir el retraso a la congestión del patio del DC.",
+    "causa_raiz": "La etapa exacta del retraso es Carrier, con un retraso de 1.63 días. El exceso se concentra en el transportista (30.85 horas), lo que contradice el REASON_DSC del DC ('Yard congestion - no available door'), que apunta al patio. No hay agravantes.",
+    "accion_recomendada": "Abrir un reclamo formal con FedEx Freight por las 30.85 horas de exceso de tránsito medido y exigir un plan correctivo con fecha compromiso; el motivo del DC no aplica como justificación.",
     "severidad": "MEDIUM",
     "coincide_con_reason_code": false,
     "confianza": 0.8
@@ -56,7 +56,7 @@
     "REASON_DSC": "Equipment/trailer issue",
     "HOT_PO_FLAG": 0,
     "_short_ship": false,
-    "causa_raiz": "La etapa exacta del retraso es DC, con un retraso de 0.82 días. La evidencia no coincide con el REASON_DSC del DC ('Equipment/trailer issue'): el exceso medido está en el centro de distribución (19.32 horas), no en el equipo del transportista. No hay agravantes.",
+    "causa_raiz": "La etapa exacta del retraso es DC, con un retraso de 0.82 días. El exceso se concentra en el centro de distribución (19.32 horas), lo que contradice el REASON_DSC del DC ('Equipment/trailer issue'), que apunta a un problema de equipo del transportista. No hay agravantes.",
     "accion_recomendada": "El equipo del Phoenix DC debe revisar su operación de recepción y descarga, donde se concentró el exceso medido, en lugar de atribuir el retraso a un problema de equipo del transportista.",
     "severidad": "LOW",
     "coincide_con_reason_code": false,
@@ -65,12 +65,12 @@
   {
     "_meta": {
       "po_origen": 999901,
-      "stage": "INDETERMINADO",
+      "stage": "Indeterminado",
       "subtipo": "sin_datos",
       "tipo_mismatch": "el reason humano culpa al vendor; sin señal temporal no hay evidencia que lo respalde",
       "auditado": true
     },
-    "stage_primary": "INDETERMINADO",
+    "stage_primary": "Indeterminado",
     "indeterminado_substage": "sin_datos",
     "delay_days_calc": 2.10,
     "REASON_DSC": "Vendor delivery delay",
@@ -85,12 +85,12 @@
   {
     "_meta": {
       "po_origen": 999902,
-      "stage": "INDETERMINADO",
+      "stage": "Indeterminado",
       "subtipo": "sin_causa_dominante",
       "tipo_mismatch": "match: el reason humano reconoce causas múltiples; el clasificador tampoco pudo resolver la etapa dominante",
       "auditado": true
     },
-    "stage_primary": "INDETERMINADO",
+    "stage_primary": "Indeterminado",
     "indeterminado_substage": "sin_causa_dominante",
     "delay_days_calc": 3.40,
     "REASON_DSC": "Multiple delays - carrier and DC",

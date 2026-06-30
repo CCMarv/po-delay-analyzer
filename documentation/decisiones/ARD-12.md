@@ -51,4 +51,4 @@ Se elige la **Opción C**.
 
 ## Relación con otras decisiones
 
-No supera ninguna decisión vigente, por lo que no se encadena como 📘 Superado. **Referencia a ADR-10**: la eliminación de `prompt_template.txt` materializa el umbral `> 3 días` ya vigente (retira el `> 7 días` del borrador), no lo redefine.
+No supera ninguna decisión vigente, por lo que no se encadena como 📘 Superado. **Referencia a ADR-10**: la eliminación de `prompt_template.txt` materializa el umbral `> 3 días` ya vigente (retira el `> 7 días` del borrador), no lo redefine. **Forward a ADR-14**: la mitigación del "riesgo de copia de plantilla" nombrada aquí se ejecuta y refuerza en ADR-14 (#143), que añade el bloque CÓMO RAZONAR, la autoridad de la etapa sobre el REASON_DSC y la presentación del exceso solo para etapas atribuidas.
