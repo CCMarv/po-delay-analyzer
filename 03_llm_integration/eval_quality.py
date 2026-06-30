@@ -37,7 +37,9 @@ import pandas as pd
 
 # Reusar la infraestructura de F3 (mismo dir): no se reimplementa la corrida del LLM.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from llm_integration import build_prompt, create_backend, prepare_classified_df  # noqa: E402
+from llm_integration import (  # noqa: E402
+    build_prompt, create_backend, load_llm_config, prepare_classified_df,
+)
 from fewshot import select_examples  # noqa: E402
 
 # Combinaciones few-shot del benchmark (#99): C0=zero-shot (ya medido), C1/C2/C3 añaden
@@ -61,10 +63,17 @@ RANDOM_STATE = 42  # semilla fija → muestra reproducible (la reusa #99)
 OUTPUT_MD = Path(__file__).resolve().parent / "eval_quality_20pos.md"
 
 # Temperatura ancla del benchmark: 0.3, el punto de referencia histórico del barrido de
-# #137 (ADR-13), independiente de la temperatura de producción de llm_config.json (0.9
-# desde ADR-13 ronda 2). El benchmark fija su propia ancla para nombrar los fixtures: los
-# generados con esta temperatura no llevan sufijo y no se pisan.
+# #137 (ADR-13). El benchmark fija su PROPIA ancla de nombrado, independiente de la
+# temperatura de producción de llm_config.json (0.9 desde ADR-13 ronda 2): solo el fixture
+# generado a 0.3 va sin sufijo, así el baseline reproducible nunca se pisa con otra temp.
 ANCHOR_TEMP = 0.3
+
+
+def resolve_temperature(arg: Optional[float]) -> float:
+    """Temperatura efectiva de la corrida: el override de CLI si se dio, si no la de
+    llm_config.json. Es la MISMA fuente que usa create_backend, de modo que el nombre del
+    fixture y la temperatura con que se corrió no puedan discrepar (causa de #147)."""
+    return arg if arg is not None else load_llm_config()["temperature"]
 
 
 def _temp_suffix(temperature: Optional[float]) -> str:
@@ -214,8 +223,9 @@ def main() -> None:
                              "ejemplos del pool. Cada una corre los mismos 20 POs.")
     parser.add_argument("--temperature", type=float, default=None,
                         help="Override de temperatura (default: la de llm_config.json, "
-                             "actualmente 0.3). Se codifica en el nombre del fixture "
-                             "cuando difiere del ancla.")
+                             "actualmente 0.9). La temperatura EFECTIVA (override o config) "
+                             "se codifica en el nombre del fixture cuando difiere del ancla "
+                             f"({ANCHOR_TEMP}).")
     args = parser.parse_args()
 
     examples = COMBOS[args.combo]()
@@ -228,9 +238,13 @@ def main() -> None:
     n_ej = 0 if examples is None else len(examples)
     print(f"Combinación: {args.combo} ({n_ej} ejemplo(s) few-shot)")
 
-    temp_suffix = _temp_suffix(args.temperature)
-    # Nombre de salida: C0 sin override de temperatura → benchmark principal (junto al
-    # script); cualquier otra combinación o temperatura distinta al ancla → fixtures/.
+    # Temperatura efectiva = la de la corrida (override o config); de ELLA sale el sufijo,
+    # no del argumento crudo. Sin --temperature, con la config en 0.9, el fixture lleva
+    # _t09 y no pisa el baseline 0.3 sin sufijo (#147).
+    temperatura = resolve_temperature(args.temperature)
+    temp_suffix = _temp_suffix(temperatura)
+    # Nombre de salida: C0 a la temperatura ancla → benchmark principal (junto al script);
+    # cualquier otra combinación o temperatura distinta al ancla → fixtures/.
     if args.combo == "C0" and not temp_suffix:
         out_md = OUTPUT_MD
     else:
@@ -242,13 +256,13 @@ def main() -> None:
         if examples:
             origen = [e.get("_meta", {}).get("po_origen") for e in examples]
             print(f"\nEjemplos few-shot de la combinación {args.combo}: POs {origen}")
-        t_display = args.temperature if args.temperature is not None else f"{ANCHOR_TEMP} (llm_config.json)"
-        print(f"\nTemperatura: {t_display}")
+        origen_temp = "override" if args.temperature is not None else "llm_config.json"
+        print(f"\nTemperatura efectiva: {temperatura} ({origen_temp})")
         print(f"Fixture de salida: {out_md}")
         print("\n(dry-run: no se llamó a la API.)")
         return
 
-    backend = create_backend(backend_type=args.backend, temperature=args.temperature)
+    backend = create_backend(backend_type=args.backend, temperature=temperatura)
     print(f"\nCorriendo {len(sample)} POs por el LLM ({args.backend})...")
     df_eval = evaluate(sample, backend, examples=examples)
     out_md.write_text(to_markdown(df_eval), encoding="utf-8")
