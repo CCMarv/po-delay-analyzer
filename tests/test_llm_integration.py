@@ -474,9 +474,9 @@ def test_export_deliverable_severity_es_la_del_llm(tmp_path):
 def test_load_llm_config_trae_claves_de_inferencia():
     # El JSON versionado expone temperatura/max_tokens/timeout/reintentos y modelos
     # por backend: el código de llamada los lee de aquí, no como literales. Los
-    # valores son los del entregable (no cambia el comportamiento histórico).
+    # valores son los del entregable (temperatura 0.9 desde ADR-13 ronda 2, #137).
     cfg = load_llm_config()
-    assert cfg["temperature"] == 0.3
+    assert cfg["temperature"] == 0.9
     assert cfg["max_tokens"] == 512
     assert cfg["timeout_seconds"] == 60
     assert cfg["max_retries"] == 3

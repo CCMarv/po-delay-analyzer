@@ -42,4 +42,4 @@ Al corregir lo anterior y revisar la salida completa de Fase 2 (39 indeterminado
 
 ## Relación con otras decisiones
 
-Forward de **ADR-12**: ejecuta y refuerza su mitigación nombrada del riesgo de copia de plantilla, sin superarla (el few-shot sigue vigente). Consume **ADR-07** (taxonomía de Indeterminado) y se enlaza con **ADR-13** (#143 desbloquea el cierre de #137). No supera ni reabre **ADR-03b / ADR-06b** (medición de Vendor).
+Forward de **ADR-12**: ejecuta y refuerza su mitigación nombrada del riesgo de copia de plantilla, sin superarla (el few-shot sigue vigente). Consume **ADR-07** (taxonomía de Indeterminado) y se enlaza con **ADR-13** (#143 desbloqueó el cierre de #137, que fijó 0.9 como ancla de temperatura en su ronda 2). No supera ni reabre **ADR-03b / ADR-06b** (medición de Vendor).
