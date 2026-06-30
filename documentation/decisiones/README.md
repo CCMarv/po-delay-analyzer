@@ -28,7 +28,7 @@ Tras la aplicación rigurosa de los criterios de los ADRs vigentes (especialment
 | [ADR-10](ARD-10.md) | Severidad híbrida: el LLM la emite, la regla de Fase 2 la audita | 🟢 Vigente | Issue #92, #93, kickoff §03/§08, `_severidad` |
 | [ADR-11](ARD-11.md) | Manejo de secretos y seguridad de API keys (multi-proveedor LLM) | 🔵 Borrador | Best Practices OpenAI, `llm_integration.py`, `.env.example`, `.gitignore` |
 | [ADR-12](ARD-12.md) | Diseño del prompt de Fase 3: few-shot con razonamiento y fuente única | 🔵 Borrador | Issue #99, #94 (benchmark), #91/#67, ADR-10, `llm_integration.py` (`build_prompt`) |
-| [ADR-13](ARD-13.md) | Temperatura de inferencia del LLM: evaluación 0.3–0.9 y decisión de ancla | 🔵 Borrador | Issue #137, #143 (overfitting few-shot), #94 (benchmark), ADR-12, `llm_config.json` |
+| [ADR-13](ARD-13.md) | Temperatura de inferencia del LLM: evaluación 0.3–0.9 y decisión de ancla | 🔵 Borrador | Issue #137, ADR-14 (#143), #94 (benchmark), ADR-12, `eval_diversity.py`, `llm_config.json` |
 | [ADR-14](ARD-14.md) | Endurecimiento del prompt de Fase 3 contra el overfitting al few-shot | 🔵 Borrador | Issue #143, #137/#144, #94 (benchmark), ADR-12, ADR-07, `llm_integration.py` (`build_prompt`) |
 
 ## Notas de Proceso e Integración

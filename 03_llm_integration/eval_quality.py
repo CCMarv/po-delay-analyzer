@@ -60,8 +60,10 @@ RANDOM_STATE = 42  # semilla fija → muestra reproducible (la reusa #99)
 # Versionado (junto al script): es el entregable del benchmark, evidencia que reusa #99.
 OUTPUT_MD = Path(__file__).resolve().parent / "eval_quality_20pos.md"
 
-# Temperatura ancla del benchmark: 0.3 (la que fija llm_config.json como default).
-# Los fixtures generados con esta temperatura no llevan sufijo y no se pisan.
+# Temperatura ancla del benchmark: 0.3, el punto de referencia histórico del barrido de
+# #137 (ADR-13), independiente de la temperatura de producción de llm_config.json (0.9
+# desde ADR-13 ronda 2). El benchmark fija su propia ancla para nombrar los fixtures: los
+# generados con esta temperatura no llevan sufijo y no se pisan.
 ANCHOR_TEMP = 0.3
 
 
