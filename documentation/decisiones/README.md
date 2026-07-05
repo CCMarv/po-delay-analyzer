@@ -30,6 +30,8 @@ Tras la aplicación rigurosa de los criterios de los ADRs vigentes (especialment
 | [ADR-12](ARD-12.md) | Diseño del prompt de Fase 3: few-shot con razonamiento y fuente única | 🔵 Borrador | Issue #99, #94 (benchmark), #91/#67, ADR-10, `llm_integration.py` (`build_prompt`) |
 | [ADR-13](ARD-13.md) | Temperatura de inferencia del LLM: evaluación 0.3–0.9 y decisión de ancla | 🔵 Borrador | Issue #137, ADR-14 (#143), #94 (benchmark), ADR-12, `eval_diversity.py`, `llm_config.json` |
 | [ADR-14](ARD-14.md) | Endurecimiento del prompt de Fase 3 contra el overfitting al few-shot | 🔵 Borrador | Issue #143, #137/#144, #94 (benchmark), ADR-12, ADR-07, `llm_integration.py` (`build_prompt`) |
+| [ADR-15](ARD-15.md) | Contexto de dominio condicional por (actor × señal) para diversificar el prompt | 🔵 Borrador | Issue #151, #143/#154, #94 (benchmark), ADR-12/13/14, ADR-07, `llm_integration.py` (`select_domain_context`), `domain_kb.json` |
+| [ADR-16](ARD-16.md) | El LLM como capa analítica sobre la base determinista validada | 🔵 Borrador | Feedback mentores (post-validación de main), ADR-14/12/10/07, ADR-15 (destino aparte), `llm_integration.py` |
 
 ## Notas de Proceso e Integración
 *   **Estándar de Documentación:** Todo el registro técnico del proyecto se rige bajo la plantilla **MADR (Markdown Architecture Decision Records)**, elegida formalmente por el equipo tras el debate documentado en la discusión [#79](#).
