@@ -20,6 +20,9 @@ import pytest
 import llm_integration
 from llm_integration import (
     build_prompt,
+    select_domain_context,
+    _excess_band,
+    _cond_matches,
     _parse_llm_json,
     load_llm_config,
     prepare_classified_df,
@@ -266,6 +269,118 @@ def test_format_example_indeterminado_no_muestra_exceso_ni_responsable():
     bloque = out[out.index("EJEMPLOS"):out.index("INSTRUCCIONES:")]
     assert "Exceso del" not in bloque
     assert "Sub-categoría INDETERMINADO: sin_causa_dominante" in bloque
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# A2. Contexto de dominio condicional por (actor × señal) (#151)
+# ════════════════════════════════════════════════════════════════════════════
+def _kb_ejemplo() -> dict:
+    """KB mínima de prueba (NO es domain_kb.json real): dos actores, cutoffs {1,3}."""
+    return {
+        "band_cutoffs": [1, 3],
+        "actors": {
+            "Carrier": {
+                "primer": "El transportista mueve el tráiler del proveedor al DC.",
+                "levers": [
+                    {"id": "carrier_reschedule", "cond": {"is_rescheduled": True},
+                     "lever": "Coordinar nueva cita con el transportista."},
+                    {"id": "carrier_alto", "cond": {"excess_band": "alto"},
+                     "lever": "Escalar reclamo formal por exceso severo de tránsito."},
+                ],
+            },
+            "Vendor": {
+                "primer": "El proveedor controla el envío y la cita.",
+                "levers": [
+                    {"id": "vendor_base", "cond": {}, "lever": "Contactar al proveedor."},
+                ],
+            },
+        },
+    }
+
+
+# --- _excess_band: banda por exceso/umbral (umbrales reales de rules_config.json) ---
+def test_excess_band_vendor_tres_niveles():
+    # Umbral vendor = 24h. r = exceso/24 → bajo(≤1) / medio(≤3) / alto(>3).
+    bajo = pd.Series({"stage_primary": "Vendor", "excess_vendor_hrs": 12.0})
+    medio = pd.Series({"stage_primary": "Vendor", "excess_vendor_hrs": 48.0})
+    alto = pd.Series({"stage_primary": "Vendor", "excess_vendor_hrs": 100.0})
+    assert _excess_band(bajo, "Vendor") == "bajo"
+    assert _excess_band(medio, "Vendor") == "medio"
+    assert _excess_band(alto, "Vendor") == "alto"
+
+
+def test_excess_band_dc_usa_umbral_del_substage():
+    # Mismo exceso (5h), distinta sub-etapa → distinta banda: Dock(6h)→bajo, Yard(4h)→medio.
+    dock = pd.Series({"stage_primary": "DC", "excess_dc_hrs": 5.0, "dc_substage": "Dock"})
+    yard = pd.Series({"stage_primary": "DC", "excess_dc_hrs": 5.0, "dc_substage": "Yard"})
+    assert _excess_band(dock, "DC") == "bajo"
+    assert _excess_band(yard, "DC") == "medio"
+
+
+def test_excess_band_indeterminado_y_sin_exceso_es_none():
+    # Indeterminado no tiene banda (ADR-14: el exceso se retira). Exceso 0 → None.
+    indet = pd.Series({"stage_primary": "Indeterminado", "excess_vendor_hrs": 100.0})
+    cero = pd.Series({"stage_primary": "Vendor", "excess_vendor_hrs": 0.0})
+    assert _excess_band(indet, "Indeterminado") is None
+    assert _excess_band(cero, "Vendor") is None
+
+
+# --- _cond_matches: AND de condiciones, falla cerrada en clave desconocida ---
+def test_cond_matches_vacio_es_true():
+    assert _cond_matches({}, _row_ejemplo(), "medio") is True
+
+
+def test_cond_matches_clave_desconocida_falla_cerrada():
+    assert _cond_matches({"no_existe": True}, _row_ejemplo(), "medio") is False
+
+
+def test_cond_matches_and_de_varias_condiciones():
+    row = _row_ejemplo()  # is_rescheduled=True, HOT_PO_FLAG=1
+    assert _cond_matches({"is_rescheduled": True, "hot": True}, row, "medio") is True
+    assert _cond_matches({"is_rescheduled": True, "hot": False}, row, "medio") is False
+
+
+def test_cond_matches_excess_band():
+    row = _row_ejemplo()
+    assert _cond_matches({"excess_band": "medio"}, row, "medio") is True
+    assert _cond_matches({"excess_band": "alto"}, row, "medio") is False
+
+
+# --- select_domain_context: ruteo por actor + filtrado por señal ---
+def test_select_domain_context_sin_kb_es_vacio():
+    assert select_domain_context(_row_ejemplo(), None) == ""
+    assert select_domain_context(_row_ejemplo(), {}) == ""
+
+
+def test_select_domain_context_actor_ausente_es_vacio():
+    row = _row_ejemplo()
+    row["stage_primary"] = "On-Time"   # no está en el KB → sin bloque
+    assert select_domain_context(row, _kb_ejemplo()) == ""
+
+
+def test_select_domain_context_filtra_por_senal():
+    # _row_ejemplo: Carrier, is_rescheduled=True, exceso 10/8 → banda 'medio'. Solo la
+    # palanca de reschedule aplica; la de banda 'alto' se filtra.
+    out = select_domain_context(_row_ejemplo(), _kb_ejemplo())
+    assert "CONTEXTO DE DOMINIO" in out
+    assert "El transportista mueve" in out                       # primer del actor
+    assert "Coordinar nueva cita con el transportista." in out   # palanca que aplica
+    assert "Escalar reclamo formal" not in out                   # palanca filtrada (banda)
+
+
+# --- build_prompt con kb: invariante zero-shot y ubicación del bloque ---
+def test_build_prompt_kb_none_equivale_a_sin_kb():
+    # Invariante: kb=None → prompt byte-idéntico al histórico (no cambia producción).
+    assert build_prompt(_row_ejemplo(), kb=None) == build_prompt(_row_ejemplo())
+
+
+def test_build_prompt_con_kb_inyecta_contexto_de_dominio():
+    out = build_prompt(_row_ejemplo(), kb=_kb_ejemplo())
+    assert "CONTEXTO DE DOMINIO (relevante a esta PO):" in out
+    # Ubicación: después de CONTEXTO ADICIONAL, antes de INSTRUCCIONES.
+    assert out.index("CONTEXTO ADICIONAL:") < out.index("CONTEXTO DE DOMINIO")
+    assert out.index("CONTEXTO DE DOMINIO") < out.index("INSTRUCCIONES:")
+    assert "Coordinar nueva cita con el transportista." in out
 
 
 # ════════════════════════════════════════════════════════════════════════════

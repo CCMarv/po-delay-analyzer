@@ -38,7 +38,7 @@ import pandas as pd
 # Reusar la infraestructura de F3 (mismo dir): no se reimplementa la corrida del LLM.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from llm_integration import (  # noqa: E402
-    build_prompt, create_backend, load_llm_config, prepare_classified_df,
+    build_prompt, create_backend, load_domain_kb, load_llm_config, prepare_classified_df,
 )
 from fewshot import select_examples  # noqa: E402
 
@@ -135,7 +135,7 @@ def _check_cuantifica(explicacion: str, delay_days: float) -> bool:
     return objetivo in e or objetivo_1 in e
 
 
-def evaluate(df_sample: pd.DataFrame, backend, examples=None) -> pd.DataFrame:
+def evaluate(df_sample: pd.DataFrame, backend, examples=None, kb=None) -> pd.DataFrame:
     """Corre el LLM sobre la muestra y pre-evalúa los checks objetivos (a) y (b).
 
     Args:
@@ -144,6 +144,10 @@ def evaluate(df_sample: pd.DataFrame, backend, examples=None) -> pd.DataFrame:
         examples: ejemplos few-shot a anteponer (#99). None → zero-shot (C0). Se pasan tal
             cual a build_prompt; las MISMAS condiciones (semilla 42, muestra) en todas las
             combinaciones, solo cambia el número de ejemplos.
+        kb: dict opcional de la base de conocimiento de dominio (#151), de load_domain_kb.
+            None (default) → sin bloque de contexto de dominio. Se pasa tal cual a
+            build_prompt; validar su efecto en diversidad es independiente de `examples`
+            (el cruce kb×few-shot queda fuera de esta ronda).
 
     Returns:
         DataFrame con una fila por PO: datos dados, explicación del LLM y los
@@ -151,7 +155,7 @@ def evaluate(df_sample: pd.DataFrame, backend, examples=None) -> pd.DataFrame:
     """
     filas = []
     for _, row in df_sample.iterrows():
-        prompt = build_prompt(row, examples=examples)
+        prompt = build_prompt(row, examples=examples, kb=kb)
         resp = backend.call(prompt) or {}
         causa = resp.get("causa_raiz", "")
         delay = float(row["delay_days_calc"])
@@ -226,9 +230,15 @@ def main() -> None:
                              "actualmente 0.9). La temperatura EFECTIVA (override o config) "
                              "se codifica en el nombre del fixture cuando difiere del ancla "
                              f"({ANCHOR_TEMP}).")
+    parser.add_argument("--kb", action="store_true",
+                        help="Activa el contexto de dominio condicional (#151, "
+                             "domain_kb.json). Default: sin kb (comportamiento histórico). "
+                             "Esta ronda valida kb sobre C0; el cruce con --combo es "
+                             "exploratorio, no el gate de esta ronda.")
     args = parser.parse_args()
 
     examples = COMBOS[args.combo]()
+    kb = load_domain_kb() if args.kb else None
 
     df = prepare_classified_df(from_csv=False)
     sample = select_sample(df)
@@ -237,18 +247,20 @@ def main() -> None:
     print(sample["stage_primary"].value_counts().to_string())
     n_ej = 0 if examples is None else len(examples)
     print(f"Combinación: {args.combo} ({n_ej} ejemplo(s) few-shot)")
+    print(f"Contexto de dominio (#151): {'activo' if kb else 'inactivo'}")
 
     # Temperatura efectiva = la de la corrida (override o config); de ELLA sale el sufijo,
     # no del argumento crudo. Sin --temperature, con la config en 0.9, el fixture lleva
     # _t09 y no pisa el baseline 0.3 sin sufijo (#147).
     temperatura = resolve_temperature(args.temperature)
     temp_suffix = _temp_suffix(temperatura)
-    # Nombre de salida: C0 a la temperatura ancla → benchmark principal (junto al script);
-    # cualquier otra combinación o temperatura distinta al ancla → fixtures/.
-    if args.combo == "C0" and not temp_suffix:
+    kb_suffix = "_kb" if args.kb else ""
+    # Nombre de salida: C0 a la temperatura ancla y sin kb → benchmark principal (junto al
+    # script); cualquier otra combinación, temperatura distinta al ancla, o kb → fixtures/.
+    if args.combo == "C0" and not temp_suffix and not kb_suffix:
         out_md = OUTPUT_MD
     else:
-        out_md = OUTPUT_MD.parent / "fixtures" / f"eval_quality_20pos_{args.combo}{temp_suffix}.md"
+        out_md = OUTPUT_MD.parent / "fixtures" / f"eval_quality_20pos_{args.combo}{temp_suffix}{kb_suffix}.md"
 
     if args.dry_run:
         cols = ["PO_NBR", "stage_primary", "delay_days_calc", "REASON_DSC"]
@@ -264,7 +276,7 @@ def main() -> None:
 
     backend = create_backend(backend_type=args.backend, temperature=temperatura)
     print(f"\nCorriendo {len(sample)} POs por el LLM ({args.backend})...")
-    df_eval = evaluate(sample, backend, examples=examples)
+    df_eval = evaluate(sample, backend, examples=examples, kb=kb)
     out_md.write_text(to_markdown(df_eval), encoding="utf-8")
     pre_ok = int((df_eval["chk_a_etapa"] & df_eval["chk_b_cuantifica"]).sum())
     print(f"Pre-evaluación (a & b): {pre_ok}/20")

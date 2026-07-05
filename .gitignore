@@ -16,6 +16,8 @@ data/**
 !**/llm_config.json
 # Excepción: el pool auditado de ejemplos few-shot es DATO versionado (no output), #99
 !**/fewshot_pool.json
+# Excepción: base de conocimiento de dominio del prompt de Fase 3, versionada, #151
+!**/domain_kb.json
 # Excepción: fixtures de evidencia (corridas de LLM congeladas como insumo, no output
 # efímero): se versionan a propósito para reuso sin re-gastar API (#99 → #95).
 !03_llm_integration/fixtures/

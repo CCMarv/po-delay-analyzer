@@ -214,7 +214,174 @@ def _examples_block(examples: Optional[List[Dict[str, Any]]]) -> str:
     return "\n".join(partes)
 
 
-def build_prompt(row: pd.Series, examples: Optional[List[Dict[str, Any]]] = None) -> str:
+# ============================================================
+# Contexto de dominio condicional por (actor × señal) (#151)
+# ============================================================
+# El LLM producía acciones correctas pero HOMOGÉNEAS dentro de una etapa: casi no se
+# diferenciaban entre POs del mismo responsable. La diversidad no puede venir del
+# conocimiento compartido-por-actor (idéntico para todas sus POs); viene de lo que
+# DIFIERE entre POs. Por eso se inyecta, según las SEÑALES que ya emite Fase 2, un
+# repertorio de acciones de referencia acotado al caso (no la base entera).
+#
+# Recuperación = lookup determinista, NO RAG: la clave de ruteo (stage_primary) ya está
+# calculada en Fase 2, así que basta un diccionario indexado por (actor × señal). Sin
+# embeddings: reproducible y testeable.
+
+_DEFAULT_DOMAIN_KB_PATH = Path(__file__).resolve().parent / "domain_kb.json"
+
+# Umbrales de Fase 2: FUENTE ÚNICA en rules_config.json (no se duplican aquí). La banda de
+# magnitud normaliza el exceso por la tolerancia de cada tramo leyendo de ahí.
+_RULES_CONFIG_PATH = (
+    Path(__file__).resolve().parent.parent / "02_clasif_reglas_negocio" / "rules_config.json"
+)
+_rules_thresholds_cache: Optional[Dict[str, float]] = None
+
+# Encabezados del bloque inyectado (constantes, no literales sueltos).
+_DOMAIN_HEADER = "CONTEXTO DE DOMINIO (relevante a esta PO):"
+_DOMAIN_LEVERS_LEAD = (
+    "Palancas y tensiones de dominio relevantes a las señales de esta PO "
+    "(úsalas como insumo para razonar la causa y construir UNA recomendación "
+    "anclada en las cifras; no las transcribas). Estas palancas están en horas; "
+    "no dejes de citar también el retraso en días en tu causa_raiz:"
+)
+_DEFAULT_BAND_CUTOFFS = (1.0, 3.0)
+
+# Etapa atribuida → campo de exceso que la banda de magnitud normaliza.
+_EXCESS_FIELD = {
+    "Vendor":  "excess_vendor_hrs",
+    "Carrier": "excess_carrier_hrs",
+    "DC":      "excess_dc_hrs",
+}
+# Claves de condición reconocidas por _cond_matches (una clave fuera de este set no matchea).
+_COND_BOOL_KEYS = ("is_rescheduled", "is_short_ship")
+_COND_STR_KEYS = ("dc_substage", "indeterminado_substage")
+
+
+def load_domain_kb(path=None) -> dict:
+    """Carga domain_kb.json (base de conocimiento de dominio) y devuelve su dict.
+
+    Input:  path opcional (str | Path); None usa el JSON junto a este módulo.
+    Output: dict con `band_cutoffs` y `actors` (primer + palancas por actor).
+    """
+    kb_path = Path(path) if path else _DEFAULT_DOMAIN_KB_PATH
+    with open(kb_path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _load_rules_thresholds(path=None) -> Dict[str, float]:
+    """Devuelve {nombre_umbral: valor} desde rules_config.json de Fase 2 (fuente única).
+
+    Cachea el default a nivel de módulo (se lee una vez, no por PO). Un `path` explícito
+    (tests) no usa ni puebla el cache.
+    """
+    global _rules_thresholds_cache
+    if path is not None:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        return {k: v["value"] for k, v in data["thresholds"].items()}
+    if _rules_thresholds_cache is None:
+        data = json.loads(_RULES_CONFIG_PATH.read_text(encoding="utf-8"))
+        _rules_thresholds_cache = {k: v["value"] for k, v in data["thresholds"].items()}
+    return _rules_thresholds_cache
+
+
+def _excess_band(row: pd.Series, actor: str, cutoffs=_DEFAULT_BAND_CUTOFFS) -> Optional[str]:
+    """Banda de magnitud del exceso de la etapa ATRIBUIDA: 'bajo' / 'medio' / 'alto'.
+
+    r = exceso_de_la_etapa / umbral_de_Fase_2 de ese tramo. cutoffs=(lo, hi):
+    r ≤ lo → bajo · lo < r ≤ hi → medio · r > hi → alto. Devuelve None cuando la banda
+    no aplica (Indeterminado / On-Time / actor sin campo de exceso, o exceso ≤ 0). En
+    Indeterminado el exceso se retira a propósito (ADR-14), así que no hay banda.
+    """
+    field = _EXCESS_FIELD.get(actor)
+    if not field:
+        return None
+    try:
+        excess = float(row.get(field, 0) or 0)
+    except (TypeError, ValueError):
+        return None
+    if excess <= 0:
+        return None
+    thr = _load_rules_thresholds()
+    if actor == "DC":
+        threshold = thr["dock_hrs"] if row.get("dc_substage") == "Dock" else thr["yard_wait_hrs"]
+    elif actor == "Vendor":
+        threshold = thr["vendor_gap_hrs"]
+    else:  # Carrier
+        threshold = thr["carrier_lag_hrs"]
+    if threshold <= 0:
+        return None
+    r = excess / threshold
+    lo, hi = cutoffs
+    if r <= lo:
+        return "bajo"
+    if r <= hi:
+        return "medio"
+    return "alto"
+
+
+def _one_cond_ok(key: str, want, row: pd.Series, band: Optional[str]) -> bool:
+    """Evalúa UNA condición del `cond`. Clave no reconocida → False (falla cerrada)."""
+    if key == "excess_band":
+        return band == want
+    if key == "hot":
+        return (row.get("HOT_PO_FLAG", 0) == 1) == bool(want)
+    if key in _COND_BOOL_KEYS:
+        return bool(row.get(key, False)) == bool(want)
+    if key in _COND_STR_KEYS:
+        return str(row.get(key, "")) == str(want)
+    return False
+
+
+def _cond_matches(cond: dict, row: pd.Series, band: Optional[str]) -> bool:
+    """True si la fila cumple TODAS las condiciones de `cond` (AND lógico).
+
+    Claves reconocidas: is_rescheduled / is_short_ship (bool), hot (HOT_PO_FLAG == 1),
+    excess_band ('bajo'/'medio'/'alto', ya calculada), dc_substage / indeterminado_substage
+    (igualdad). Una clave no reconocida → la acción no aplica (falla cerrada; un lint del KB
+    caza el typo). `cond` vacío → True (acción incondicional del actor).
+    """
+    return all(_one_cond_ok(key, want, row, band) for key, want in cond.items())
+
+
+def select_domain_context(row: pd.Series, kb: Optional[dict]) -> str:
+    """Arma el bloque CONTEXTO DE DOMINIO acotado a ESTA PO, o '' si no aplica.
+
+    Rutea por stage_primary al bucket del actor en `kb`, calcula la banda de magnitud y
+    filtra las palancas a aquellas cuyas condiciones cumple la PO (vía _cond_matches).
+    Devuelve '' cuando kb es None/vacío, cuando el actor no está en el KB (On-Time,
+    Desconocido) o cuando no hay ni primer ni palancas que mostrar — así, con kb=None el
+    prompt no cambia (invariante zero-shot).
+    """
+    if not kb:
+        return ""
+    actor = str(row.get("stage_primary", ""))
+    entry = kb.get("actors", {}).get(actor)
+    if not entry:
+        return ""
+    cutoffs = kb.get("band_cutoffs", _DEFAULT_BAND_CUTOFFS)
+    band = _excess_band(row, actor, cutoffs)
+    lines = [_DOMAIN_HEADER]
+    primer = str(entry.get("primer", "")).strip()
+    if primer:
+        lines.append(f"- {primer}")
+    matched = [
+        lever["lever"]
+        for lever in entry.get("levers", [])
+        if "lever" in lever and _cond_matches(lever.get("cond", {}), row, band)
+    ]
+    if matched:
+        lines.append(_DOMAIN_LEVERS_LEAD)
+        lines.extend(f"- {a}" for a in matched)
+    if len(lines) == 1:  # solo el encabezado, sin contenido útil
+        return ""
+    return "\n".join(lines)
+
+
+def build_prompt(
+    row: pd.Series,
+    examples: Optional[List[Dict[str, Any]]] = None,
+    kb: Optional[dict] = None,
+) -> str:
     """
     Construye el prompt para el LLM a partir de una fila del DataFrame.
 
@@ -245,6 +412,10 @@ def build_prompt(row: pd.Series, examples: Optional[List[Dict[str, Any]]] = None
         examples: lista opcional de ejemplos resueltos (few-shot). Cada uno es un dict
             con los campos curados de entrada y la salida ideal (ver `_format_example`).
             None o lista vacía → zero-shot.
+        kb: dict opcional de la base de conocimiento de dominio (domain_kb.json). Si se
+            pasa, `select_domain_context` inyecta un bloque CONTEXTO DE DOMINIO con el
+            primer del actor (stage_primary) y las acciones de referencia cuyas condiciones
+            cumple la PO. None (default) → sin bloque, prompt byte-idéntico al zero-shot.
 
     Returns:
         Prompt formateado listo para enviar al LLM.
@@ -291,6 +462,36 @@ def build_prompt(row: pd.Series, examples: Optional[List[Dict[str, Any]]] = None
         ]
     metric_lines[-1] += "\n"
 
+    # Contexto de dominio condicional (#151): vacío salvo que se pase kb. Con kb=None el
+    # bloque no se añade y el prompt es byte-idéntico al zero-shot histórico.
+    domain_block = select_domain_context(row, kb)
+
+    # Cierre de CÓMO RAZONAR sobre la acción (#151): con kb=None se preserva el cierre
+    # histórico (dos líneas ilustrativas) para no tocar el prompt zero-shot que sirve de
+    # baseline de no-regresión. Con kb, esas dos líneas fijas se sustituyen por un puntero
+    # a las palancas por-PO de CONTEXTO DE DOMINIO, para no competir con ellas como plantilla.
+    if kb:
+        accion_guidance = (
+            "La acción se dirige al responsable de la etapa MEDIDA —no al que sugiere el motivo "
+            "si discrepa— y su firmeza depende del impacto: la magnitud del exceso/retraso y los "
+            "agravantes (hot PO, short ship) marcan si toca un escalamiento urgente o una "
+            "revisión operativa ligera. Las palancas y tensiones de CONTEXTO DE DOMINIO (arriba) "
+            "son el insumo concreto para esa firmeza y ese destinatario en ESTE PO: úsalas para "
+            "razonar la acción, no un fraseo fijo.\n"
+        )
+    else:
+        accion_guidance = (
+            "La acción se dirige al responsable de la etapa MEDIDA —no al que sugiere el motivo "
+            "si discrepa— y su firmeza depende del impacto: la magnitud del exceso/retraso y los "
+            "agravantes (hot PO, short ship) marcan si toca un escalamiento urgente o una "
+            "revisión operativa ligera. El fraseo y el tono varían según el caso; estas dos "
+            "líneas solo ilustran el rango, no son plantillas:\n"
+            "- \"Abrir un reclamo con [transportista] por las 30.8 h de exceso de tránsito y "
+            "exigir un plan correctivo con fecha.\"\n"
+            "- \"Revisar con el equipo del [DC] el tiempo de descarga, que concentra el grueso "
+            "del retraso.\"\n"
+        )
+
     prompt_lines = [
         "Eres un analista experto en cadena de suministro. "
         "Analiza este Purchase Order retrasado.\n",
@@ -311,6 +512,7 @@ def build_prompt(row: pd.Series, examples: Optional[List[Dict[str, Any]]] = None
         f"- Etapa primaria del retraso: {row.get('stage_primary', 'Desconocido')}",
         f"- Causas múltiples: {row.get('stage_multi', 'Ninguna')}\n",
         "\n".join(context_lines) + "\n",
+        *([domain_block + "\n"] if domain_block else []),
         _examples_block(examples),
         "INSTRUCCIONES:",
         "Tu trabajo es INTERPRETAR los datos dados, NO calcular. Usa ÚNICAMENTE las "
@@ -335,15 +537,7 @@ def build_prompt(row: pd.Series, examples: Optional[List[Dict[str, Any]]] = None
         "a la misma etapa → la evidencia lo respalda), que discrepen (apunta a otra causa → "
         "di en qué difieren) o que el motivo sea vacío o 'Not applicable' (indícalo sin "
         "evaluarlo). Decide con los datos de ESTE PO, no por la forma de los ejemplos.\n",
-        "La acción se dirige al responsable de la etapa MEDIDA —no al que sugiere el motivo "
-        "si discrepa— y su firmeza depende del impacto: la magnitud del exceso/retraso y los "
-        "agravantes (hot PO, short ship) marcan si toca un escalamiento urgente o una "
-        "revisión operativa ligera. El fraseo y el tono varían según el caso; estas dos "
-        "líneas solo ilustran el rango, no son plantillas:\n"
-        "- \"Abrir un reclamo con [transportista] por las 30.8 h de exceso de tránsito y "
-        "exigir un plan correctivo con fecha.\"\n"
-        "- \"Revisar con el equipo del [DC] el tiempo de descarga, que concentra el grueso "
-        "del retraso.\"\n",
+        accion_guidance,
         "Genera un análisis en formato JSON. "
         "Responde ÚNICAMENTE con el JSON, sin texto adicional.\n",
         "Formato requerido:",
@@ -866,7 +1060,8 @@ def add_llm_explanations(
     test_mode: bool = False,
     test_limit: int = 10,
     save_every: int = DEFAULT_SAVE_EVERY,
-    output_path: Optional[str] = None
+    output_path: Optional[str] = None,
+    kb: Optional[dict] = None,
 ) -> pd.DataFrame:
     """
     Añade columnas con explicaciones del LLM al DataFrame clasificado.
@@ -879,6 +1074,9 @@ def add_llm_explanations(
         test_limit: Número de POs a procesar en modo test.
         save_every: Guardar resultados cada N POs.
         output_path: Ruta para guardar resultados parciales.
+        kb: dict opcional de la base de conocimiento de dominio (#151), tal cual lo
+            devuelve `load_domain_kb`. Se pasa sin modificar a `build_prompt`. None
+            (default) → sin bloque de contexto de dominio, comportamiento sin cambios.
 
     Returns:
         DataFrame con columnas adicionales de análisis LLM.
@@ -915,7 +1113,7 @@ def add_llm_explanations(
         po_nbr = row.get('PO_NBR', 'N/A')
         pbar.set_description(f"PO {po_nbr}")
 
-        prompt = build_prompt(row)
+        prompt = build_prompt(row, kb=kb)
         response = backend.call(prompt)
 
         if response:
