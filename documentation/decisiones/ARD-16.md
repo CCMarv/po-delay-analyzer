@@ -128,6 +128,10 @@ suelta invita a sobre-lectura.
      hechos comparativos globales calculados determinísticamente (percentil del exceso,
      medianas por etapa), presentes en el prompt de toda PO — la presentación condicional
      de un comparativo introduciría el juicio por selección.
+   * **Fallback de la primera llamada:** si la llamada determinista no produce
+     diagnóstico, la llamada de acción no se ejecuta y la PO queda marcada
+     (`qa_flags = sin_diagnostico_llamada1`), visible y sin bloquear el pipeline — sin
+     diagnóstico validado no hay insumo para el plan.
    * **Elicitación del dominio:** auto-cuestionario previo con las preguntas del mentor
      (causas más comunes desde la etapa medida; afectación del shorting; causas y
      consecuencias del rescheduling) que el modelo responde con su conocimiento antes de
@@ -173,10 +177,9 @@ suelta invita a sobre-lectura.
    * Condicionales: razonamiento extendido o modelo más capaz en la llamada de acción si
      la profundidad no alcanza tras la ola 2; búsqueda offline materializada según
      evidencia tras la ola 2; demo web en vivo como flag independiente.
-9. **Pendientes de implementación.** Política de la llamada de acción ante fallback de la
-   primera; interacción del contrato nuevo con el few-shot (C1–C3); exposición en Fase 4
-   del razonamiento, las dos confianzas, los `qa_flags` y las capacidades del carril 3;
-   calibración del juez local.
+9. **Pendientes de implementación.** Interacción del contrato nuevo con el few-shot
+   (C1–C3); exposición en Fase 4 del razonamiento, las dos confianzas, los `qa_flags` y
+   las capacidades del carril 3; calibración del juez local.
 
 ## Validación (plan, carril 1)
 
