@@ -14,16 +14,27 @@ Qué NO se prueba y por qué:
 llm_integration se importa gracias al pythonpath de pyproject.toml (03_llm_integration)
 y al insert de red de seguridad de conftest.py.
 """
+import json
+
 import pandas as pd
 import pytest
 
 import llm_integration
 from llm_integration import (
+    add_llm_explanations,
+    build_action_prompt,
     build_prompt,
+    call_action_with_qa,
+    compute_dataset_stats,
+    is_meta_action,
+    run_action_checks,
     select_domain_context,
+    _action_keys_in_order,
     _excess_band,
     _cond_matches,
+    _parse_action_json,
     _parse_llm_json,
+    _percentile_rank,
     load_llm_config,
     prepare_classified_df,
     save_llm_output,
@@ -381,6 +392,401 @@ def test_build_prompt_con_kb_inyecta_contexto_de_dominio():
     assert out.index("CONTEXTO ADICIONAL:") < out.index("CONTEXTO DE DOMINIO")
     assert out.index("CONTEXTO DE DOMINIO") < out.index("INSTRUCCIONES:")
     assert "Coordinar nueva cita con el transportista." in out
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# A3. Llamada de acción (ARD-16, ola 1): stats, prompt, contrato, checks, QA
+# ════════════════════════════════════════════════════════════════════════════
+def _row_accion() -> pd.Series:
+    """Fila de _row_ejemplo + las magnitudes que la llamada de acción destapa."""
+    row = _row_ejemplo()
+    row["NUM_CASES_ORDERED"] = 250
+    row["NUM_CASES_SHIPPED"] = 180
+    row["_fill_rate"] = 0.72
+    row["DT_APPT_FIRST_APPROVED"] = "2024-01-03 00:00"
+    row["DT_APPT_CURRENT_APPROVED"] = "2024-01-04 00:00"
+    return row
+
+
+def _diag_ejemplo() -> dict:
+    """Diagnóstico de la llamada 1 (insumo de la llamada 2)."""
+    return {
+        "causa_raiz": "La etapa Carrier concentra el retraso de 3.00 días.",
+        "accion_recomendada": "Contactar al carrier",
+        "severidad": "HIGH",
+        "coincide_con_reason_code": True,
+        "confianza": 0.9,
+    }
+
+
+def _stats_ejemplo() -> dict:
+    """Stats globales mínimas (forma de compute_dataset_stats, valores a mano)."""
+    return {
+        "delay_values": [1.0, 2.0, 3.0, 4.0],
+        "delay_median": 2.5,
+        "excess": {
+            "Vendor": {"values": [30.0, 50.0], "median": 40.0},
+            "Carrier": {"values": [5.0, 10.0, 20.0], "median": 10.0},
+            "DC": {"values": [7.0], "median": 7.0},
+        },
+    }
+
+
+def _prompt_accion() -> str:
+    return build_action_prompt(_row_accion(), _diag_ejemplo(), _stats_ejemplo())
+
+
+def _raw_accion_ok() -> str:
+    """Respuesta cruda VÁLIDA del contrato híbrido: llaves en orden, cifras del input
+    (3.00 días y 10.0 h están en el prompt de _row_accion), etapa Carrier nombrada,
+    acción inmediata concreta (sin verbo meta)."""
+    return json.dumps({
+        "razonamiento": "El exceso del transportista de 10.0 horas concentra el "
+                        "retraso en la etapa Carrier.",
+        "hipotesis_principal": {
+            "hipotesis": "Planificación de rutas deficiente del transportista (Carrier).",
+            "evidencia": "Exceso del transportista: 10.0 horas; retraso de 3.00 días.",
+            "plan": {
+                "accion_inmediata": "Exigir a FastFreight un plan correctivo con fecha "
+                                    "por las 10.0 horas de exceso de tránsito.",
+                "accion_correctiva": "Renegociar la ventana de tránsito con FastFreight.",
+                "accion_preventiva": "Incorporar penalización por exceso de tránsito "
+                                     "al contrato con el transportista.",
+            },
+        },
+        "hipotesis_alternativa": {
+            "hipotesis": "Congestión en el patio del DC que retrasó el registro de llegada.",
+            "paso_discriminante": "Obtener el log de llegada del tráiler: si la llegada "
+                                  "real fue antes de la cita, reclamar al DC; si no, "
+                                  "sostener el reclamo al transportista.",
+        },
+        "confianza": 0.8,
+    }, ensure_ascii=False)
+
+
+def _raw_accion_meta() -> str:
+    """Variante con verbo meta como acción inmediata (debe fallar el check)."""
+    d = json.loads(_raw_accion_ok())
+    d["hipotesis_principal"]["plan"]["accion_inmediata"] = (
+        "Revisar con el equipo del DC el proceso de descarga"
+    )
+    return json.dumps(d, ensure_ascii=False)
+
+
+class _ActionBackendStub:
+    """Backend falso: devuelve respuestas crudas en secuencia y registra los prompts."""
+
+    def __init__(self, respuestas):
+        self.respuestas = list(respuestas)
+        self.prompts = []
+
+    def call_raw(self, prompt):
+        self.prompts.append(prompt)
+        return self.respuestas.pop(0) if self.respuestas else None
+
+
+# --- compute_dataset_stats / _percentile_rank: comparativos deterministas ---
+def test_compute_dataset_stats_filtra_tardios_y_por_etapa():
+    df = pd.DataFrame({
+        "delay_days_calc": [0.0, 1.0, 2.0, 3.0],
+        "stage_primary": ["On-Time", "Vendor", "Vendor", "Carrier"],
+        "excess_vendor_hrs": [50.0, 30.0, 40.0, 0.0],
+        "excess_carrier_hrs": [0.0, 0.0, 0.0, 12.0],
+        "excess_dc_hrs": [0.0, 0.0, 0.0, 0.0],
+    })
+    stats = compute_dataset_stats(df)
+    # Solo tardíos: el on-time (delay 0, exceso vendor 50) queda fuera de TODO.
+    assert stats["delay_values"] == [1.0, 2.0, 3.0]
+    assert stats["delay_median"] == 2.0
+    # Exceso por etapa: solo los POs ATRIBUIDOS a esa etapa.
+    assert stats["excess"]["Vendor"]["values"] == [30.0, 40.0]
+    assert stats["excess"]["Vendor"]["median"] == 35.0
+    assert stats["excess"]["Carrier"]["values"] == [12.0]
+    assert stats["excess"]["DC"]["values"] == []
+    assert stats["excess"]["DC"]["median"] == 0.0
+
+
+def test_percentile_rank_es_pct_de_menores():
+    assert _percentile_rank([1.0, 2.0, 3.0, 4.0], 3.0) == 50
+    assert _percentile_rank([1.0, 2.0, 3.0, 4.0], 5.0) == 100
+    assert _percentile_rank([1.0], 0.5) == 0
+    assert _percentile_rank([], 1.0) is None
+
+
+# --- build_action_prompt: contrato, magnitudes, comparativos, perímetro ---
+def test_build_action_prompt_contrato_con_llaves_en_orden():
+    out = _prompt_accion()
+    assert "EN ESTE ORDEN" in out
+    assert (out.index('"razonamiento"') < out.index('"hipotesis_principal"')
+            < out.index('"hipotesis_alternativa"') < out.index('"confianza"'))
+    for campo in ('"accion_inmediata"', '"accion_correctiva"', '"accion_preventiva"',
+                  '"paso_discriminante"', '"evidencia"'):
+        assert campo in out
+
+
+def test_build_action_prompt_incluye_diagnostico_de_llamada_1():
+    out = _prompt_accion()
+    assert "DIAGNÓSTICO VALIDADO" in out
+    assert "La etapa Carrier concentra el retraso de 3.00 días." in out
+    assert "- Severidad: HIGH" in out
+
+
+def test_build_action_prompt_magnitudes_destapadas():
+    out = _prompt_accion()
+    assert "MAGNITUDES DE LA ORDEN:" in out
+    assert "Tamaño de la orden: 250 cajas pedidas" in out
+    assert "Cajas embarcadas: 180 (fill rate: 72.0%" in out
+    assert "por debajo de 90%" in out           # umbral de rules_config.json
+    assert "+24.0 horas entre la primera cita aprobada y la vigente" in out
+
+
+def test_build_action_prompt_sin_reschedule_linea_neutra():
+    row = _row_accion()
+    row["is_rescheduled"] = False
+    out = build_action_prompt(row, _diag_ejemplo(), _stats_ejemplo())
+    assert "sin reprogramación (0.0 h)" in out
+
+
+def test_build_action_prompt_comparativos_globales():
+    out = _prompt_accion()
+    assert "COMPARATIVOS DEL DATASET" in out
+    # delay 3.00 entre [1,2,3,4] → 2 menores de 4 → percentil 50; mediana 2.50.
+    assert "percentil 50 de los POs tardíos del dataset (mediana: 2.50 días)" in out
+    # exceso carrier 10.0 entre [5,10,20] → 1 menor de 3 → percentil 33.
+    assert "percentil 33 de los POs tardíos atribuidos a Carrier" in out
+    assert "Medianas de exceso por etapa entre tardíos: Vendor 40.0 h · " \
+           "Carrier 10.0 h · DC 7.0 h." in out
+
+
+def test_build_action_prompt_indeterminado_sin_percentil_de_exceso():
+    # ADR-14: en Indeterminado el exceso se retira (regla por etapa) → ni las líneas de
+    # exceso ni su percentil; el percentil del delay y las medianas globales sí van.
+    row = _row_accion()
+    row["stage_primary"] = "Indeterminado"
+    out = build_action_prompt(row, _diag_ejemplo(), _stats_ejemplo())
+    assert "El exceso de" not in out
+    assert "Exceso del transportista" not in out
+    assert "percentil 50 de los POs tardíos del dataset" in out
+    assert "Medianas de exceso por etapa entre tardíos" in out
+
+
+def test_build_action_prompt_sin_fewshot_y_con_reglas_de_concrecion():
+    # Descartes de ARD-16: sin few-shot de acciones ni playbook; las reglas de
+    # concreción y el perímetro datos/dominio van en el texto.
+    out = _prompt_accion()
+    assert "EJEMPLOS DE RAZONAMIENTO" not in out
+    assert "REGLAS DEL PLAN (obligatorias):" in out
+    assert "NO cuentan como acción principal" in out
+    assert "re-emitir" in out                       # decisión del faltante
+    assert "PERÍMETRO DE RAZONAMIENTO:" in out
+    assert "márcalo en la redacción" in out          # generalizaciones marcadas
+
+
+# --- is_meta_action: lista cerrada de ARD-16 (comparte lógica check + métrica) ---
+def test_is_meta_action_detecta_lista_cerrada():
+    for accion in ("Revisar el muelle 3", "Revise con el equipo",
+                   "Analizar las causas del retraso", "Investigue el reschedule",
+                   "Monitorear el tránsito", "Dar seguimiento al caso",
+                   "Hacer seguimiento con el vendor"):
+        assert is_meta_action(accion) is True, accion
+
+
+def test_is_meta_action_no_dispara_en_acciones_concretas():
+    for accion in ("Emitir una orden de reposición por el faltante",
+                   "Contactar al proveedor y exigir plan correctivo",
+                   "Abrir un reclamo formal con FastFreight",
+                   "Re-emitir la PO por las cajas faltantes", ""):
+        assert is_meta_action(accion) is False, accion
+
+
+# --- _parse_action_json / _action_keys_in_order: contrato híbrido ---
+def test_parse_action_json_aplana_contrato():
+    out = _parse_action_json(_raw_accion_ok())
+    assert out["hipotesis"].startswith("Planificación")
+    assert out["hipotesis_evidencia"].startswith("Exceso del transportista")
+    assert out["accion_inmediata"].startswith("Exigir")
+    assert out["paso_discriminante"].startswith("Obtener el log")
+    assert out["confianza_hipotesis"] == 0.8
+
+
+def test_parse_action_json_sin_json_devuelve_none():
+    assert _parse_action_json("respuesta en texto libre") is None
+    assert _parse_action_json("") is None
+
+
+def test_parse_action_json_llaves_faltantes_dan_vacio():
+    out = _parse_action_json('{"razonamiento": "solo esto"}')
+    assert out["razonamiento"] == "solo esto"
+    assert out["accion_inmediata"] == ""
+    assert out["confianza_hipotesis"] == 0.5    # default documentado del parser
+
+
+def test_action_keys_in_order_verifica_sobre_el_crudo():
+    assert _action_keys_in_order(_raw_accion_ok()) is True
+    desordenado = ('{"confianza": 0.8, "razonamiento": "x", '
+                   '"hipotesis_principal": {}, "hipotesis_alternativa": {}}')
+    assert _action_keys_in_order(desordenado) is False
+
+
+# --- run_action_checks: cada check con caso que pasa y caso que falla ---
+def test_run_action_checks_pasa_limpio():
+    raw = _raw_accion_ok()
+    parsed = _parse_action_json(raw)
+    assert run_action_checks(parsed, raw, _row_accion(), _prompt_accion()) == []
+
+
+def test_run_action_checks_detecta_verbo_meta():
+    parsed = _parse_action_json(_raw_accion_ok())
+    parsed["accion_inmediata"] = "Revisar con el equipo del DC el proceso de descarga"
+    codigos = [c for c, _ in run_action_checks(
+        parsed, _raw_accion_ok(), _row_accion(), _prompt_accion())]
+    assert "verbo_meta" in codigos
+
+
+def test_run_action_checks_detecta_cifra_inventada():
+    parsed = _parse_action_json(_raw_accion_ok())
+    parsed["hipotesis_evidencia"] = "Un exceso de 99.9 horas fuera de los datos"
+    codigos = [c for c, _ in run_action_checks(
+        parsed, _raw_accion_ok(), _row_accion(), _prompt_accion())]
+    assert "cifra_fuera_de_input" in codigos
+
+
+def test_run_action_checks_esquema_incompleto():
+    parsed = _parse_action_json('{"razonamiento": "solo esto"}')
+    codigos = [c for c, _ in run_action_checks(
+        parsed, '{"razonamiento": "solo esto"}', _row_accion(), _prompt_accion())]
+    assert "esquema_incompleto" in codigos
+    assert "orden_de_llaves" in codigos
+
+
+def test_run_action_checks_short_ship_exige_decision():
+    row = _row_accion()
+    row["is_short_ship"] = True
+    row["_short_ship"] = True
+    parsed = _parse_action_json(_raw_accion_ok())
+    codigos = [c for c, _ in run_action_checks(
+        parsed, _raw_accion_ok(), row, _prompt_accion())]
+    assert "sin_decision_faltante" in codigos
+    # Con la decisión (re-emitir/esperar/cancelar) en el plan, el check pasa.
+    parsed["accion_correctiva"] = ("Re-emitir la orden por el faltante y esperar la "
+                                   "confirmación del proveedor")
+    codigos2 = [c for c, _ in run_action_checks(
+        parsed, _raw_accion_ok(), row, _prompt_accion())]
+    assert "sin_decision_faltante" not in codigos2
+
+
+def test_run_action_checks_etapa_incorrecta():
+    parsed = _parse_action_json(_raw_accion_ok())
+    parsed["razonamiento"] = "El retraso de 3.00 días viene del proveedor."
+    parsed["hipotesis"] = "Retraso del Vendor en producción."
+    codigos = [c for c, _ in run_action_checks(
+        parsed, _raw_accion_ok(), _row_accion(), _prompt_accion())]
+    assert "etapa_incorrecta" in codigos
+
+
+def test_run_action_checks_indeterminado_acepta_declaracion():
+    row = _row_accion()
+    row["stage_primary"] = "Indeterminado"
+    prompt = build_action_prompt(row, _diag_ejemplo(), _stats_ejemplo())
+    parsed = _parse_action_json(_raw_accion_ok())
+    parsed["razonamiento"] = "La señal es indeterminada: falta el timestamp que aísle la etapa."
+    parsed["hipotesis"] = "Registro incompleto del evento (dato faltante)."
+    codigos = [c for c, _ in run_action_checks(parsed, _raw_accion_ok(), row, prompt)]
+    assert "etapa_incorrecta" not in codigos
+
+
+# --- call_action_with_qa: regeneración citando el defecto, tope, sin bloqueo ---
+def test_call_action_with_qa_regenera_citando_defecto():
+    stub = _ActionBackendStub([_raw_accion_meta(), _raw_accion_ok()])
+    parsed, flags = call_action_with_qa(stub, _prompt_accion(), _row_accion())
+    assert flags == []
+    assert parsed["accion_inmediata"].startswith("Exigir")
+    assert len(stub.prompts) == 2
+    assert "REGENERACIÓN" in stub.prompts[1]
+    assert "verbo meta" in stub.prompts[1]      # el defecto se cita, no se repite a ciegas
+
+
+def test_call_action_with_qa_respeta_maximo_de_reintentos():
+    stub = _ActionBackendStub([_raw_accion_meta()] * 5)
+    parsed, flags = call_action_with_qa(stub, _prompt_accion(), _row_accion())
+    assert len(stub.prompts) == 3               # 1 llamada + 2 reintentos, no más
+    assert flags == ["verbo_meta"]              # qa_flags visible, sin bloquear
+    assert parsed["accion_inmediata"].startswith("Revisar")
+
+
+def test_call_action_with_qa_sin_json_marca_flag():
+    stub = _ActionBackendStub(["texto sin json"] * 3)
+    parsed, flags = call_action_with_qa(stub, _prompt_accion(), _row_accion())
+    assert parsed == {}
+    assert flags == ["json_invalido"]
+    assert len(stub.prompts) == 3
+
+
+def test_call_action_with_qa_backend_sin_respuesta():
+    stub = _ActionBackendStub([])               # call_raw → None (red agotada)
+    parsed, flags = call_action_with_qa(stub, _prompt_accion(), _row_accion())
+    assert parsed == {}
+    assert flags == ["sin_respuesta"]
+    assert len(stub.prompts) == 1               # reintentar el ciclo QA no ayuda
+
+
+# --- add_llm_explanations: invariante opt-in y cableado del plan ---
+class _Backend1Stub:
+    """Stub de la llamada 1 (sin red): respuesta fija."""
+
+    def __init__(self, respuesta):
+        self.respuesta = respuesta
+
+    def call(self, prompt):
+        return self.respuesta
+
+
+def _df_min_clasificado() -> pd.DataFrame:
+    tardia = _row_accion().to_dict()
+    ontime = {**tardia, "PO_NBR": "PO-ONTIME", "delay_days_calc": 0.0,
+              "stage_primary": "On-Time"}
+    return pd.DataFrame([tardia, ontime])
+
+
+def test_add_llm_explanations_default_sin_columnas_de_accion():
+    # Invariante opt-in (patrón ARD-15): sin action_call el DataFrame de salida no
+    # cambia — ninguna columna nueva aparece y la llamada 1 se procesa igual.
+    out = add_llm_explanations(_df_min_clasificado(),
+                               backend=_Backend1Stub(_diag_ejemplo()),
+                               delay_between_calls=0)
+    for col in ("llm_razonamiento", "llm_hipotesis", "llm_accion_inmediata",
+                "llm_qa_flags", "llm_confianza_hipotesis"):
+        assert col not in out.columns
+    assert out.loc[0, "llm_causa_raiz"].startswith("La etapa Carrier")
+
+
+def test_add_llm_explanations_action_call_llena_plan():
+    class _Dual(_Backend1Stub):
+        def call_raw(self, prompt):
+            return _raw_accion_ok()
+
+    out = add_llm_explanations(_df_min_clasificado(),
+                               backend=_Dual(_diag_ejemplo()),
+                               delay_between_calls=0, action_call=True)
+    assert out.loc[0, "llm_accion_inmediata"].startswith("Exigir")
+    assert out.loc[0, "llm_paso_discriminante"].startswith("Obtener el log")
+    assert out.loc[0, "llm_qa_flags"] == ""
+    assert out.loc[0, "llm_confianza_hipotesis"] == 0.8
+    # El on-time no se procesa (misma regla que la llamada 1).
+    assert out.loc[1, "llm_accion_inmediata"] == ""
+
+
+def test_add_llm_explanations_action_call_sin_diagnostico():
+    # Política ola 1 ante fallback de la llamada 1: la llamada 2 NO corre y el
+    # qa_flag lo hace visible.
+    class _Falla(_Backend1Stub):
+        def call_raw(self, prompt):
+            pytest.fail("la llamada 2 no debe correr sin diagnóstico de la llamada 1")
+
+    out = add_llm_explanations(_df_min_clasificado(), backend=_Falla(None),
+                               delay_between_calls=0, action_call=True)
+    assert out.loc[0, "llm_qa_flags"] == "sin_diagnostico_llamada1"
+    assert out.loc[0, "llm_accion_inmediata"] == ""
 
 
 # ════════════════════════════════════════════════════════════════════════════

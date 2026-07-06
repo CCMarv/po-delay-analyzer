@@ -38,7 +38,9 @@ import pandas as pd
 # Reusar la infraestructura de F3 (mismo dir): no se reimplementa la corrida del LLM.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from llm_integration import (  # noqa: E402
-    build_prompt, create_backend, load_domain_kb, load_llm_config, prepare_classified_df,
+    DEFAULT_MAX_TOKENS_ACTION, build_action_prompt, build_prompt, call_action_with_qa,
+    compute_dataset_stats, create_backend, is_meta_action, load_domain_kb,
+    load_llm_config, prepare_classified_df,
 )
 from fewshot import select_examples  # noqa: E402
 
@@ -135,7 +137,9 @@ def _check_cuantifica(explicacion: str, delay_days: float) -> bool:
     return objetivo in e or objetivo_1 in e
 
 
-def evaluate(df_sample: pd.DataFrame, backend, examples=None, kb=None) -> pd.DataFrame:
+def evaluate(df_sample: pd.DataFrame, backend, examples=None, kb=None,
+             action_call: bool = False, action_backend=None,
+             stats: Optional[dict] = None) -> pd.DataFrame:
     """Corre el LLM sobre la muestra y pre-evalúa los checks objetivos (a) y (b).
 
     Args:
@@ -148,10 +152,18 @@ def evaluate(df_sample: pd.DataFrame, backend, examples=None, kb=None) -> pd.Dat
             None (default) → sin bloque de contexto de dominio. Se pasa tal cual a
             build_prompt; validar su efecto en diversidad es independiente de `examples`
             (el cruce kb×few-shot queda fuera de esta ronda).
+        action_call: activa la llamada de acción (ARD-16 ola 1) sobre el diagnóstico de
+            la llamada 1: añade a la tabla el plan (hipótesis / acciones / paso
+            discriminante) y los qa_flags, y el check de verbo meta se evalúa sobre la
+            accion_inmediata (la acción de la llamada 1 deja de consumirse).
+        action_backend: backend de la llamada 2 (max_tokens_action). None → `backend`.
+        stats: dict de compute_dataset_stats sobre el df clasificado COMPLETO (no la
+            muestra); requerido si action_call.
 
     Returns:
-        DataFrame con una fila por PO: datos dados, explicación del LLM y los
-        pre-veredictos de (a)/(b). (c) y el veredicto final quedan vacíos para el humano.
+        DataFrame con una fila por PO: datos dados, explicación del LLM, los
+        pre-veredictos de (a)/(b) y el de verbo meta. (c) y el veredicto final quedan
+        vacíos para el humano.
     """
     filas = []
     for _, row in df_sample.iterrows():
@@ -159,24 +171,65 @@ def evaluate(df_sample: pd.DataFrame, backend, examples=None, kb=None) -> pd.Dat
         resp = backend.call(prompt) or {}
         causa = resp.get("causa_raiz", "")
         delay = float(row["delay_days_calc"])
-        filas.append({
+        fila = {
             "PO_NBR": row["PO_NBR"],
             "stage_primary": row["stage_primary"],
             "delay_days_calc": round(delay, 2),
             "REASON_DSC": row.get("REASON_DSC", ""),
             "llm_causa_raiz": causa,
             "llm_accion": resp.get("accion_recomendada", ""),
+        }
+        # La acción principal sobre la que se mide el verbo meta: en modo acción es la
+        # accion_inmediata del plan; en modo clásico, la accion_recomendada histórica
+        # (así la métrica es comparable contra los fixtures previos).
+        accion_principal = fila["llm_accion"]
+        if action_call:
+            if resp:
+                action_prompt = build_action_prompt(row, resp, stats)
+                parsed, qa_flags = call_action_with_qa(
+                    action_backend or backend, action_prompt, row
+                )
+            else:
+                # Política ola 1: sin diagnóstico de la llamada 1 no hay llamada 2.
+                parsed, qa_flags = {}, ["sin_diagnostico_llamada1"]
+            fila.update({
+                "llm_hipotesis": parsed.get("hipotesis", ""),
+                "llm_accion_inmediata": parsed.get("accion_inmediata", ""),
+                "llm_accion_correctiva": parsed.get("accion_correctiva", ""),
+                "llm_accion_preventiva": parsed.get("accion_preventiva", ""),
+                "llm_paso_discriminante": parsed.get("paso_discriminante", ""),
+                "qa_flags": ";".join(qa_flags),
+            })
+            accion_principal = fila["llm_accion_inmediata"]
+        fila.update({
             "chk_a_etapa": _check_etapa(causa, row["stage_primary"]),
             "chk_b_cuantifica": _check_cuantifica(causa, delay),
+            "chk_meta": is_meta_action(accion_principal),
             "chk_c_accion_viable": "",   # ← lo valida el humano
             "veredicto": "",             # ← lo confirma el humano (PASA si a&b&c)
         })
+        filas.append(fila)
     return pd.DataFrame(filas)
 
 
+def _celda(texto) -> str:
+    """Texto seguro para una celda de la tabla markdown (sin | ni saltos de línea)."""
+    return str(texto).replace("|", "\\|").replace("\n", " ")
+
+
 def to_markdown(df_eval: pd.DataFrame) -> str:
-    """Arma el documento .md del benchmark: criterio + tabla + resumen pre-evaluado."""
+    """Arma el documento .md del benchmark: criterio + tabla + resumen pre-evaluado.
+
+    Modo clásico: la tabla histórica + la columna (meta) — tasa de verbos meta como
+    acción principal (ARD-16; medible también sobre corridas de una sola llamada, para
+    comparar contra los fixtures previos). Modo acción (detectado por la presencia de
+    `llm_accion_inmediata`): la acción de la llamada 1 deja de consumirse y la tabla
+    muestra el plan del contrato híbrido + qa_flags.
+    """
+    action_mode = "llm_accion_inmediata" in df_eval.columns
+    n = len(df_eval)
     pre_ok = (df_eval["chk_a_etapa"] & df_eval["chk_b_cuantifica"]).sum()
+    n_meta = int(df_eval["chk_meta"].sum())
     lineas = [
         "# Benchmark de calidad de explicación del LLM — 20 POs (#94)",
         "",
@@ -189,27 +242,53 @@ def to_markdown(df_eval: pd.DataFrame) -> str:
         "acierta si lo declara indeterminado (no si copia la etapa del reason code).",
         "- **(b) cuantifica el delay:** cita una cifra y coincide con `delay_days_calc`.",
         "- **(c) acción viable:** nombra responsable y es operable (NO genérica). *Validación humana.*",
+        "- **(meta) sin verbo meta:** la acción principal no arranca con revisar/analizar/"
+        "investigar/monitorear/dar seguimiento (ARD-16; no cuenta para PASA, se reporta "
+        "como tasa).",
         "",
-        f"## Pre-evaluación automática (a & b): {pre_ok}/20",
+        f"## Pre-evaluación automática (a & b): {pre_ok}/{n}",
+        f"Tasa de verbos meta como acción principal: {n_meta}/{n} (meta ola 1 de ARD-16: 0).",
+        "",
         "_(c) y el veredicto final los confirma una persona; rellenar las columnas vacías._",
         "",
-        "| PO | etapa | delay (d) | REASON_DSC | explicación LLM | acción LLM | (a) | (b) | (c)? | veredicto |",
-        "|---|---|--:|---|---|---|:--:|:--:|:--:|:--:|",
     ]
+    if action_mode:
+        lineas += [
+            "| PO | etapa | delay (d) | REASON_DSC | explicación LLM | hipótesis | "
+            "acción inmediata | acción correctiva | acción preventiva | paso discriminante "
+            "| qa_flags | (a) | (b) | (meta) | (c)? | veredicto |",
+            "|---|---|--:|---|---|---|---|---|---|---|---|:--:|:--:|:--:|:--:|:--:|",
+        ]
+    else:
+        lineas += [
+            "| PO | etapa | delay (d) | REASON_DSC | explicación LLM | acción LLM | (a) "
+            "| (b) | (meta) | (c)? | veredicto |",
+            "|---|---|--:|---|---|---|:--:|:--:|:--:|:--:|:--:|",
+        ]
     for _, r in df_eval.iterrows():
-        causa = str(r["llm_causa_raiz"]).replace("|", "\\|").replace("\n", " ")
-        accion = str(r["llm_accion"]).replace("|", "\\|").replace("\n", " ")
-        reason = str(r["REASON_DSC"]).replace("|", "\\|")
         a = "✅" if r["chk_a_etapa"] else "❌"
         b = "✅" if r["chk_b_cuantifica"] else "❌"
-        lineas.append(
+        meta = "❌" if r["chk_meta"] else "✅"   # ❌ = arranca con verbo meta
+        base = (
             f"| {r['PO_NBR']} | {r['stage_primary']} | {r['delay_days_calc']:.2f} | "
-            f"{reason} | {causa} | {accion} | {a} | {b} |  |  |"
+            f"{_celda(r['REASON_DSC'])} | {_celda(r['llm_causa_raiz'])} | "
         )
+        if action_mode:
+            lineas.append(
+                base
+                + f"{_celda(r['llm_hipotesis'])} | {_celda(r['llm_accion_inmediata'])} | "
+                f"{_celda(r['llm_accion_correctiva'])} | {_celda(r['llm_accion_preventiva'])} | "
+                f"{_celda(r['llm_paso_discriminante'])} | {_celda(r['qa_flags'])} | "
+                f"{a} | {b} | {meta} |  |  |"
+            )
+        else:
+            lineas.append(
+                base + f"{_celda(r['llm_accion'])} | {a} | {b} | {meta} |  |  |"
+            )
     lineas += [
         "",
         "## Resultado (a completar tras validación humana)",
-        "- POs que PASAN: __/20  →  equivalente sobre 5: __/5  (meta del mentor: 4/5).",
+        f"- POs que PASAN: __/{n}  →  equivalente sobre 5: __/5  (meta del mentor: 4/5).",
         "- Fallos y por qué: _(documentar aquí)_.",
         "",
     ]
@@ -235,6 +314,11 @@ def main() -> None:
                              "domain_kb.json). Default: sin kb (comportamiento histórico). "
                              "Esta ronda valida kb sobre C0; el cruce con --combo es "
                              "exploratorio, no el gate de esta ronda.")
+    parser.add_argument("--action-call", action="store_true",
+                        help="Activa la llamada de acción (ARD-16 ola 1): 2 llamadas por "
+                             "PO (diagnóstico + plan con contrato híbrido y checks por "
+                             "regla, con hasta 2 regeneraciones de QA). El fixture lleva "
+                             "sufijo _accion. Default: solo la llamada 1.")
     args = parser.parse_args()
 
     examples = COMBOS[args.combo]()
@@ -255,12 +339,14 @@ def main() -> None:
     temperatura = resolve_temperature(args.temperature)
     temp_suffix = _temp_suffix(temperatura)
     kb_suffix = "_kb" if args.kb else ""
-    # Nombre de salida: C0 a la temperatura ancla y sin kb → benchmark principal (junto al
-    # script); cualquier otra combinación, temperatura distinta al ancla, o kb → fixtures/.
-    if args.combo == "C0" and not temp_suffix and not kb_suffix:
+    accion_suffix = "_accion" if args.action_call else ""
+    # Nombre de salida: C0 a la temperatura ancla, sin kb y sin llamada de acción →
+    # benchmark principal (junto al script); cualquier otra variante → fixtures/.
+    if args.combo == "C0" and not temp_suffix and not kb_suffix and not accion_suffix:
         out_md = OUTPUT_MD
     else:
-        out_md = OUTPUT_MD.parent / "fixtures" / f"eval_quality_20pos_{args.combo}{temp_suffix}{kb_suffix}.md"
+        out_md = (OUTPUT_MD.parent / "fixtures" /
+                  f"eval_quality_20pos_{args.combo}{temp_suffix}{kb_suffix}{accion_suffix}.md")
 
     if args.dry_run:
         cols = ["PO_NBR", "stage_primary", "delay_days_calc", "REASON_DSC"]
@@ -275,11 +361,32 @@ def main() -> None:
         return
 
     backend = create_backend(backend_type=args.backend, temperature=temperatura)
+
+    # Llamada de acción (ARD-16 ola 1): backend propio con max_tokens_action y
+    # estadísticos globales del df COMPLETO (no de la muestra), una vez por corrida.
+    action_backend = None
+    stats = None
+    if args.action_call:
+        stats = compute_dataset_stats(df)
+        action_backend = create_backend(
+            backend_type=args.backend, temperature=temperatura,
+            max_tokens=load_llm_config().get(
+                "max_tokens_action", DEFAULT_MAX_TOKENS_ACTION
+            ),
+        )
+        print(f"\nModo acción: 2 llamadas por PO → {2 * len(sample)} llamadas base "
+              f"(hasta {4 * len(sample)} con reintentos de QA), backend {args.backend}.")
+
     print(f"\nCorriendo {len(sample)} POs por el LLM ({args.backend})...")
-    df_eval = evaluate(sample, backend, examples=examples, kb=kb)
+    df_eval = evaluate(sample, backend, examples=examples, kb=kb,
+                       action_call=args.action_call, action_backend=action_backend,
+                       stats=stats)
     out_md.write_text(to_markdown(df_eval), encoding="utf-8")
     pre_ok = int((df_eval["chk_a_etapa"] & df_eval["chk_b_cuantifica"]).sum())
-    print(f"Pre-evaluación (a & b): {pre_ok}/20")
+    n_meta = int(df_eval["chk_meta"].sum())
+    print(f"Pre-evaluación (a & b): {pre_ok}/{len(df_eval)}")
+    print(f"Verbos meta como acción principal: {n_meta}/{len(df_eval)} "
+          "(meta ola 1 de ARD-16: 0)")
     print(f"Tabla escrita en: {out_md}")
     print("Falta validar a mano (c) y el veredicto final.")
 
