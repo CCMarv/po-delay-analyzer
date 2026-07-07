@@ -28,19 +28,20 @@ Uso:
 """
 
 import argparse
+import re
 import sys
 import unicodedata
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import pandas as pd
 
 # Reusar la infraestructura de F3 (mismo dir): no se reimplementa la corrida del LLM.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from llm_integration import (  # noqa: E402
-    DEFAULT_MAX_TOKENS_ACTION, build_action_prompt, build_prompt, call_action_with_qa,
-    compute_dataset_stats, create_backend, is_meta_action, load_domain_kb,
-    load_llm_config, prepare_classified_df,
+    DEFAULT_MAX_TOKENS_ACTION, build_action_prompt, build_prompt,
+    call_action_with_qa, compute_dataset_stats, create_backend, is_meta_action,
+    load_domain_kb, load_llm_config, prepare_classified_df, reconoce_indeterminacion,
 )
 from fewshot import select_examples  # noqa: E402
 
@@ -113,6 +114,73 @@ def _norm(texto: str) -> str:
         if unicodedata.category(c) != "Mn"
     )
     return sin_acentos.lower()
+
+
+# ── Convergencia léxica intra-etapa (gate de ARD-16 ola 2) ────────────────────
+# Mide el síntoma del baseline (5/8 hipótesis Vendor convergen a "capacidad del
+# proveedor") sin lista de etiquetas prohibidas: dos hipótesis "convergen" si sus tokens
+# de contenido se solapan por encima de CONVERGENCE_THETA (Jaccard); el reporte es el
+# clúster máximo por etapa. θ se calibró contra el fixture de la ola 1
+# (eval_quality_20pos_C0_t09_accion.md): en el barrido 0.20–0.60, θ=0.25 es el punto más
+# alto que reproduce el conteo humano de Vendor (5/8 "capacidad del proveedor"); desde
+# 0.30 la métrica subestima la convergencia que un lector sí ve. Sesgo conocido: en
+# hipótesis largas el Jaccard se diluye (Carrier del baseline da 1/4 aunque 3 mencionen
+# "capacidad del transportista"), así que la métrica es conservadora, no laxa.
+
+CONVERGENCE_THETA = 0.25
+
+_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+# Palabras función del español (lista cerrada): no aportan contenido a la hipótesis y
+# inflarían la similitud ("la falta de la capacidad de..." vs "la gestión de la...").
+_STOPWORDS_ES = frozenset((
+    "de", "del", "la", "el", "los", "las", "un", "una", "unos", "unas", "y", "o",
+    "u", "e", "en", "a", "al", "que", "por", "para", "con", "sin", "su", "sus",
+    "se", "es", "son", "no", "lo", "le", "como", "mas", "esta", "este", "esto",
+    "estan", "hay", "ha", "han", "fue", "ser", "entre", "sobre", "hacia", "debido",
+))
+
+
+def _hyp_tokens(texto: str) -> set:
+    """Tokens de CONTENIDO de una hipótesis: normalizados (_norm), sin stopwords ni
+    tokens de <3 caracteres. Base de la similitud de Jaccard de la convergencia."""
+    return {
+        t for t in _TOKEN_RE.findall(_norm(texto))
+        if len(t) >= 3 and t not in _STOPWORDS_ES
+    }
+
+
+def _jaccard(a: set, b: set) -> float:
+    """Similitud de Jaccard entre dos sets de tokens; 0.0 si alguno está vacío."""
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def hypothesis_convergence(hipotesis: List[str],
+                           theta: float = CONVERGENCE_THETA) -> int:
+    """Clúster máximo de hipótesis 'iguales' dentro de un grupo (una etapa).
+
+    Para cada hipótesis cuenta cuántas del grupo (incluida ella misma) tienen
+    Jaccard ≥ theta sobre tokens de contenido y devuelve el máximo: n hipótesis
+    idénticas → n; todas distintas → 1; lista vacía → 0.
+    """
+    sets_ = [_hyp_tokens(h) for h in hipotesis]
+    if not sets_:
+        return 0
+    return max(
+        sum(1 for otro in sets_ if _jaccard(propio, otro) >= theta)
+        for propio in sets_
+    )
+
+
+def _hipotesis_reconoce_indet(texto: str) -> bool:
+    """True si la hipótesis reconoce la indeterminación (frente iv de la ola 2).
+
+    Delegado a reconoce_indeterminacion de llm_integration — la MISMA función del
+    check `indeterminado_sin_reconocer` (claves literales + formulación condicional),
+    para que métrica y check no discrepen (patrón de is_meta_action)."""
+    return reconoce_indeterminacion(texto)
 
 
 def _check_etapa(explicacion: str, stage: str) -> bool:
@@ -194,6 +262,7 @@ def evaluate(df_sample: pd.DataFrame, backend, examples=None, kb=None,
                 parsed, qa_flags = {}, ["sin_diagnostico_llamada1"]
             fila.update({
                 "llm_hipotesis": parsed.get("hipotesis", ""),
+                "llm_hipotesis_alt": parsed.get("hipotesis_alt", ""),
                 "llm_accion_inmediata": parsed.get("accion_inmediata", ""),
                 "llm_accion_correctiva": parsed.get("accion_correctiva", ""),
                 "llm_accion_preventiva": parsed.get("accion_preventiva", ""),
@@ -215,6 +284,28 @@ def evaluate(df_sample: pd.DataFrame, backend, examples=None, kb=None,
 def _celda(texto) -> str:
     """Texto seguro para una celda de la tabla markdown (sin | ni saltos de línea)."""
     return str(texto).replace("|", "\\|").replace("\n", " ")
+
+
+def _ola2_metric_lines(df_eval: pd.DataFrame) -> List[str]:
+    """Líneas del resumen con las métricas de la ola 2 (solo modo acción, ARD-16):
+    convergencia léxica intra-etapa (gate) y tasa de hipótesis Indeterminado que
+    reconocen la indeterminación."""
+    conv_partes = []
+    for etapa in STRATA:
+        grupo = df_eval[df_eval["stage_primary"] == etapa]
+        if len(grupo):
+            cluster = hypothesis_convergence(list(grupo["llm_hipotesis"]))
+            conv_partes.append(f"{etapa} {cluster}/{len(grupo)}")
+    indet = df_eval[df_eval["stage_primary"] == "Indeterminado"]
+    k_indet = int(indet["llm_hipotesis"].map(_hipotesis_reconoce_indet).sum())
+    return [
+        f"Convergencia intra-etapa (θ={CONVERGENCE_THETA}): " + " · ".join(conv_partes)
+        + " (meta ola 2: sin clúster de plantilla; un clúster alineado a evidencia "
+        "compartida no cuenta como fallo — criterio de Discriminación de ARD-16, "
+        "validar la covarianza señal→hipótesis a mano).",
+        f"Indeterminado reconoce indeterminación: {k_indet}/{len(indet)} "
+        "(meta ola 2: todas).",
+    ]
 
 
 def to_markdown(df_eval: pd.DataFrame) -> str:
@@ -248,6 +339,10 @@ def to_markdown(df_eval: pd.DataFrame) -> str:
         "",
         f"## Pre-evaluación automática (a & b): {pre_ok}/{n}",
         f"Tasa de verbos meta como acción principal: {n_meta}/{n} (meta ola 1 de ARD-16: 0).",
+    ]
+    if action_mode:
+        lineas += _ola2_metric_lines(df_eval)
+    lineas += [
         "",
         "_(c) y el veredicto final los confirma una persona; rellenar las columnas vacías._",
         "",
@@ -255,9 +350,10 @@ def to_markdown(df_eval: pd.DataFrame) -> str:
     if action_mode:
         lineas += [
             "| PO | etapa | delay (d) | REASON_DSC | explicación LLM | hipótesis | "
-            "acción inmediata | acción correctiva | acción preventiva | paso discriminante "
+            "hipótesis alternativa | acción inmediata | acción correctiva | "
+            "acción preventiva | paso discriminante "
             "| qa_flags | (a) | (b) | (meta) | (c)? | veredicto |",
-            "|---|---|--:|---|---|---|---|---|---|---|---|:--:|:--:|:--:|:--:|:--:|",
+            "|---|---|--:|---|---|---|---|---|---|---|---|---|:--:|:--:|:--:|:--:|:--:|",
         ]
     else:
         lineas += [
@@ -276,7 +372,8 @@ def to_markdown(df_eval: pd.DataFrame) -> str:
         if action_mode:
             lineas.append(
                 base
-                + f"{_celda(r['llm_hipotesis'])} | {_celda(r['llm_accion_inmediata'])} | "
+                + f"{_celda(r['llm_hipotesis'])} | {_celda(r['llm_hipotesis_alt'])} | "
+                f"{_celda(r['llm_accion_inmediata'])} | "
                 f"{_celda(r['llm_accion_correctiva'])} | {_celda(r['llm_accion_preventiva'])} | "
                 f"{_celda(r['llm_paso_discriminante'])} | {_celda(r['qa_flags'])} | "
                 f"{a} | {b} | {meta} |  |  |"
@@ -319,6 +416,11 @@ def main() -> None:
                              "PO (diagnóstico + plan con contrato híbrido y checks por "
                              "regla, con hasta 2 regeneraciones de QA). El fixture lleva "
                              "sufijo _accion. Default: solo la llamada 1.")
+    parser.add_argument("--tag", default="",
+                        help="Sufijo opcional del nombre del fixture (p. ej. 'ola2'): "
+                             "permite correr las mismas banderas sin pisar el fixture "
+                             "previo, que queda como baseline de comparación. Con --tag "
+                             "la salida siempre va a fixtures/.")
     args = parser.parse_args()
 
     examples = COMBOS[args.combo]()
@@ -340,13 +442,16 @@ def main() -> None:
     temp_suffix = _temp_suffix(temperatura)
     kb_suffix = "_kb" if args.kb else ""
     accion_suffix = "_accion" if args.action_call else ""
-    # Nombre de salida: C0 a la temperatura ancla, sin kb y sin llamada de acción →
-    # benchmark principal (junto al script); cualquier otra variante → fixtures/.
-    if args.combo == "C0" and not temp_suffix and not kb_suffix and not accion_suffix:
+    tag_suffix = f"_{args.tag}" if args.tag else ""
+    # Nombre de salida: C0 a la temperatura ancla, sin kb, sin llamada de acción y sin
+    # tag → benchmark principal (junto al script); cualquier otra variante → fixtures/.
+    if (args.combo == "C0" and not temp_suffix and not kb_suffix
+            and not accion_suffix and not tag_suffix):
         out_md = OUTPUT_MD
     else:
         out_md = (OUTPUT_MD.parent / "fixtures" /
-                  f"eval_quality_20pos_{args.combo}{temp_suffix}{kb_suffix}{accion_suffix}.md")
+                  f"eval_quality_20pos_{args.combo}{temp_suffix}{kb_suffix}"
+                  f"{accion_suffix}{tag_suffix}.md")
 
     if args.dry_run:
         cols = ["PO_NBR", "stage_primary", "delay_days_calc", "REASON_DSC"]

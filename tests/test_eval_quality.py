@@ -10,7 +10,12 @@ sufijo, no en llamar al LLM).
 `eval_quality` se importa gracias al pythonpath de pyproject.toml (03_llm_integration) y al
 insert de red de seguridad de conftest.py — igual que el resto de la suite.
 """
-from eval_quality import ANCHOR_TEMP, _temp_suffix, resolve_temperature
+import pytest
+
+from eval_quality import (
+    ANCHOR_TEMP, _hipotesis_reconoce_indet, _hyp_tokens, _jaccard, _temp_suffix,
+    hypothesis_convergence, resolve_temperature,
+)
 from llm_integration import load_llm_config
 
 
@@ -70,3 +75,54 @@ def test_no_arg_no_pisa_baseline_cuando_config_no_es_ancla():
 def test_temperatura_03_explicita_si_va_al_baseline():
     # La ÚNICA vía que reescribe el ancla histórica es pedir 0.3 explícito.
     assert _temp_suffix(resolve_temperature(0.3)) == ""
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# D. Convergencia léxica intra-etapa (gate de ARD-16 ola 2) — determinística pura
+# ════════════════════════════════════════════════════════════════════════════
+def test_hyp_tokens_quita_stopwords_y_normaliza():
+    toks = _hyp_tokens("La capacidad DEL proveedor es insuficiente")
+    assert toks == {"capacidad", "proveedor", "insuficiente"}
+
+
+def test_jaccard_bordes():
+    assert _jaccard(set(), {"a"}) == 0.0
+    assert _jaccard({"x", "y"}, {"x", "y"}) == 1.0
+    assert _jaccard({"x", "y"}, {"y", "z"}) == pytest.approx(1 / 3)
+
+
+def test_hypothesis_convergence_identicas_y_distintas():
+    # n hipótesis idénticas → clúster n; mecanismos sin solape → 1; vacía → 0.
+    assert hypothesis_convergence(["Capacidad del proveedor insuficiente"] * 3) == 3
+    distintas = [
+        "Capacidad de producción insuficiente del proveedor",
+        "Congestión de puertas en el centro de distribución",
+        "Documentación de embarque incompleta del transportista",
+    ]
+    assert hypothesis_convergence(distintas) == 1
+    assert hypothesis_convergence([]) == 0
+
+
+def test_hypothesis_convergence_theta_controla_el_agrupamiento():
+    # Solape parcial (Jaccard ≈ 0.43): converge con θ laxo, se separa con θ estricto.
+    pareja = [
+        "Capacidad del proveedor insuficiente para cumplir plazos",
+        "Capacidad del proveedor limitada para cumplir la carga",
+    ]
+    assert hypothesis_convergence(pareja, theta=0.2) == 2
+    assert hypothesis_convergence(pareja, theta=0.9) == 1
+
+
+def test_hipotesis_reconoce_indet_usa_lista_compartida():
+    # La MISMA función del check indeterminado_sin_reconocer (llm_integration): métrica
+    # y check no pueden discrepar. Reconoce claves literales Y la formulación
+    # condicional (hueco de vocabulario detectado en el gate de la ola 2: las 4
+    # hipótesis salieron condicionales sin palabra literal).
+    assert _hipotesis_reconoce_indet("Dato faltante: el log de llegada del tráiler") is True
+    assert _hipotesis_reconoce_indet("No se puede atribuir sin el timestamp") is True
+    assert _hipotesis_reconoce_indet(
+        "Si el tiempo de espera se debe a congestión, el mecanismo es de patio"
+    ) is True
+    assert _hipotesis_reconoce_indet("Congestión en el patio del DC") is False
+    # "análisis" contiene 'si' como subcadena pero NO como token: no cuenta.
+    assert _hipotesis_reconoce_indet("Congestión detectada en el análisis del patio") is False
