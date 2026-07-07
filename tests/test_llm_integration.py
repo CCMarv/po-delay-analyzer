@@ -695,6 +695,130 @@ def test_run_action_checks_indeterminado_acepta_declaracion():
     assert "etapa_incorrecta" not in codigos
 
 
+# --- ARD-16 ola 2: concordancia motivo↔etapa (meta-señal determinista) ---
+def test_action_prompt_concordancia_coincide():
+    row = _row_accion()
+    row["reason_group_manual"] = "Carrier"      # = stage_primary
+    out = build_action_prompt(row, _diag_ejemplo(), _stats_ejemplo())
+    assert "el motivo anotado apunta a la misma etapa medida (Carrier)" in out
+    assert "DISCREPA" not in out
+
+
+def test_action_prompt_concordancia_discrepa_es_meta_senal():
+    row = _row_accion()
+    row["reason_group_manual"] = "Vendor"       # etapa medida: Carrier
+    out = build_action_prompt(row, _diag_ejemplo(), _stats_ejemplo())
+    assert ("DISCREPA — el motivo anotado apunta a Vendor y la etapa medida es "
+            "Carrier") in out
+    assert "PROCESO DE ANOTACIÓN" in out
+    # La regla de no promover el REASON_DSC a etapa se preserva en la redacción.
+    assert "nunca sustituir la etapa medida" in out
+
+
+def test_action_prompt_concordancia_incondicional_no_evaluable():
+    # Sin reason_group_manual la fila cae a Unknown → "no evaluable"; la línea existe
+    # SIEMPRE (incondicional, sin juicio por selección — como la línea de reschedule).
+    out = _prompt_accion()
+    assert "Concordancia motivo↔etapa: no evaluable" in out
+
+
+# --- ARD-16 ola 2: diagnóstico diferencial (mecanismo vs etiqueta) ---
+def test_action_prompt_diferencial_generico_en_toda_etapa():
+    out = _prompt_accion()                       # etapa Carrier
+    assert "DIAGNÓSTICO DIFERENCIAL (obligatorio):" in out
+    assert "MECANISMO, no una etiqueta" in out
+    assert "DISTINTOS y DISTINGUIBLES" in out
+    # El pointer de señales (fill rate / reprogramación) es EXCLUSIVO de Vendor.
+    assert "separan mecanismos" not in out
+
+
+def test_action_prompt_diferencial_pointer_solo_vendor():
+    row = _row_accion()
+    row["stage_primary"] = "Vendor"
+    out = build_action_prompt(row, _diag_ejemplo(), _stats_ejemplo())
+    assert ("En esta etapa (Vendor), el fill rate y la magnitud de la "
+            "reprogramación separan mecanismos") in out
+
+
+def test_action_prompt_indeterminado_hipotesis_condicional():
+    row = _row_accion()
+    row["stage_primary"] = "Indeterminado"
+    out = build_action_prompt(row, _diag_ejemplo(), _stats_ejemplo())
+    assert "NO afirma un mecanismo como causa" in out
+    assert "formula el mecanismo en condicional" in out
+
+
+# --- ARD-16 ola 2: reparto multi-actor con stage_multi ---
+def test_action_prompt_multi_actor_solo_con_stage_multi_activo():
+    row = _row_accion()
+    row["stage_multi"] = "Vendor + Carrier"
+    out = build_action_prompt(row, _diag_ejemplo(), _stats_ejemplo())
+    assert "Hay causas múltiples activas (Vendor + Carrier)" in out
+    assert ("UNA sola, dirigida al cuello de botella (la etapa primaria: "
+            "Carrier)") in out
+    # Sin " + " (una sola etiqueta o el centinela "Ninguno") el bullet no aparece.
+    assert "causas múltiples activas" not in _prompt_accion()
+    row2 = _row_accion()
+    row2["stage_multi"] = "Ninguno"
+    out2 = build_action_prompt(row2, _diag_ejemplo(), _stats_ejemplo())
+    assert "causas múltiples activas" not in out2
+
+
+# --- ARD-16 ola 2: checks nuevos por regla ---
+def test_run_action_checks_evidencia_sin_cifra():
+    parsed = _parse_action_json(_raw_accion_ok())
+    parsed["hipotesis_evidencia"] = "La entrega llegó tarde por el transportista."
+    codigos = [c for c, _ in run_action_checks(
+        parsed, _raw_accion_ok(), _row_accion(), _prompt_accion())]
+    assert "evidencia_sin_cifra" in codigos
+    # El caso base cita cifras → pasa (cubierto por test_run_action_checks_pasa_limpio).
+
+
+def test_run_action_checks_indeterminado_sin_reconocer():
+    row = _row_accion()
+    row["stage_primary"] = "Indeterminado"
+    prompt = build_action_prompt(row, _diag_ejemplo(), _stats_ejemplo())
+    parsed = _parse_action_json(_raw_accion_ok())
+    parsed["razonamiento"] = "La señal es indeterminada; ninguna etapa domina."
+    # Hipótesis afirmativa (el hueco exacto del baseline): el razonamiento declara
+    # indeterminación pero la hipótesis afirma un mecanismo → defecto.
+    parsed["hipotesis"] = "Congestión en el patio del DC."
+    codigos = [c for c, _ in run_action_checks(parsed, _raw_accion_ok(), row, prompt)]
+    assert "indeterminado_sin_reconocer" in codigos
+    # Hipótesis que reconoce la indeterminación (dato faltante + condicional) → pasa.
+    parsed["hipotesis"] = ("Dato faltante: sin el log de llegada no se puede atribuir; "
+                           "si se confirma congestión, el mecanismo es de patio.")
+    codigos2 = [c for c, _ in run_action_checks(parsed, _raw_accion_ok(), row, prompt)]
+    assert "indeterminado_sin_reconocer" not in codigos2
+    # Formulación condicional PURA (sin palabra literal de la lista): también pasa —
+    # es la forma que el prompt pide y el hueco que mostró el gate de la ola 2.
+    parsed["hipotesis"] = ("Si el tiempo de patio refleja congestión, el mecanismo es "
+                           "de puertas; si la descarga fue atípica, es del proceso.")
+    codigos3 = [c for c, _ in run_action_checks(parsed, _raw_accion_ok(), row, prompt)]
+    assert "indeterminado_sin_reconocer" not in codigos3
+
+
+def test_run_action_checks_etapa_acepta_alias_en_espanol():
+    # Falso positivo del gate (100197/100318): el modelo escribe "proveedor" y el check
+    # buscaba el literal "Vendor". Los alias por etapa lo corrigen.
+    row = _row_accion()
+    row["stage_primary"] = "Vendor"
+    prompt = build_action_prompt(row, _diag_ejemplo(), _stats_ejemplo())
+    parsed = _parse_action_json(_raw_accion_ok())
+    parsed["razonamiento"] = "El retraso de 3.00 días se origina antes del tránsito."
+    parsed["hipotesis"] = "Falta de producto en inventario del proveedor."
+    codigos = [c for c, _ in run_action_checks(parsed, _raw_accion_ok(), row, prompt)]
+    assert "etapa_incorrecta" not in codigos
+
+
+def test_run_action_checks_indeterminado_no_aplica_en_atribuidas():
+    # Etapa atribuida (Carrier) con hipótesis afirmativa: el check no aplica.
+    parsed = _parse_action_json(_raw_accion_ok())
+    codigos = [c for c, _ in run_action_checks(
+        parsed, _raw_accion_ok(), _row_accion(), _prompt_accion())]
+    assert "indeterminado_sin_reconocer" not in codigos
+
+
 # --- call_action_with_qa: regeneración citando el defecto, tope, sin bloqueo ---
 def test_call_action_with_qa_regenera_citando_defecto():
     stub = _ActionBackendStub([_raw_accion_meta(), _raw_accion_ok()])

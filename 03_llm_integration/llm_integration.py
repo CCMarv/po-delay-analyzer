@@ -603,6 +603,34 @@ _META_COMPOUND_LEADS = ("dar", "da", "de", "dando", "hacer", "haz", "haga", "hac
 # Términos que satisfacen la decisión del faltante ante short ship (ARD-16 Decisión 3).
 _SHORT_SHIP_DECISION_KEYS = ("re-emitir", "reemitir", "re emitir", "esperar", "cancelar")
 
+# Términos con los que la HIPÓTESIS (el campo solo, no el razonamiento) reconoce la
+# indeterminación en POs Indeterminado (ARD-16 ola 2). Compartida con la tasa del
+# evaluador (patrón de is_meta_action: check y métrica usan la misma lista).
+_INDET_HYP_KEYS = (
+    "indetermin", "dato faltante", "no atribuible", "no se puede atribuir",
+    "esclarecer", "por confirmar", "si se confirma",
+)
+# "si" condicional como token: la formulación que el prompt pide ("si <dato> muestra X,
+# el mecanismo es A"). El gate de la ola 2 mostró el hueco: las 4 hipótesis Indeterminado
+# salieron condicionales pero sin palabra literal de la lista, y el check las marcaba
+# (mismo tipo de hueco de vocabulario que sin_decision_faltante en la ola 1). Solo se
+# evalúa en POs Indeterminado, donde el falso positivo del token es mínimo ("sí" afirmativo
+# también normaliza a "si"; aceptado y raro dentro de una hipótesis).
+_COND_SI_RE = re.compile(r"\bsi\b")
+
+# Grupos de reason_group_manual que apuntan a una etapa (línea de concordancia
+# motivo↔etapa de la llamada 2; Unknown / On-Time no son etapas evaluables).
+_REASON_STAGE_GROUPS = ("Vendor", "Carrier", "DC")
+
+# Alias en español de cada etapa para el check `etapa_incorrecta`: el gate de la ola 2
+# mostró el falso positivo — el modelo escribe "proveedor" y el check buscaba el literal
+# "Vendor" (100197/100318). Comparación sobre texto normalizado (_norm_text).
+_STAGE_ALIASES = {
+    "Vendor": ("vendor", "proveedor"),
+    "Carrier": ("carrier", "transportista"),
+    "DC": ("dc", "centro de distribucion"),
+}
+
 # Cifras: el MISMO patrón se aplica al prompt y a la salida; la comparación es por
 # float, de modo que 4.2 y 4.20 cuentan como la misma cifra.
 _NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)?")
@@ -615,6 +643,18 @@ def _norm_text(texto) -> str:
         if unicodedata.category(c) != "Mn"
     )
     return sin_acentos.lower()
+
+
+def reconoce_indeterminacion(texto) -> bool:
+    """True si una hipótesis reconoce la indeterminación (ARD-16 ola 2).
+
+    Dos vías: una clave literal de _INDET_HYP_KEYS ("indetermin", "dato faltante"...)
+    o la formulación condicional que el prompt pide (el "si" condicional como token,
+    _COND_SI_RE). Función ÚNICA para el check `indeterminado_sin_reconocer` y la tasa
+    del evaluador: los dos miden lo mismo por construcción.
+    """
+    t = _norm_text(texto)
+    return any(k in t for k in _INDET_HYP_KEYS) or bool(_COND_SI_RE.search(t))
 
 
 def compute_dataset_stats(df: pd.DataFrame) -> Dict[str, Any]:
@@ -680,6 +720,32 @@ def _reschedule_line(row: pd.Series) -> str:
     return (
         f"- Reprogramación de la cita: {horas:+.1f} horas entre la primera cita "
         "aprobada y la vigente"
+    )
+
+
+def _reason_concordance_line(row: pd.Series) -> str:
+    """Línea de concordancia motivo↔etapa medida (ARD-16 ola 2, meta-señal REASON_DSC).
+
+    DETERMINISTA: compara reason_group_manual (mapeo REASON_DSC → etapa de Fase 2,
+    classifier_core) contra stage_primary — no depende del juicio de la llamada 1, que
+    hereda la varianza entre corridas. Incondicional con 3 estados (concuerda / discrepa /
+    no evaluable), como la línea de reschedule: sin juicio por selección. La discrepancia
+    se presenta como meta-señal del PROCESO DE ANOTACIÓN (habilita hipótesis de proceso),
+    nunca como etapa alternativa: la regla vigente de no promover el REASON_DSC no cambia.
+    """
+    grupo = str(row.get("reason_group_manual", "Unknown"))
+    etapa = str(row.get("stage_primary", "Desconocido"))
+    if grupo not in _REASON_STAGE_GROUPS:
+        return ("- Concordancia motivo↔etapa: no evaluable (el motivo anotado no "
+                "apunta a una etapa).")
+    if grupo == etapa:
+        return (f"- Concordancia motivo↔etapa: el motivo anotado apunta a la misma "
+                f"etapa medida ({etapa}).")
+    return (
+        f"- Concordancia motivo↔etapa: DISCREPA — el motivo anotado apunta a {grupo} "
+        f"y la etapa medida es {etapa}. Trátala como meta-señal del PROCESO DE "
+        "ANOTACIÓN (p. ej. handoff mal registrado o anotación por inercia): puede "
+        "sustentar una hipótesis de proceso, nunca sustituir la etapa medida."
     )
 
 
@@ -795,6 +861,7 @@ def build_action_prompt(
     context_lines.append(
         f"- Código de motivo registrado por el DC: {row.get('REASON_DSC', 'No registrado')}"
     )
+    context_lines.append(_reason_concordance_line(row))
 
     # Espejo de build_prompt: en Indeterminado los excesos se retiran (ADR-14).
     metric_lines = [
@@ -815,6 +882,45 @@ def build_action_prompt(
     magnitude_lines[-1] += "\n"
     comparative_lines = _comparative_lines(row, stats)
     comparative_lines[-1] += "\n"
+
+    # Diagnóstico diferencial (ARD-16 ola 2): la regla mecanismo-vs-etiqueta es genérica
+    # para toda etapa; SOLO Vendor recibe el pointer de señales (fill rate /
+    # reprogramación) porque ahí está el síntoma del baseline (5/8 hipótesis convergen a
+    # "capacidad del proveedor"). Condicional por etapa determinista (patrón de #151),
+    # no un menú curado de causas (descarte de ARD-16, Opción B).
+    differential_lines = [
+        "DIAGNÓSTICO DIFERENCIAL (obligatorio):",
+        "- Tu hipótesis nombra un MECANISMO, no una etiqueta: qué falló y cómo eso "
+        "produce exactamente las cifras observadas. Una etiqueta genérica (\"capacidad "
+        "del proveedor\", \"congestión\") sin el dato que la sostiene no cuenta como "
+        "mecanismo.",
+        "- Las dos hipótesis nombran mecanismos DISTINTOS y DISTINGUIBLES: si la "
+        "alternativa es compatible con exactamente la misma evidencia y ningún dato "
+        "podría separarlas, elige otra alternativa.",
+        "- La evidencia de cada hipótesis cita las cifras que la favorecen SOBRE la "
+        "otra, no solo las que la acompañan.",
+    ]
+    if stage == "Vendor":
+        differential_lines.append(
+            "- En esta etapa (Vendor), el fill rate y la magnitud de la reprogramación "
+            "separan mecanismos: un fill rate corto apunta a falta de producto "
+            "(inventario/producción); una entrega completa pero reprogramada apunta a "
+            "planificación/agenda, no a falta de producto."
+        )
+    differential_lines[-1] += "\n"
+
+    # Reparto multi-actor (ARD-16 ola 2): solo con stage_multi activo (≥2 etapas). El
+    # plan puede repartir correctiva/preventiva entre actores, pero la acción inmediata
+    # es UNA: la del cuello de botella (stage_primary, la etapa dominante por medición).
+    stage_multi = str(row.get("stage_multi", "Ninguno"))
+    multi_actor_lines = []
+    if " + " in stage_multi:
+        multi_actor_lines.append(
+            f"- Hay causas múltiples activas ({stage_multi}): las acciones correctiva "
+            "y preventiva pueden repartirse entre esos actores, cada una citando la "
+            "cifra de exceso de la etapa que atiende; la acción inmediata sigue siendo "
+            f"UNA sola, dirigida al cuello de botella (la etapa primaria: {stage})."
+        )
 
     prompt_lines = [
         "Eres el planner de abastecimiento responsable de esta Purchase Order "
@@ -855,8 +961,13 @@ def build_action_prompt(
         f"La etapa ya está decidida ({stage}); tu trabajo es el mecanismo DEBAJO de "
         "ese nivel (según la etapa: inventario o capacidad del proveedor, "
         "documentación, congestión de puertas o de patio, planificación de rutas…) y "
-        "el plan que se deriva de él. Si la etapa es Indeterminado, tu hipótesis "
-        "identifica el dato faltante y el paso de esclarecimiento.\n",
+        "el plan que se deriva de él. Si la etapa es Indeterminado, tu hipótesis NO "
+        "afirma un mecanismo como causa: reconoce explícitamente la indeterminación, "
+        "identifica el dato faltante que impide atribuir la etapa y formula el "
+        "mecanismo en condicional (\"si <dato> muestra X, el mecanismo es A; si "
+        "muestra Y, es B\"). La acción inmediata es el paso de esclarecimiento: "
+        "conseguir hoy ese dato, con la decisión que depende de él.\n",
+        *differential_lines,
         "REGLAS DEL PLAN (obligatorias):",
         "- La acción inmediata es una medida ejecutable hoy, con destinatario y "
         "objeto concretos. Revisar, analizar, investigar, monitorear o dar "
@@ -866,6 +977,7 @@ def build_action_prompt(
         "DECISIÓN que depende de él (\"obtener X: si X supera Y, hacer A; si no, B\").",
         "- Si hubo short ship, el plan decide qué hacer con el faltante —re-emitir, "
         "esperar o cancelar— y con qué criterio.",
+        *multi_actor_lines,
         "- La etapa que nombres es exactamente la del diagnóstico.\n",
         "Responde ÚNICAMENTE con el JSON, sin texto adicional, con las llaves EN "
         "ESTE ORDEN:",
@@ -1025,6 +1137,19 @@ def run_action_checks(
             f"textualmente de los datos o quítalas): {fuera}",
         ))
 
+    # 4b. Evidencia de la hipótesis sin cifra (ARD-16 ola 2): el diferencial exige
+    #     anclar cada hipótesis en las cifras que la favorecen sobre la alternativa.
+    #     El caso vacío lo caza el check de esquema, no este.
+    if parsed.get("hipotesis_evidencia") and not _extract_numbers(
+        parsed["hipotesis_evidencia"]
+    ):
+        defectos.append((
+            "evidencia_sin_cifra",
+            "la evidencia de la hipótesis no cita ninguna cifra de los datos: "
+            "ánclala en las cifras dadas (fill rate, excesos, reprogramación, "
+            "percentiles).",
+        ))
+
     # 5. Decisión del faltante si hubo short ship.
     if bool(row.get("is_short_ship", row.get("_short_ship", False))):
         plan_texto = _norm_text(" ".join(
@@ -1049,13 +1174,31 @@ def run_action_checks(
             "sin datos", "sin causa dominante", "dato faltante",
         ))
     else:
-        ok_etapa = _norm_text(etapa) in texto_diag
+        ok_etapa = any(
+            alias in texto_diag
+            for alias in _STAGE_ALIASES.get(etapa, (_norm_text(etapa),))
+        )
     if etapa and not ok_etapa:
         defectos.append((
             "etapa_incorrecta",
             f"tu razonamiento/hipótesis no nombra la etapa del diagnóstico ({etapa}); "
             "la etapa ya está decidida y tu mecanismo debe vivir dentro de ella.",
         ))
+
+    # 7. Indeterminado: la HIPÓTESIS misma reconoce la indeterminación (ARD-16 ola 2).
+    #    El check 6 acepta la declaración en razonamiento+hipótesis concatenados; el
+    #    hueco del baseline es que la hipótesis afirmaba un mecanismo ("congestión de
+    #    patio") aunque el razonamiento declarara indeterminado. Aquí se inspecciona
+    #    SOLO el campo hipotesis, con la lista compartida _INDET_HYP_KEYS (la misma
+    #    que usa la tasa del evaluador, para no discrepar).
+    if etapa == "Indeterminado" and parsed.get("hipotesis"):
+        if not reconoce_indeterminacion(parsed["hipotesis"]):
+            defectos.append((
+                "indeterminado_sin_reconocer",
+                "la etapa es Indeterminado pero tu hipótesis afirma un mecanismo sin "
+                "reconocer la indeterminación: nómbrala, identifica el dato faltante "
+                "y formula el mecanismo en condicional.",
+            ))
 
     return defectos
 
