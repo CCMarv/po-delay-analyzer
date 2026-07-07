@@ -1,6 +1,7 @@
+
 # Contexto de dominio condicional por (actor × señal) para diversificar el prompt de Fase 3
 
-* **Estatus:** 🔵 **BORRADOR** (lo cierra el equipo)
+* **Estatus:** 📘 **SUPERADO** por [ADR-16](ARD-16.md) (2026-07-06)
 * **Contexto Técnico:** Fase 3 / Integración LLM — enriquecimiento del prompt para que `accion_recomendada` varíe entre POs del mismo responsable
 * **Referencias:** Issue #151 (madurado desde #143/#154); #94 (benchmark de calidad, 20 POs); ADR-12 (diseño del prompt few-shot); ADR-13 (temperatura — descartó el muestreo como causa/arreglo); ADR-14 (endurecimiento anti-overfitting del prompt, cuyo cierre de CÓMO RAZONAR esta decisión hace condicional); ADR-07 (taxonomía de Indeterminado, sub-etapas reusadas como señal de ruteo); ADR-04b/ADR-06b (umbrales de carrier/vendor, fuente única en `rules_config.json`); `03_llm_integration/llm_integration.py` (`build_prompt`, `select_domain_context`, `_cond_matches`, `_excess_band`); `03_llm_integration/domain_kb.json`; `03_llm_integration/eval_diversity.py`
 
@@ -60,3 +61,5 @@ Benchmark de 20 POs estratificado (semilla 42, el de #94/#99), a temperatura de 
 ## Relación con otras decisiones
 
 Responde al síntoma documentado en **ADR-13** (el muestreo quedó descartado como arreglo). Vuelve condicional el cierre de `CÓMO RAZONAR` de **ADR-14**, cuyo contenido se mantiene. Reusa la taxonomía de **ADR-07** y los umbrales de **ADR-04b/ADR-06b** vía `rules_config.json`. Se apoya en la infraestructura de prompt de **ADR-12**.
+
+**Superada por [ADR-16](ARD-16.md).** La premisa de esta decisión —diversificar la salida curando conocimiento de dominio por (actor × señal)— quedó revisada por el marco de ADR-16: el pedido de los mentores convirtió al LLM en capa analítica y la diversidad que este KB buscaba la produce el diagnóstico diferencial de la llamada de acción sin conocimiento curado (gate de la ola 2, `03_llm_integration/fixtures/eval_quality_20pos_C0_t09_accion_ola2.md`: la hipótesis-etiqueta desaparece con `kb` inactivo). El código de #151 permanece como capacidad opt-in de la llamada 1 (`kb=None` por default, invariante cubierto por test); no se revierte.

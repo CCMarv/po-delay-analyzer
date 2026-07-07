@@ -2,7 +2,7 @@
 
 * **Estatus:** 🔵 **BORRADOR** (lo cierra el equipo)
 * **Contexto Técnico:** Fase 3 / Integración LLM — incorporar capacidades del modelo (conocimiento de dominio preentrenado, razonamiento, síntesis) por encima de la lógica determinista ya validada
-* **Referencias:** Feedback de mentores posterior a la validación de main; README del repo original del mentor (métrica *LLM Explanation Quality*); `03_llm_integration/fixtures/eval_quality_20pos_C0_t09.md` / `_kb.md` (evidencia del síntoma); ADR-14 (anti-alucinación — se ajusta su alcance); ADR-12 (prompt); ADR-10 (severidad híbrida); ADR-07 (taxonomía de Indeterminado); ADR-15 (KB condicional — premisa revisada por este marco, destino pendiente); `03_llm_integration/llm_integration.py`; `03_llm_integration/eval_quality.py` / `eval_diversity.py`
+* **Referencias:** Feedback de mentores posterior a la validación de main; README del repo original del mentor (métrica *LLM Explanation Quality*); `03_llm_integration/fixtures/eval_quality_20pos_C0_t09.md` / `_kb.md` (evidencia del síntoma); ADR-14 (anti-alucinación — se ajusta su alcance); ADR-12 (prompt); ADR-10 (severidad híbrida); ADR-07 (taxonomía de Indeterminado); ADR-15 (KB condicional — superado por este marco); `03_llm_integration/llm_integration.py`; `03_llm_integration/eval_quality.py` / `eval_diversity.py`
 
 ## Contexto y Problema
 
@@ -140,7 +140,10 @@ suelta invita a sobre-lectura.
      disponible, términos sueltos con prohibición de transcribir frases.
    * **Señales adicionales:** la discrepancia REASON_DSC vs. etapa medida entra como
      meta-señal del proceso de anotación —habilita hipótesis de proceso (handoff mal
-     registrado) sin promover el REASON_DSC a etapa (regla vigente)—; con
+     registrado) sin promover el REASON_DSC a etapa (regla vigente)—, derivada
+     determinísticamente de `reason_group_manual` vs. `stage_primary` (no del juicio de
+     la primera llamada) y presentada incondicional con tres estados (concuerda /
+     discrepa / no evaluable); con
      `stage_multi` activo, el plan admite reparto multi-actor con la cifra de exceso de
      cada etapa y una sola acción inmediata (el cuello de botella).
 4. **Carril 2 — patrones entre POs, en dos estadios.** Primero estático: agregados
@@ -168,7 +171,8 @@ suelta invita a sobre-lectura.
      ejecutabilidad sin decisiones adicionales. El juez se calibra contra etiquetas humanas
      del fixture antes de usarse como pre-filtro de la validación humana.
 8. **Secuencia por olas, con medición entre olas.** Cada ola se evalúa contra el fixture de
-   20 POs (iteración en backend local) antes de sumar la siguiente, para preservar la
+   20 POs (en backend local o, sin backend local disponible, en el backend oficial con
+   declaración de conteo y permiso previo) antes de sumar la siguiente, para preservar la
    atribución de mejoras (patrón de ADR-13/ADR-15):
    * Ola 1 (estructural): contrato híbrido, rol, reglas de concreción, checks por regla,
      magnitudes destapadas y comparativos globales.
@@ -177,6 +181,15 @@ suelta invita a sobre-lectura.
    * Condicionales: razonamiento extendido o modelo más capaz en la llamada de acción si
      la profundidad no alcanza tras la ola 2; búsqueda offline materializada según
      evidencia tras la ola 2; demo web en vivo como flag independiente.
+
+   Resultado del gate de la ola 2
+   (`03_llm_integration/fixtures/eval_quality_20pos_C0_t09_accion_ola2.md`, gpt-4o-mini,
+   semilla 42): veredicto 17/20 → 4.25/5 (meta del mentor 4/5, cumplida); la
+   hipótesis-etiqueta desaparece en Vendor (5/8 → 0/8) y los 4 Indeterminado emiten
+   hipótesis condicional. Los tres fallos provienen de la llamada 1 (criterio b). Con esa
+   evidencia, los condicionales no se disparan: la profundidad alcanzó sin razonamiento
+   extendido ni modelo más capaz, y el conocimiento del modelo no se quedó corto, así que
+   la búsqueda offline materializada se descarta.
 9. **Pendientes de implementación.** Interacción del contrato nuevo con el few-shot
    (C1–C3); exposición en Fase 4 del razonamiento, las dos confianzas, los `qa_flags` y
    las capacidades del carril 3; calibración del juez local.
@@ -193,7 +206,11 @@ La auditoría evalúa la salida: qué afirmó el modelo y sobre qué base. Sobre
   la lista cerrada de verbos); meta: cero tras la ola 1.
 * **Discriminación:** POs con evidencia distinta producen hipótesis distintas. Se mide la
   covarianza insumos → conclusiones; la diversidad léxica de ADR-15 deja de ser la métrica
-  objetivo.
+  objetivo. Operacionalización (ola 2): convergencia léxica intra-etapa (Jaccard sobre
+  tokens de contenido, θ=0.25 calibrado contra el fixture de la ola 1), leída junto con la
+  covarianza señal → hipótesis: un clúster alineado a evidencia compartida (p. ej.
+  short-ship → falta de inventario) no cuenta como fallo; el fallo es el clúster que
+  ignora la evidencia.
 * **Sensibilidad contrafactual:** alterar un solo insumo de una PO real (p. ej. fill rate
   95% → 72%) debe cambiar la conclusión en la dirección esperada. Corre en backend local.
 * **Pre-filtro del juez local** para la validación humana: el humano valida una muestra
@@ -221,8 +238,9 @@ humana muestral.
 Ajusta el alcance de **ADR-14**: su restricción se mantiene para la llamada determinista y
 para las premisas factuales de la capa; deja de aplicar a las generalizaciones de dominio.
 Preserva **ADR-10** (la severidad la emite el LLM y la audita Fase 2) y reusa **ADR-07** y
-la infraestructura de **ADR-12**. La premisa de **ADR-15** (corrección de la redacción vía
-conocimiento curado) queda revisada por este marco; su destino —mergear como mejora
-independiente o encadenar como superado— se decide aparte. Un borrador previo no versionado
+la infraestructura de **ADR-12**. **ADR-15** (corrección de la redacción vía conocimiento
+curado) queda superado por este marco (📘, encadenado): la diversidad que su KB buscaba la
+produce el diagnóstico diferencial de la llamada de acción sin conocimiento curado; el flag
+opt-in de #151 permanece en la llamada 1 y no se revierte. Un borrador previo no versionado
 de este ARD desarrolló la Opción B (perímetro curado con playbook) y se reemplazó al
 precisarse el pedido.
