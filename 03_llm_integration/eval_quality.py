@@ -174,6 +174,28 @@ def hypothesis_convergence(hipotesis: List[str],
     )
 
 
+# ── Uso de vocabulario de industria (ARD-16 ola 3, solo reporte) ──────────────
+# Claves de detección derivadas del glosario del prompt (_INDUSTRY_GLOSSARY): formas
+# acortadas a propósito ("scorecard" caza "carrier scorecard" y "scorecard del
+# transportista"; "re-cita" caza "re-cita de dock"), comparadas sobre texto
+# normalizado (_norm). Se mide sobre los TRES campos del plan — el glosario habilita
+# instrumentos "para el plan"; no es pasa/falla, solo tasa informativa.
+
+_GLOSSARY_MATCH_KEYS = (
+    "expedite", "chargeback", "scorecard", "re-cita", "split shipment",
+    "safety stock", "otif",
+)
+
+_PLAN_FIELDS = ("llm_accion_inmediata", "llm_accion_correctiva",
+                "llm_accion_preventiva")
+
+
+def usa_vocabulario(acciones: List[str]) -> bool:
+    """True si algún término del glosario aparece en alguna acción del plan."""
+    texto = _norm(" ".join(str(a) for a in acciones))
+    return any(k in texto for k in _GLOSSARY_MATCH_KEYS)
+
+
 def _hipotesis_reconoce_indet(texto: str) -> bool:
     """True si la hipótesis reconoce la indeterminación (frente iv de la ola 2).
 
@@ -270,6 +292,9 @@ def evaluate(df_sample: pd.DataFrame, backend, examples=None, kb=None,
                 "llm_paso_discriminante": parsed.get("paso_discriminante", ""),
                 "qa_flags": ";".join(qa_flags),
             })
+            fila["usa_vocab"] = usa_vocabulario(
+                [fila[c] for c in _PLAN_FIELDS]
+            )
             accion_principal = fila["llm_accion_inmediata"]
         fila.update({
             "chk_a_etapa": _check_etapa(causa, row["stage_primary"]),
@@ -311,6 +336,20 @@ def _ola2_metric_lines(df_eval: pd.DataFrame) -> List[str]:
     ]
 
 
+def _ola3_metric_lines(df_eval: pd.DataFrame) -> List[str]:
+    """Líneas del resumen con las tasas de la ola 3 (ARD-16, SOLO reporte — sin
+    pasa/falla): uso del vocabulario de industria en el plan. Con guard por columna:
+    un df sin la métrica (fixture previo re-procesado) no rompe la tabla."""
+    lineas = []
+    if "usa_vocab" in df_eval.columns:
+        k = int(df_eval["usa_vocab"].sum())
+        lineas.append(
+            f"Uso de vocabulario de industria en el plan: {k}/{len(df_eval)} "
+            "(ola 3, solo reporte: el glosario es opcional por diseño)."
+        )
+    return lineas
+
+
 def to_markdown(df_eval: pd.DataFrame) -> str:
     """Arma el documento .md del benchmark: criterio + tabla + resumen pre-evaluado.
 
@@ -345,6 +384,7 @@ def to_markdown(df_eval: pd.DataFrame) -> str:
     ]
     if action_mode:
         lineas += _ola2_metric_lines(df_eval)
+        lineas += _ola3_metric_lines(df_eval)
     lineas += [
         "",
         "_(c) y el veredicto final los confirma una persona; rellenar las columnas vacías._",

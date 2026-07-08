@@ -870,6 +870,19 @@ def test_run_action_checks_elicitacion_faltante_es_esquema_incompleto():
     assert "elicitacion" in detalles["esquema_incompleto"]
 
 
+# --- ARD-16 ola 3: glosario abierto de vocabulario de industria ---
+def test_action_prompt_glosario_terminos_sueltos_y_anti_plantilla():
+    out = _prompt_accion()
+    assert "VOCABULARIO DE INDUSTRIA (disponible, no obligatorio):" in out
+    # Términos sueltos, sin definiciones ni frases de ejemplo (lección de ADR-14).
+    for termino in ("expedite", "chargeback", "carrier scorecard", "re-cita de dock",
+                    "split shipment", "safety stock", "OTIF"):
+        assert termino in out, termino
+    assert "La lista es abierta" in out
+    assert "no transcribas frases de este prompt" in out
+    assert out.index("VOCABULARIO DE INDUSTRIA") < out.index("TU TAREA:")
+
+
 def test_run_action_checks_elicitacion_con_cifra_inventada():
     # El cuestionario pide respuestas sin cifras; un "típicamente N horas" inventado
     # cae en el check de cifras ∈ input (elicitacion es campo de texto del contrato).

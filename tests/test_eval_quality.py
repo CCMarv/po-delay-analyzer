@@ -15,7 +15,7 @@ import pytest
 
 from eval_quality import (
     ANCHOR_TEMP, _hipotesis_reconoce_indet, _hyp_tokens, _jaccard, _temp_suffix,
-    hypothesis_convergence, resolve_temperature, to_markdown,
+    hypothesis_convergence, resolve_temperature, to_markdown, usa_vocabulario,
 )
 from llm_integration import load_llm_config
 
@@ -143,8 +143,28 @@ def _df_eval_accion_min() -> pd.DataFrame:
         "llm_accion_correctiva": "x", "llm_accion_preventiva": "y",
         "llm_paso_discriminante": "z", "qa_flags": "",
         "chk_a_etapa": True, "chk_b_cuantifica": True, "chk_meta": False,
-        "chk_c_accion_viable": "", "veredicto": "",
+        "chk_c_accion_viable": "", "veredicto": "", "usa_vocab": True,
     }])
+
+
+def test_usa_vocabulario_detecta_terminos_normalizados():
+    # Claves acortadas sobre texto normalizado: "scorecard" caza la mención parcial,
+    # OTIF es case-insensitive vía _norm. Sin término del glosario → False.
+    assert usa_vocabulario(["Solicitar un expedite del faltante al proveedor"]) is True
+    assert usa_vocabulario(["", "Aplicar el chargeback contractual", ""]) is True
+    assert usa_vocabulario(["Registrar el evento en el scorecard del transportista"]) is True
+    assert usa_vocabulario(["Medir el OTIF del proveedor cada mes"]) is True
+    assert usa_vocabulario(["Contactar al proveedor y exigir plan correctivo"]) is False
+    assert usa_vocabulario([]) is False
+
+
+def test_to_markdown_accion_reporta_tasa_de_vocabulario_con_guard():
+    md = to_markdown(_df_eval_accion_min())
+    assert "Uso de vocabulario de industria en el plan: 1/1" in md
+    # Guard por columna: un df de modo acción SIN la métrica no rompe ni reporta.
+    sin_col = _df_eval_accion_min().drop(columns=["usa_vocab"])
+    md2 = to_markdown(sin_col)
+    assert "Uso de vocabulario de industria" not in md2
 
 
 def test_to_markdown_accion_incluye_columna_elicitacion():

@@ -653,6 +653,15 @@ _ELICIT_STAGE_QUESTION = {
                      "timestamps no permiten aislar una etapa dominante?",
 }
 
+# Glosario abierto de términos de industria (ARD-16 ola 3): vocabulario DISPONIBLE,
+# no plantilla — términos sueltos, sin definiciones ni frases de ejemplo (lección de
+# ADR-14: las frases ilustrativas se capturan como plantillas; los términos solos
+# activan vocabulario). La tasa de uso del evaluador se deriva de esta misma lista.
+_INDUSTRY_GLOSSARY = (
+    "expedite", "chargeback", "carrier scorecard", "re-cita de dock",
+    "split shipment", "safety stock", "OTIF",
+)
+
 # Cifras: el MISMO patrón se aplica al prompt y a la salida; la comparación es por
 # float, de modo que 4.2 y 4.20 cuentan como la misma cifra.
 _NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)?")
@@ -954,6 +963,18 @@ def build_action_prompt(
         "causas que tú mismo nombraste, o justificar por qué no.\n",
     ]
 
+    # Glosario abierto (ARD-16 ola 3): activa vocabulario de instrumentos reales de
+    # industria para el plan, con la prohibición anti-plantilla explícita.
+    glossary_lines = [
+        "VOCABULARIO DE INDUSTRIA (disponible, no obligatorio):",
+        "- Instrumentos habituales del dominio que puedes emplear en el plan cuando "
+        f"apliquen: {', '.join(_INDUSTRY_GLOSSARY)}. La lista es abierta: puedes "
+        "usar otros instrumentos que conozcas.",
+        "- Es vocabulario, no plantilla: no transcribas frases de este prompt en tu "
+        "respuesta; nombra el instrumento dentro de una acción redactada con tus "
+        "palabras y con los datos de esta PO.\n",
+    ]
+
     # Reparto multi-actor (ARD-16 ola 2): solo con stage_multi activo (≥2 etapas). El
     # plan puede repartir correctiva/preventiva entre actores, pero la acción inmediata
     # es UNA: la del cuello de botella (stage_primary, la etapa dominante por medición).
@@ -1003,6 +1024,7 @@ def build_action_prompt(
         "- Si los datos no alcanzan para distinguir dos mecanismos, decláralo: esa "
         "carencia es exactamente lo que tu paso discriminante debe resolver.\n",
         *elicit_lines,
+        *glossary_lines,
         "TU TAREA:",
         f"La etapa ya está decidida ({stage}); tu trabajo es el mecanismo DEBAJO de "
         "ese nivel (según la etapa: inventario o capacidad del proveedor, "
