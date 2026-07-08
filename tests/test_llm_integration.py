@@ -32,6 +32,7 @@ from llm_integration import (
     _action_keys_in_order,
     _excess_band,
     _cond_matches,
+    _history_lines,
     _parse_action_json,
     _parse_llm_json,
     _percentile_rank,
@@ -891,6 +892,104 @@ def test_run_action_checks_elicitacion_con_cifra_inventada():
     codigos = [c for c, _ in run_action_checks(
         parsed, _raw_accion_ok(), _row_accion(), _prompt_accion())]
     assert "cifra_fuera_de_input" in codigos
+
+
+# --- ARD-16 ola 3: carril 2 estático (historial del dataset en el prompt) ---
+def _df_historial() -> pd.DataFrame:
+    """df clasificado mínimo con las columnas del historial (carril 2 estático)."""
+    return pd.DataFrame({
+        "delay_days_calc": [0.0, 1.0, 2.0, 3.0],
+        "stage_primary": ["On-Time", "Vendor", "Vendor", "Carrier"],
+        "excess_vendor_hrs": [50.0, 30.0, 40.0, 0.0],
+        "excess_carrier_hrs": [0.0, 0.0, 0.0, 12.0],
+        "excess_dc_hrs": [0.0, 0.0, 0.0, 0.0],
+        "VENDOR_NAME": ["ACME", "ACME", "ACME", "BETA"],
+        "CARRIER_PARTY_NAME": ["FAST", "FAST", "SLOW", "FAST"],
+        "_short_ship": [False, True, False, False],
+        "is_rescheduled": [False, False, True, False],
+        "HOT_PO_FLAG": [0, 0, 0, 1],
+        "_fill_rate": [1.0, 0.72, 1.0, 1.0],
+    })
+
+
+def test_compute_dataset_stats_historial_por_actor_y_patron():
+    stats = compute_dataset_stats(_df_historial())
+    # Proveedor: TODAS sus POs (el on-time cuenta en n_pos, no en tardías).
+    acme = stats["vendor_history"]["ACME"]
+    assert (acme["n_pos"], acme["n_tardias"], acme["n_attr"]) == (3, 2, 2)
+    assert acme["exceso_values"] == [30.0, 40.0]
+    assert (acme["n_short"], acme["n_resched"]) == (1, 1)
+    fast = stats["carrier_history"]["FAST"]
+    assert (fast["n_pos"], fast["n_tardias"], fast["n_attr"]) == (3, 2, 1)
+    assert fast["exceso_values"] == [12.0]
+    # Patrón (short, resched, hot) SOBRE TARDÍOS, con distribución de etapa medida.
+    assert stats["pattern"][(True, False, False)] == {
+        "n": 1, "por_etapa": {"Vendor": 1}}
+    assert stats["pattern"][(False, False, True)]["por_etapa"] == {"Carrier": 1}
+    assert stats["short_ship_global"] == {
+        "n_tardios": 3, "n_short": 1, "fill_values": [0.72]}
+
+
+def test_compute_dataset_stats_sin_columnas_de_historial_no_rompe():
+    # df mínimo (el de los comparativos): dicts vacíos, sin KeyError — el render
+    # caerá a líneas neutras.
+    df = pd.DataFrame({
+        "delay_days_calc": [1.0], "stage_primary": ["Vendor"],
+        "excess_vendor_hrs": [30.0], "excess_carrier_hrs": [0.0],
+        "excess_dc_hrs": [0.0],
+    })
+    stats = compute_dataset_stats(df)
+    assert stats["vendor_history"] == {}
+    assert stats["carrier_history"] == {}
+    assert stats["pattern"] == {}
+    assert stats["short_ship_global"]["n_short"] == 0
+
+
+def test_history_lines_k_de_n_incluye_esta_po():
+    stats = compute_dataset_stats(_df_historial())
+    row = pd.Series({"VENDOR_NAME": "ACME", "CARRIER_PARTY_NAME": "FAST",
+                     "_short_ship": True, "is_rescheduled": False, "HOT_PO_FLAG": 0})
+    texto = "\n".join(_history_lines(row, stats))
+    assert ("- Proveedor ACME (incluye esta PO): 3 POs en el dataset, 2 tardías; "
+            "2 de las tardías atribuidas a Vendor (mediana de exceso Vendor entre "
+            "esas 2: 35.0 h); short ship en 1 de 3; reprogramación en 1 de 3."
+            ) in texto
+    assert ("- Transportista FAST (incluye esta PO): 3 POs, 2 tardías; 1 atribuidas "
+            "a Carrier (mediana de exceso Carrier entre esas 1: 12.0 h).") in texto
+    assert ("patrón de señales (short ship: Sí, reprogramación: No, urgente: No): "
+            "1 de 3 (incluye esta PO); su etapa medida: Vendor 1 · Carrier 0 · "
+            "DC 0 · Indeterminado 0.") in texto
+    assert ("- Short ship en el dataset: 1 de 3 POs tardías; fill rate mediano de "
+            "esos envíos: 72.0%.") in texto
+
+
+def test_history_lines_mediana_omitida_sin_atribuidas():
+    # BETA: su única tardía está atribuida a Carrier → 0 atribuidas a Vendor; los
+    # conteos van igual y el paréntesis de la mediana se omite (no hay valores).
+    stats = compute_dataset_stats(_df_historial())
+    row = pd.Series({"VENDOR_NAME": "BETA", "CARRIER_PARTY_NAME": "SLOW",
+                     "_short_ship": False, "is_rescheduled": True, "HOT_PO_FLAG": 0})
+    texto = "\n".join(_history_lines(row, stats))
+    assert ("- Proveedor BETA (incluye esta PO): 1 POs en el dataset, 1 tardías; "
+            "0 de las tardías atribuidas a Vendor; short ship en 0 de 1") in texto
+    assert "mediana de exceso Vendor" not in texto
+
+
+def test_build_action_prompt_historial_incondicional_con_lineas_neutras():
+    # _stats_ejemplo no trae claves de historial: el bloque aparece IGUAL (las 4
+    # líneas incondicionales), con valor neutro — sin juicio por selección.
+    out = _prompt_accion()
+    assert "HISTORIAL EN EL DATASET" in out
+    assert "Pondera cada uno por su n" in out
+    assert "- Proveedor no disponible: sin historial en el dataset." in out
+    assert "- Transportista no disponible: sin historial en el dataset." in out
+    assert "- Patrón de señales: sin agregados disponibles." in out
+    assert "- Short ship en el dataset: sin agregados disponibles." in out
+    # También en Indeterminado: son agregados del dataset, no el exceso de la PO.
+    row = _row_accion()
+    row["stage_primary"] = "Indeterminado"
+    out2 = build_action_prompt(row, _diag_ejemplo(), _stats_ejemplo())
+    assert "HISTORIAL EN EL DATASET" in out2
 
 
 # --- call_action_with_qa: regeneración citando el defecto, tope, sin bloqueo ---

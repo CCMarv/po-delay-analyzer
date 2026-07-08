@@ -39,9 +39,10 @@ import pandas as pd
 # Reusar la infraestructura de F3 (mismo dir): no se reimplementa la corrida del LLM.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from llm_integration import (  # noqa: E402
-    DEFAULT_MAX_TOKENS_ACTION, build_action_prompt, build_prompt,
-    call_action_with_qa, compute_dataset_stats, create_backend, is_meta_action,
-    load_domain_kb, load_llm_config, prepare_classified_df, reconoce_indeterminacion,
+    DEFAULT_MAX_TOKENS_ACTION, _extract_numbers, _history_lines, build_action_prompt,
+    build_prompt, call_action_with_qa, compute_dataset_stats, create_backend,
+    is_meta_action, load_domain_kb, load_llm_config, prepare_classified_df,
+    reconoce_indeterminacion,
 )
 from fewshot import select_examples  # noqa: E402
 
@@ -196,6 +197,25 @@ def usa_vocabulario(acciones: List[str]) -> bool:
     return any(k in texto for k in _GLOSSARY_MATCH_KEYS)
 
 
+# ── Uso de agregados del historial (ARD-16 ola 3, solo reporte) ───────────────
+# La evidencia que decide el condicional del estadio agéntico del carril 2 (D4:
+# "solo si el benchmark muestra que el modelo ignora los agregados inyectados").
+# Determinista: cifras EXCLUSIVAS del bloque HISTORIAL (no aparecen en el resto del
+# prompt) intersectadas con las cifras de la salida — la comparación numérica es la
+# misma de los checks (_extract_numbers, floats: 4.2 ≡ 4.20).
+
+def usa_agregados(campos_salida: List[str], prompt: str, bloque_historial: str) -> bool:
+    """True si la salida cita ≥1 cifra que SOLO existe en el bloque HISTORIAL."""
+    exclusivas = (_extract_numbers(bloque_historial)
+                  - _extract_numbers(prompt.replace(bloque_historial, "")))
+    if not exclusivas:
+        return False
+    citadas = set()
+    for campo in campos_salida:
+        citadas |= _extract_numbers(str(campo))
+    return bool(citadas & exclusivas)
+
+
 def _hipotesis_reconoce_indet(texto: str) -> bool:
     """True si la hipótesis reconoce la indeterminación (frente iv de la ola 2).
 
@@ -295,6 +315,11 @@ def evaluate(df_sample: pd.DataFrame, backend, examples=None, kb=None,
             fila["usa_vocab"] = usa_vocabulario(
                 [fila[c] for c in _PLAN_FIELDS]
             )
+            # Sin diagnóstico no hubo llamada 2 (no existe action_prompt): False.
+            fila["usa_agregados"] = usa_agregados(
+                [v for k, v in parsed.items() if k != "confianza_hipotesis"],
+                action_prompt, "\n".join(_history_lines(row, stats)),
+            ) if resp else False
             accion_principal = fila["llm_accion_inmediata"]
         fila.update({
             "chk_a_etapa": _check_etapa(causa, row["stage_primary"]),
@@ -346,6 +371,13 @@ def _ola3_metric_lines(df_eval: pd.DataFrame) -> List[str]:
         lineas.append(
             f"Uso de vocabulario de industria en el plan: {k}/{len(df_eval)} "
             "(ola 3, solo reporte: el glosario es opcional por diseño)."
+        )
+    if "usa_agregados" in df_eval.columns:
+        k = int(df_eval["usa_agregados"].sum())
+        lineas.append(
+            f"Uso de agregados del historial: {k}/{len(df_eval)} POs citan ≥1 cifra "
+            "exclusiva del bloque HISTORIAL (ola 3, solo reporte: evidencia del "
+            "condicional agéntico de ARD-16 D4)."
         )
     return lineas
 

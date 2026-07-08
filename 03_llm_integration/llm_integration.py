@@ -717,6 +717,84 @@ def compute_dataset_stats(df: pd.DataFrame) -> Dict[str, Any]:
             "values": serie.tolist(),
             "median": float(serie.median()) if len(serie) else 0.0,
         }
+
+    # --- Carril 2 estático (ARD-16 ola 3): historial dentro del dataset ---
+    # Agregados por actor, patrón de señales y short-ship global, precomputados una
+    # vez por corrida y renderizados por PO en _history_lines. Cada bloque se guarda
+    # con sus n crudos (el render los presenta como "k de n": el n visible es
+    # requisito del ARD para que el modelo pondere celdas chicas). Guards por
+    # columna: un df mínimo (p. ej. de la suite) produce dicts vacíos y el render
+    # cae a líneas neutras.
+    stats["vendor_history"] = {}
+    if "VENDOR_NAME" in df.columns:
+        for nombre, g in df.groupby("VENDOR_NAME"):
+            g_tardias = g[g["delay_days_calc"] > 0]
+            attr = g_tardias[g_tardias["stage_primary"] == "Vendor"]
+            stats["vendor_history"][str(nombre)] = {
+                "n_pos": int(len(g)),
+                "n_tardias": int(len(g_tardias)),
+                "n_attr": int(len(attr)),
+                "exceso_values": (
+                    attr["excess_vendor_hrs"].dropna().astype(float).tolist()
+                    if "excess_vendor_hrs" in g.columns else []
+                ),
+                "n_short": (
+                    int(g["_short_ship"].fillna(False).astype(bool).sum())
+                    if "_short_ship" in g.columns else 0
+                ),
+                "n_resched": (
+                    int(g["is_rescheduled"].fillna(False).astype(bool).sum())
+                    if "is_rescheduled" in g.columns else 0
+                ),
+            }
+    stats["carrier_history"] = {}
+    if "CARRIER_PARTY_NAME" in df.columns:
+        for nombre, g in df.groupby("CARRIER_PARTY_NAME"):
+            g_tardias = g[g["delay_days_calc"] > 0]
+            attr = g_tardias[g_tardias["stage_primary"] == "Carrier"]
+            stats["carrier_history"][str(nombre)] = {
+                "n_pos": int(len(g)),
+                "n_tardias": int(len(g_tardias)),
+                "n_attr": int(len(attr)),
+                "exceso_values": (
+                    attr["excess_carrier_hrs"].dropna().astype(float).tolist()
+                    if "excess_carrier_hrs" in g.columns else []
+                ),
+            }
+    # Patrón de señales sobre los TARDÍOS: llave (short_ship, rescheduled, hot) y la
+    # distribución de etapa medida dentro del grupo (base rate de evidencia→etapa).
+    stats["pattern"] = {}
+    señales = ("_short_ship", "is_rescheduled", "HOT_PO_FLAG")
+    if all(c in tardios.columns for c in señales) and len(tardios):
+        llaves = tardios.apply(
+            lambda r: (
+                bool(r["_short_ship"]) and not pd.isna(r["_short_ship"]),
+                bool(r["is_rescheduled"]) and not pd.isna(r["is_rescheduled"]),
+                (r["HOT_PO_FLAG"] == 1) if not pd.isna(r["HOT_PO_FLAG"]) else False,
+            ),
+            axis=1,
+        )
+        for llave, grupo in tardios.groupby(llaves):
+            stats["pattern"][llave] = {
+                "n": int(len(grupo)),
+                "por_etapa": {
+                    str(k): int(v)
+                    for k, v in grupo["stage_primary"].value_counts().items()
+                },
+            }
+    # Short-ship global entre tardíos. Las cajas faltantes NO se precalculan
+    # (decisión congelada de la ola): solo conteo y fill rate mediano.
+    if "_short_ship" in tardios.columns:
+        ss = tardios[tardios["_short_ship"].fillna(False).astype(bool)]
+    else:
+        ss = tardios.iloc[0:0]
+    fill = (ss["_fill_rate"].dropna().astype(float)
+            if "_fill_rate" in ss.columns else pd.Series(dtype=float))
+    stats["short_ship_global"] = {
+        "n_tardios": int(len(tardios)),
+        "n_short": int(len(ss)),
+        "fill_values": fill.tolist(),
+    }
     return stats
 
 
@@ -847,6 +925,94 @@ def _comparative_lines(row: pd.Series, stats: Dict[str, Any]) -> List[str]:
     return lineas
 
 
+def _median_str(values: List[float]) -> str:
+    """Mediana de una lista no vacía, formateada a un decimal."""
+    return f"{float(pd.Series(values).median()):.1f}"
+
+
+def _history_lines(row: pd.Series, stats: Dict[str, Any]) -> List[str]:
+    """Bloque HISTORIAL EN EL DATASET (ARD-16 ola 3, carril 2 estático).
+
+    Agregados DETERMINISTAS precomputados por corrida (compute_dataset_stats) y
+    renderizados por PO. Reglas de forma: conteos como "k de n" — nunca %, para que
+    el n viaje con cada cifra y el modelo pondere las celdas chicas; la PO consultada
+    va INCLUIDA en sus propios conteos con etiqueta explícita (mismo criterio que los
+    percentiles de la ola 1); las cuatro líneas son incondicionales, con valor neutro
+    cuando falta el dato (sin juicio por selección). Con n_attr = 0 la mediana se
+    omite (no hay valores), los conteos van igual.
+    """
+    lineas = [
+        "HISTORIAL EN EL DATASET (agregados ya calculados; no los recalcules. "
+        "Pondera cada uno por su n: con pocas POs es evidencia débil):"
+    ]
+    vendor = str(row.get("VENDOR_NAME") or "")
+    vh = stats.get("vendor_history", {}).get(vendor)
+    if vh:
+        mediana = (
+            f" (mediana de exceso Vendor entre esas {vh['n_attr']}: "
+            f"{_median_str(vh['exceso_values'])} h)" if vh["exceso_values"] else ""
+        )
+        lineas.append(
+            f"- Proveedor {vendor} (incluye esta PO): {vh['n_pos']} POs en el "
+            f"dataset, {vh['n_tardias']} tardías; {vh['n_attr']} de las tardías "
+            f"atribuidas a Vendor{mediana}; short ship en {vh['n_short']} de "
+            f"{vh['n_pos']}; reprogramación en {vh['n_resched']} de {vh['n_pos']}."
+        )
+    else:
+        lineas.append("- Proveedor no disponible: sin historial en el dataset.")
+    carrier = str(row.get("CARRIER_PARTY_NAME") or "")
+    ch = stats.get("carrier_history", {}).get(carrier)
+    if ch:
+        mediana = (
+            f" (mediana de exceso Carrier entre esas {ch['n_attr']}: "
+            f"{_median_str(ch['exceso_values'])} h)" if ch["exceso_values"] else ""
+        )
+        lineas.append(
+            f"- Transportista {carrier} (incluye esta PO): {ch['n_pos']} POs, "
+            f"{ch['n_tardias']} tardías; {ch['n_attr']} atribuidas a "
+            f"Carrier{mediana}."
+        )
+    else:
+        lineas.append("- Transportista no disponible: sin historial en el dataset.")
+    ssg = stats.get("short_ship_global", {})
+    llave = (
+        bool(row.get("_short_ship", False)),
+        bool(row.get("is_rescheduled", False)),
+        row.get("HOT_PO_FLAG", 0) == 1,
+    )
+    pat = stats.get("pattern", {}).get(llave)
+    if pat and ssg:
+        etiquetas = (
+            f"short ship: {'Sí' if llave[0] else 'No'}, "
+            f"reprogramación: {'Sí' if llave[1] else 'No'}, "
+            f"urgente: {'Sí' if llave[2] else 'No'}"
+        )
+        por_etapa = " · ".join(
+            f"{et} {pat['por_etapa'].get(et, 0)}"
+            for et in ("Vendor", "Carrier", "DC", "Indeterminado")
+        )
+        lineas.append(
+            f"- POs tardías con el mismo patrón de señales ({etiquetas}): "
+            f"{pat['n']} de {ssg['n_tardios']} (incluye esta PO); su etapa "
+            f"medida: {por_etapa}."
+        )
+    else:
+        lineas.append("- Patrón de señales: sin agregados disponibles.")
+    if ssg:
+        cola = (
+            f"; fill rate mediano de esos envíos: "
+            f"{float(pd.Series(ssg['fill_values']).median()) * 100:.1f}%"
+            if ssg.get("fill_values") else ""
+        )
+        lineas.append(
+            f"- Short ship en el dataset: {ssg['n_short']} de {ssg['n_tardios']} "
+            f"POs tardías{cola}."
+        )
+    else:
+        lineas.append("- Short ship en el dataset: sin agregados disponibles.")
+    return lineas
+
+
 def build_action_prompt(
     row: pd.Series,
     diagnosis: Dict[str, Any],
@@ -864,7 +1030,8 @@ def build_action_prompt(
 
     Los bloques DATOS/TIMELINE/MÉTRICAS/CONTEXTO espejan build_prompt para que ambas
     llamadas vean los mismos hechos; se suman las magnitudes destapadas
-    (_order_magnitude_lines) y los comparativos globales (_comparative_lines).
+    (_order_magnitude_lines), los comparativos globales (_comparative_lines) y el
+    historial del dataset (_history_lines, carril 2 estático de ARD-16).
 
     Args:
         row: fila del DataFrame clasificado (una PO tardía).
@@ -913,6 +1080,8 @@ def build_action_prompt(
     magnitude_lines[-1] += "\n"
     comparative_lines = _comparative_lines(row, stats)
     comparative_lines[-1] += "\n"
+    history_lines = _history_lines(row, stats)
+    history_lines[-1] += "\n"
 
     # Diagnóstico diferencial (ARD-16 ola 2): la regla mecanismo-vs-etiqueta es genérica
     # para toda etapa; SOLO Vendor recibe el pointer de señales (fill rate /
@@ -1012,6 +1181,7 @@ def build_action_prompt(
         *metric_lines,
         *magnitude_lines,
         *comparative_lines,
+        *history_lines,
         "\n".join(context_lines) + "\n",
         "PERÍMETRO DE RAZONAMIENTO:",
         "- Los HECHOS de esta PO y del dataset son únicamente los datos de arriba. "

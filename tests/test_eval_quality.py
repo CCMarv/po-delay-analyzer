@@ -15,7 +15,8 @@ import pytest
 
 from eval_quality import (
     ANCHOR_TEMP, _hipotesis_reconoce_indet, _hyp_tokens, _jaccard, _temp_suffix,
-    hypothesis_convergence, resolve_temperature, to_markdown, usa_vocabulario,
+    hypothesis_convergence, resolve_temperature, to_markdown, usa_agregados,
+    usa_vocabulario,
 )
 from llm_integration import load_llm_config
 
@@ -144,6 +145,7 @@ def _df_eval_accion_min() -> pd.DataFrame:
         "llm_paso_discriminante": "z", "qa_flags": "",
         "chk_a_etapa": True, "chk_b_cuantifica": True, "chk_meta": False,
         "chk_c_accion_viable": "", "veredicto": "", "usa_vocab": True,
+        "usa_agregados": True,
     }])
 
 
@@ -158,13 +160,30 @@ def test_usa_vocabulario_detecta_terminos_normalizados():
     assert usa_vocabulario([]) is False
 
 
-def test_to_markdown_accion_reporta_tasa_de_vocabulario_con_guard():
+def test_to_markdown_accion_reporta_tasas_ola3_con_guard():
     md = to_markdown(_df_eval_accion_min())
     assert "Uso de vocabulario de industria en el plan: 1/1" in md
+    assert "Uso de agregados del historial: 1/1" in md
     # Guard por columna: un df de modo acción SIN la métrica no rompe ni reporta.
-    sin_col = _df_eval_accion_min().drop(columns=["usa_vocab"])
+    sin_col = _df_eval_accion_min().drop(columns=["usa_vocab", "usa_agregados"])
     md2 = to_markdown(sin_col)
     assert "Uso de vocabulario de industria" not in md2
+    assert "Uso de agregados del historial" not in md2
+
+
+def test_usa_agregados_cifra_exclusiva_del_historial():
+    bloque = "- Proveedor ACME (incluye esta PO): 12 POs en el dataset, 9 tardías."
+    prompt = "Retraso de 3.00 días.\n" + bloque + "\nMediana: 2.50 días."
+    # 12 y 9 son exclusivas del bloque; 3.00 y 2.50 viven fuera de él.
+    assert usa_agregados(
+        ["El historial de 9 tardías de ACME sostiene la hipótesis"], prompt, bloque
+    ) is True
+    assert usa_agregados(["El retraso de 3.00 días es alto"], prompt, bloque) is False
+    assert usa_agregados([], prompt, bloque) is False
+    # Sin cifras exclusivas (las del bloque también viven fuera) → False.
+    bloque2 = "- Mediana del dataset: 2.50 días."
+    prompt2 = "Mediana global 2.50 días.\n" + bloque2
+    assert usa_agregados(["Cito 2.50 días"], prompt2, bloque2) is False
 
 
 def test_to_markdown_accion_incluye_columna_elicitacion():
