@@ -10,11 +10,12 @@ sufijo, no en llamar al LLM).
 `eval_quality` se importa gracias al pythonpath de pyproject.toml (03_llm_integration) y al
 insert de red de seguridad de conftest.py — igual que el resto de la suite.
 """
+import pandas as pd
 import pytest
 
 from eval_quality import (
     ANCHOR_TEMP, _hipotesis_reconoce_indet, _hyp_tokens, _jaccard, _temp_suffix,
-    hypothesis_convergence, resolve_temperature,
+    hypothesis_convergence, resolve_temperature, to_markdown,
 )
 from llm_integration import load_llm_config
 
@@ -126,3 +127,33 @@ def test_hipotesis_reconoce_indet_usa_lista_compartida():
     assert _hipotesis_reconoce_indet("Congestión en el patio del DC") is False
     # "análisis" contiene 'si' como subcadena pero NO como token: no cuenta.
     assert _hipotesis_reconoce_indet("Congestión detectada en el análisis del patio") is False
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# E. Tabla del benchmark en modo acción (ARD-16 ola 3) — determinística pura
+# ════════════════════════════════════════════════════════════════════════════
+def _df_eval_accion_min() -> pd.DataFrame:
+    """Una fila con TODAS las columnas del modo acción (forma de evaluate())."""
+    return pd.DataFrame([{
+        "PO_NBR": "100001", "stage_primary": "Vendor", "delay_days_calc": 2.5,
+        "REASON_DSC": "Vendor fill rate", "llm_causa_raiz": "La etapa Vendor...",
+        "llm_accion": "", "llm_elicitacion": "Como patrón de industria, faltas de "
+        "inventario y capacidad de producción.", "llm_hipotesis": "Falta de producto",
+        "llm_hipotesis_alt": "Agenda", "llm_accion_inmediata": "Emitir reposición",
+        "llm_accion_correctiva": "x", "llm_accion_preventiva": "y",
+        "llm_paso_discriminante": "z", "qa_flags": "",
+        "chk_a_etapa": True, "chk_b_cuantifica": True, "chk_meta": False,
+        "chk_c_accion_viable": "", "veredicto": "",
+    }])
+
+
+def test_to_markdown_accion_incluye_columna_elicitacion():
+    md = to_markdown(_df_eval_accion_min())
+    encabezado = next(l for l in md.splitlines() if l.startswith("| PO |"))
+    assert "| elicitación |" in encabezado
+    # La celda de la fila lleva el texto de la elicitación, antes de la hipótesis.
+    fila = next(l for l in md.splitlines() if l.startswith("| 100001 |"))
+    assert fila.index("Como patrón de industria") < fila.index("Falta de producto")
+    # El separador de la tabla tiene el mismo número de columnas que el encabezado.
+    separador = md.splitlines()[md.splitlines().index(encabezado) + 1]
+    assert encabezado.count("|") == separador.count("|")

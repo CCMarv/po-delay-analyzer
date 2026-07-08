@@ -439,8 +439,13 @@ def _prompt_accion() -> str:
 def _raw_accion_ok() -> str:
     """Respuesta cruda VÁLIDA del contrato híbrido: llaves en orden, cifras del input
     (3.00 días y 10.0 h están en el prompt de _row_accion), etapa Carrier nombrada,
-    acción inmediata concreta (sin verbo meta)."""
+    acción inmediata concreta (sin verbo meta). La elicitación va primera y SIN
+    cifras (regla del cuestionario: una cifra inventada caería en el check)."""
     return json.dumps({
+        "elicitacion": "Como patrón de industria, los retrasos del transportista "
+                       "suelen venir de planificación de rutas, capacidad de flota o "
+                       "clima; un short ship obliga a decidir la reposición del "
+                       "faltante; una re-cita suele reflejar problemas de agenda.",
         "razonamiento": "El exceso del transportista de 10.0 horas concentra el "
                         "retraso en la etapa Carrier.",
         "hipotesis_principal": {
@@ -517,7 +522,8 @@ def test_percentile_rank_es_pct_de_menores():
 def test_build_action_prompt_contrato_con_llaves_en_orden():
     out = _prompt_accion()
     assert "EN ESTE ORDEN" in out
-    assert (out.index('"razonamiento"') < out.index('"hipotesis_principal"')
+    assert (out.index('"elicitacion"') < out.index('"razonamiento"')
+            < out.index('"hipotesis_principal"')
             < out.index('"hipotesis_alternativa"') < out.index('"confianza"'))
     for campo in ('"accion_inmediata"', '"accion_correctiva"', '"accion_preventiva"',
                   '"paso_discriminante"', '"evidencia"'):
@@ -602,6 +608,7 @@ def test_is_meta_action_no_dispara_en_acciones_concretas():
 # --- _parse_action_json / _action_keys_in_order: contrato híbrido ---
 def test_parse_action_json_aplana_contrato():
     out = _parse_action_json(_raw_accion_ok())
+    assert out["elicitacion"].startswith("Como patrón de industria")
     assert out["hipotesis"].startswith("Planificación")
     assert out["hipotesis_evidencia"].startswith("Exceso del transportista")
     assert out["accion_inmediata"].startswith("Exigir")
@@ -617,15 +624,21 @@ def test_parse_action_json_sin_json_devuelve_none():
 def test_parse_action_json_llaves_faltantes_dan_vacio():
     out = _parse_action_json('{"razonamiento": "solo esto"}')
     assert out["razonamiento"] == "solo esto"
+    assert out["elicitacion"] == ""
     assert out["accion_inmediata"] == ""
     assert out["confianza_hipotesis"] == 0.5    # default documentado del parser
 
 
 def test_action_keys_in_order_verifica_sobre_el_crudo():
     assert _action_keys_in_order(_raw_accion_ok()) is True
-    desordenado = ('{"confianza": 0.8, "razonamiento": "x", '
+    desordenado = ('{"confianza": 0.8, "elicitacion": "x", "razonamiento": "x", '
                    '"hipotesis_principal": {}, "hipotesis_alternativa": {}}')
     assert _action_keys_in_order(desordenado) is False
+    # La elicitación fuera de su lugar (tras el razonamiento) también rompe el orden.
+    elicit_tarde = ('{"razonamiento": "x", "elicitacion": "x", '
+                    '"hipotesis_principal": {}, "hipotesis_alternativa": {}, '
+                    '"confianza": 0.8}')
+    assert _action_keys_in_order(elicit_tarde) is False
 
 
 # --- run_action_checks: cada check con caso que pasa y caso que falla ---
@@ -819,6 +832,54 @@ def test_run_action_checks_indeterminado_no_aplica_en_atribuidas():
     assert "indeterminado_sin_reconocer" not in codigos
 
 
+# --- ARD-16 ola 3: auto-cuestionario de elicitación (campo `elicitacion`) ---
+def test_action_prompt_cuestionario_pregunta_por_etapa():
+    # La pregunta 1 se parametriza por stage_primary (las otras dos son fijas).
+    esperado = {
+        "Vendor": "se originan en el proveedor, antes del embarque",
+        "Carrier": "se originan en el tránsito del transportista",
+        "DC": "recepción del centro de distribución (patio y descarga)",
+        "Indeterminado": "suelen quedar sin atribuir cuando los timestamps",
+    }
+    for etapa, fragmento in esperado.items():
+        row = _row_accion()
+        row["stage_primary"] = etapa
+        out = build_action_prompt(row, _diag_ejemplo(), _stats_ejemplo())
+        assert fragmento in out, etapa
+
+
+def test_action_prompt_cuestionario_bloque_antes_de_la_tarea():
+    out = _prompt_accion()
+    assert "AUTO-CUESTIONARIO DE DOMINIO" in out
+    # Sin cifras: la instrucción previene lo que el check de cifras haría cumplir.
+    assert "SIN cifras" in out
+    # Las preguntas fijas del mentor (shorting y rescheduling) van en toda PO.
+    assert "¿Cómo afecta un short ship" in out
+    assert "reprogramación de una cita de entrega" in out
+    # El cuestionario se responde ANTES de analizar la PO: bloque previo a TU TAREA.
+    assert out.index("AUTO-CUESTIONARIO DE DOMINIO") < out.index("TU TAREA:")
+
+
+def test_run_action_checks_elicitacion_faltante_es_esquema_incompleto():
+    raw = _raw_accion_ok()
+    parsed = _parse_action_json(raw)
+    parsed["elicitacion"] = ""
+    defectos = run_action_checks(parsed, raw, _row_accion(), _prompt_accion())
+    detalles = {c: d for c, d in defectos}
+    assert "esquema_incompleto" in detalles
+    assert "elicitacion" in detalles["esquema_incompleto"]
+
+
+def test_run_action_checks_elicitacion_con_cifra_inventada():
+    # El cuestionario pide respuestas sin cifras; un "típicamente N horas" inventado
+    # cae en el check de cifras ∈ input (elicitacion es campo de texto del contrato).
+    parsed = _parse_action_json(_raw_accion_ok())
+    parsed["elicitacion"] = "Típicamente estos retrasos duran 48 horas."
+    codigos = [c for c, _ in run_action_checks(
+        parsed, _raw_accion_ok(), _row_accion(), _prompt_accion())]
+    assert "cifra_fuera_de_input" in codigos
+
+
 # --- call_action_with_qa: regeneración citando el defecto, tope, sin bloqueo ---
 def test_call_action_with_qa_regenera_citando_defecto():
     stub = _ActionBackendStub([_raw_accion_meta(), _raw_accion_ok()])
@@ -878,8 +939,8 @@ def test_add_llm_explanations_default_sin_columnas_de_accion():
     out = add_llm_explanations(_df_min_clasificado(),
                                backend=_Backend1Stub(_diag_ejemplo()),
                                delay_between_calls=0)
-    for col in ("llm_razonamiento", "llm_hipotesis", "llm_accion_inmediata",
-                "llm_qa_flags", "llm_confianza_hipotesis"):
+    for col in ("llm_elicitacion", "llm_razonamiento", "llm_hipotesis",
+                "llm_accion_inmediata", "llm_qa_flags", "llm_confianza_hipotesis"):
         assert col not in out.columns
     assert out.loc[0, "llm_causa_raiz"].startswith("La etapa Carrier")
 
@@ -894,6 +955,7 @@ def test_add_llm_explanations_action_call_llena_plan():
                                delay_between_calls=0, action_call=True)
     assert out.loc[0, "llm_accion_inmediata"].startswith("Exigir")
     assert out.loc[0, "llm_paso_discriminante"].startswith("Obtener el log")
+    assert out.loc[0, "llm_elicitacion"].startswith("Como patrón de industria")
     assert out.loc[0, "llm_qa_flags"] == ""
     assert out.loc[0, "llm_confianza_hipotesis"] == 0.8
     # El on-time no se procesa (misma regla que la llamada 1).

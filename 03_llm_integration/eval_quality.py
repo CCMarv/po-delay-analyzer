@@ -261,6 +261,7 @@ def evaluate(df_sample: pd.DataFrame, backend, examples=None, kb=None,
                 # Política ola 1: sin diagnóstico de la llamada 1 no hay llamada 2.
                 parsed, qa_flags = {}, ["sin_diagnostico_llamada1"]
             fila.update({
+                "llm_elicitacion": parsed.get("elicitacion", ""),
                 "llm_hipotesis": parsed.get("hipotesis", ""),
                 "llm_hipotesis_alt": parsed.get("hipotesis_alt", ""),
                 "llm_accion_inmediata": parsed.get("accion_inmediata", ""),
@@ -297,7 +298,9 @@ def _ola2_metric_lines(df_eval: pd.DataFrame) -> List[str]:
             cluster = hypothesis_convergence(list(grupo["llm_hipotesis"]))
             conv_partes.append(f"{etapa} {cluster}/{len(grupo)}")
     indet = df_eval[df_eval["stage_primary"] == "Indeterminado"]
-    k_indet = int(indet["llm_hipotesis"].map(_hipotesis_reconoce_indet).sum())
+    # Sin Indeterminado en la muestra, la serie object vacía suma "" y rompería int().
+    k_indet = (int(indet["llm_hipotesis"].map(_hipotesis_reconoce_indet).sum())
+               if len(indet) else 0)
     return [
         f"Convergencia intra-etapa (θ={CONVERGENCE_THETA}): " + " · ".join(conv_partes)
         + " (meta ola 2: sin clúster de plantilla; un clúster alineado a evidencia "
@@ -349,11 +352,11 @@ def to_markdown(df_eval: pd.DataFrame) -> str:
     ]
     if action_mode:
         lineas += [
-            "| PO | etapa | delay (d) | REASON_DSC | explicación LLM | hipótesis | "
-            "hipótesis alternativa | acción inmediata | acción correctiva | "
+            "| PO | etapa | delay (d) | REASON_DSC | explicación LLM | elicitación | "
+            "hipótesis | hipótesis alternativa | acción inmediata | acción correctiva | "
             "acción preventiva | paso discriminante "
             "| qa_flags | (a) | (b) | (meta) | (c)? | veredicto |",
-            "|---|---|--:|---|---|---|---|---|---|---|---|---|:--:|:--:|:--:|:--:|:--:|",
+            "|---|---|--:|---|---|---|---|---|---|---|---|---|---|:--:|:--:|:--:|:--:|:--:|",
         ]
     else:
         lineas += [
@@ -372,7 +375,8 @@ def to_markdown(df_eval: pd.DataFrame) -> str:
         if action_mode:
             lineas.append(
                 base
-                + f"{_celda(r['llm_hipotesis'])} | {_celda(r['llm_hipotesis_alt'])} | "
+                + f"{_celda(r['llm_elicitacion'])} | "
+                f"{_celda(r['llm_hipotesis'])} | {_celda(r['llm_hipotesis_alt'])} | "
                 f"{_celda(r['llm_accion_inmediata'])} | "
                 f"{_celda(r['llm_accion_correctiva'])} | {_celda(r['llm_accion_preventiva'])} | "
                 f"{_celda(r['llm_paso_discriminante'])} | {_celda(r['qa_flags'])} | "

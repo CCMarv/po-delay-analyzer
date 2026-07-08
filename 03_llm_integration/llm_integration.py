@@ -69,9 +69,11 @@ DEFAULT_TEMPERATURE = 0.3
 DEFAULT_MAX_TOKENS = 512
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_MAX_RETRIES = 3
-# Llamada de acción (ARD-16): el contrato híbrido no cabe en 512 tokens; degradación
-# si llm_config.json no trae la clave max_tokens_action.
-DEFAULT_MAX_TOKENS_ACTION = 1024
+# Llamada de acción (ARD-16): el contrato híbrido no cabe en 512 tokens, y con la
+# elicitación de la ola 3 tampoco en 1024 con holgura (un JSON truncado a media llave
+# se paga en reintentos de QA); degradación si llm_config.json no trae la clave
+# max_tokens_action.
+DEFAULT_MAX_TOKENS_ACTION = 1536
 # Reintentos del pase de autocrítica (ARD-16 Decisión 7): 1 llamada + 2 regeneraciones.
 DEFAULT_ACTION_QA_RETRIES = 2
 
@@ -581,15 +583,20 @@ def build_prompt(
 # Sin playbook y sin few-shot de acciones (descartes registrados en el ARD).
 
 # Llaves de nivel superior del contrato, EN ORDEN. El orden es requisito, no estilo:
-# condiciona el plan al razonamiento ya generado (generación autoregresiva).
+# condiciona el plan al razonamiento ya generado (generación autoregresiva). La
+# elicitación va PRIMERO (ARD-16 ola 3): el conocimiento de dominio se emite antes
+# de analizar la PO, así el resto de la salida queda condicionado a él.
 _ACTION_TOP_KEYS = (
-    "razonamiento", "hipotesis_principal", "hipotesis_alternativa", "confianza",
+    "elicitacion", "razonamiento", "hipotesis_principal",
+    "hipotesis_alternativa", "confianza",
 )
 
 # Campos planos que devuelve el parseo del contrato; todos son de texto (la confianza
-# va aparte) y participan del check de esquema y del de cifras ∈ input.
+# va aparte) y participan del check de esquema y del de cifras ∈ input. Que la
+# elicitación pase por el check de cifras es deliberado: el cuestionario pide
+# respuestas SIN cifras, y cualquier "típicamente N horas" inventado cae aquí.
 _ACTION_TEXT_FIELDS = (
-    "razonamiento", "hipotesis", "hipotesis_evidencia",
+    "elicitacion", "razonamiento", "hipotesis", "hipotesis_evidencia",
     "accion_inmediata", "accion_correctiva", "accion_preventiva",
     "hipotesis_alt", "paso_discriminante",
 )
@@ -629,6 +636,21 @@ _STAGE_ALIASES = {
     "Vendor": ("vendor", "proveedor"),
     "Carrier": ("carrier", "transportista"),
     "DC": ("dc", "centro de distribucion"),
+}
+
+# Pregunta 1 del auto-cuestionario de elicitación (ARD-16 ola 3), parametrizada por
+# etapa: "causas más comunes desde la etapa medida" (pregunta del mentor). Las otras
+# dos preguntas (shorting, rescheduling) son fijas. Etapa fuera del mapa → cae a la
+# formulación de Indeterminado (no afirma origen).
+_ELICIT_STAGE_QUESTION = {
+    "Vendor": "¿Cuáles son las causas más comunes de retraso que se originan en el "
+              "proveedor, antes del embarque?",
+    "Carrier": "¿Cuáles son las causas más comunes de retraso que se originan en el "
+               "tránsito del transportista?",
+    "DC": "¿Cuáles son las causas más comunes de retraso que se originan en la "
+          "recepción del centro de distribución (patio y descarga)?",
+    "Indeterminado": "¿Qué causas de retraso suelen quedar sin atribuir cuando los "
+                     "timestamps no permiten aislar una etapa dominante?",
 }
 
 # Cifras: el MISMO patrón se aplica al prompt y a la salida; la comparación es por
@@ -827,8 +849,8 @@ def build_action_prompt(
     (el antídoto directo a la meta-acción: quien ejecuta no puede delegar). Recibe el
     diagnóstico de la llamada 1 como fuente de verdad — sin esa ancla el modelo
     re-diagnosticaría la etapa que Fase 2 ya validó — y pide el contrato híbrido
-    razonamiento → hipotesis_principal{hipotesis, evidencia, plan{...}} →
-    hipotesis_alternativa{hipotesis, paso_discriminante} → confianza, con las llaves
+    elicitacion → razonamiento → hipotesis_principal{hipotesis, evidencia, plan{...}}
+    → hipotesis_alternativa{hipotesis, paso_discriminante} → confianza, con las llaves
     EN ORDEN. Sin límite de longitud por campo (a diferencia de la llamada 1).
 
     Los bloques DATOS/TIMELINE/MÉTRICAS/CONTEXTO espejan build_prompt para que ambas
@@ -909,6 +931,29 @@ def build_action_prompt(
         )
     differential_lines[-1] += "\n"
 
+    # Auto-cuestionario de elicitación (ARD-16 ola 3, pregunta del mentor ×3): el
+    # modelo emite su conocimiento de dominio ANTES de analizar la PO (por eso
+    # `elicitacion` es la primera llave del contrato). "SIN cifras" no es estilo:
+    # el check cifra_fuera_de_input cubre el campo y cazaría un "típicamente N h".
+    pregunta_etapa = _ELICIT_STAGE_QUESTION.get(
+        str(stage), _ELICIT_STAGE_QUESTION["Indeterminado"]
+    )
+    elicit_lines = [
+        "AUTO-CUESTIONARIO DE DOMINIO (respóndelo ANTES de analizar esta PO):",
+        "Responde primero, desde tu conocimiento de cadena de suministro y sin usar "
+        "los datos de esta PO, estas tres preguntas. Respuestas breves (2-3 líneas "
+        "cada una), cualitativas y SIN cifras: nombran mecanismos y consecuencias, "
+        "no números.",
+        f"1. {pregunta_etapa}",
+        "2. ¿Cómo afecta un short ship (envío incompleto) a la operación del "
+        "comprador y qué decisiones abre sobre la orden?",
+        "3. ¿Qué suele causar la reprogramación de una cita de entrega "
+        "(rescheduling) y qué consecuencias operativas tiene?",
+        "Escribe las respuestas en el campo `elicitacion` del JSON y contrasta "
+        "después tus hipótesis con ellas: tu mecanismo debería ser una de las "
+        "causas que tú mismo nombraste, o justificar por qué no.\n",
+    ]
+
     # Reparto multi-actor (ARD-16 ola 2): solo con stage_multi activo (≥2 etapas). El
     # plan puede repartir correctiva/preventiva entre actores, pero la acción inmediata
     # es UNA: la del cuello de botella (stage_primary, la etapa dominante por medición).
@@ -957,6 +1002,7 @@ def build_action_prompt(
         "de industria…\", \"típicamente…\"), separado de lo que los datos muestran.",
         "- Si los datos no alcanzan para distinguir dos mecanismos, decláralo: esa "
         "carencia es exactamente lo que tu paso discriminante debe resolver.\n",
+        *elicit_lines,
         "TU TAREA:",
         f"La etapa ya está decidida ({stage}); tu trabajo es el mecanismo DEBAJO de "
         "ese nivel (según la etapa: inventario o capacidad del proveedor, "
@@ -982,6 +1028,7 @@ def build_action_prompt(
         "Responde ÚNICAMENTE con el JSON, sin texto adicional, con las llaves EN "
         "ESTE ORDEN:",
         "{",
+        '  "elicitacion": "tus respuestas breves a las preguntas 1-3",',
         '  "razonamiento": "tu análisis del mecanismo: qué observas en los datos, '
         'qué mecanismos son compatibles y cuál pesa más y por qué",',
         '  "hipotesis_principal": {',
@@ -1070,6 +1117,7 @@ def _parse_action_json(raw_response: str) -> Optional[Dict[str, Any]]:
         return str(valor).strip() if valor is not None else ""
 
     return {
+        "elicitacion": _texto(parsed.get("elicitacion")),
         "razonamiento": _texto(parsed.get("razonamiento")),
         "hipotesis": _texto(hp.get("hipotesis")),
         "hipotesis_evidencia": _texto(hp.get("evidencia")),
@@ -1829,6 +1877,7 @@ def create_backend(
 
 # Columna del DataFrame → campo aplanado del contrato de la llamada de acción.
 _ACTION_COLUMN_MAP = {
+    "llm_elicitacion": "elicitacion",
     "llm_razonamiento": "razonamiento",
     "llm_hipotesis": "hipotesis",
     "llm_hipotesis_evidencia": "hipotesis_evidencia",
