@@ -39,10 +39,10 @@ import pandas as pd
 # Reusar la infraestructura de F3 (mismo dir): no se reimplementa la corrida del LLM.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from llm_integration import (  # noqa: E402
-    DEFAULT_MAX_TOKENS_ACTION, _extract_numbers, _history_lines, build_action_prompt,
-    build_prompt, call_action_with_qa, compute_dataset_stats, create_backend,
-    is_meta_action, load_domain_kb, load_llm_config, prepare_classified_df,
-    reconoce_indeterminacion,
+    DEFAULT_MAX_TOKENS_ACTION, _extract_numbers, _history_lines, _STAGE_ALIASES,
+    build_action_prompt, build_prompt, call_action_with_qa, compute_dataset_stats,
+    create_backend, is_meta_action, load_domain_kb, load_llm_config,
+    prepare_classified_df, reconoce_indeterminacion,
 )
 from fewshot import select_examples  # noqa: E402
 
@@ -229,13 +229,17 @@ def _check_etapa(explicacion: str, stage: str) -> bool:
     """(a) ¿La explicación nombra la etapa correcta?
 
     Para 'Indeterminado' acierta si DECLARA indeterminación (no atribuible a una sola
-    etapa), no si nombra una etapa concreta tomada del reason code.
+    etapa), no si nombra una etapa concreta tomada del reason code. Para las demás
+    etapas, acepta el alias en español (_STAGE_ALIASES, ola 2): la MISMA lista que usa
+    el check `etapa_incorrecta` de run_action_checks, para que el pre-veredicto
+    heurístico y el check por regla no discrepen (mismo hueco que mostró el gate de la
+    ola 2 — "proveedor" no contenía el literal "Vendor" — corregido ahí pero no aquí).
     """
     e = _norm(explicacion)
     if stage == "Indeterminado":
         return any(k in e for k in ("indetermin", "no atribuible", "no se puede atribuir",
                                     "multiples etapas", "multiple", "no concluyente"))
-    return _norm(stage) in e
+    return any(alias in e for alias in _STAGE_ALIASES.get(stage, (_norm(stage),)))
 
 
 def _check_cuantifica(explicacion: str, delay_days: float) -> bool:

@@ -14,9 +14,9 @@ import pandas as pd
 import pytest
 
 from eval_quality import (
-    ANCHOR_TEMP, _hipotesis_reconoce_indet, _hyp_tokens, _jaccard, _temp_suffix,
-    hypothesis_convergence, resolve_temperature, to_markdown, usa_agregados,
-    usa_vocabulario,
+    ANCHOR_TEMP, _check_etapa, _hipotesis_reconoce_indet, _hyp_tokens, _jaccard,
+    _temp_suffix, hypothesis_convergence, resolve_temperature, to_markdown,
+    usa_agregados, usa_vocabulario,
 )
 from llm_integration import load_llm_config
 
@@ -131,7 +131,28 @@ def test_hipotesis_reconoce_indet_usa_lista_compartida():
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# E. Tabla del benchmark en modo acción (ARD-16 ola 3) — determinística pura
+# E. _check_etapa — pre-veredicto heurístico (a), alias en español
+# ════════════════════════════════════════════════════════════════════════════
+def test_check_etapa_acepta_alias_en_espanol():
+    # Hueco expuesto por el gate de la ola 3 (100229/100113): la causa_raíz de la
+    # llamada 1 dice "transportista"/"proveedor" (correcto) y el check heurístico
+    # buscaba el literal inglés "Carrier"/"Vendor". Misma lista que run_action_checks.
+    assert _check_etapa("El retraso se atribuye al transportista.", "Carrier") is True
+    assert _check_etapa("El retraso se atribuye al proveedor.", "Vendor") is True
+    assert _check_etapa(
+        "El retraso ocurre en el centro de distribucion.", "DC") is True
+    assert _check_etapa("La etapa es Carrier.", "Carrier") is True  # literal sigue OK
+    assert _check_etapa("El retraso es por el clima.", "Carrier") is False
+
+
+def test_check_etapa_indeterminado_sin_cambios():
+    assert _check_etapa("No se puede atribuir a una sola etapa.",
+                        "Indeterminado") is True
+    assert _check_etapa("El retraso es del transportista.", "Indeterminado") is False
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# F. Tabla del benchmark en modo acción (ARD-16 ola 3) — determinística pura
 # ════════════════════════════════════════════════════════════════════════════
 def _df_eval_accion_min() -> pd.DataFrame:
     """Una fila con TODAS las columnas del modo acción (forma de evaluate())."""
