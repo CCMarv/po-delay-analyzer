@@ -1,11 +1,11 @@
 # ADR-04b · Umbral de carrier definitivo (8h)
 
-* **Estatus:** 🟢 **VIGENTE** (Reemplaza al [ADR-04a · Umbral de carrier provisional (4h)](ADR-04a.md))
+* **Estatus:** 🟢 **VIGENTE** (Reemplaza al [ADR-04a · Umbral de carrier provisional (4h)](ARD-04a.md))
 * **Contexto Técnico:** Fase 2 / Configuración de Reglas de Negocio
 * **Referencias:** Issue #41, Discussion #53, sugerido por el mentor el 2026-06-16
 
 ## Contexto y Problema
-Tras la caída del umbral de 4 horas por exceso de ruido en los datos (detallado en el [ADR-04a](ADR-04a.md)), el modelo requería una calibración justa y justificada que se acoplara a la naturaleza del dataset (trayectos cortos) sin perder la capacidad de capturar impactos severos en el transporte.
+Tras la caída del umbral de 4 horas por exceso de ruido en los datos (detallado en el [ADR-04a](ARD-04a.md)), el modelo requería una calibración justa y justificada que se acoplara a la naturaleza del dataset (trayectos cortos) sin perder la capacidad de capturar impactos severos en el transporte.
 
 ## Opciones Consideradas
 

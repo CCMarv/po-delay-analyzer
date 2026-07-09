@@ -1,6 +1,6 @@
 # ADR-06a · Umbral propio de vendor: Modelo inicial sin umbral
 
-* **Estatus:** 📘 **SUPERADO** por el [ADR-06b · Umbral propio de vendor: Configuración de 24h](ADR-06b.md)
+* **Estatus:** 📘 **SUPERADO** por el [ADR-06b · Umbral propio de vendor: Configuración definitiva de 24h](ARD-06b.md)
 * **Contexto Técnico:** Fase 2 / Clasificación por Reglas de Negocio
 * **Referencias:** Implementación inicial de la señal directa (`APPROVED_DT > STA_DT`)
 

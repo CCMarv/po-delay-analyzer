@@ -1,6 +1,6 @@
 # ADR-04a · Umbral de carrier provisional (4h)
 
-* **Estatus:** 📘 **SUPERADO** por el [ADR-04b · Umbral de carrier definitivo (8h)](ADR-04b.md)
+* **Estatus:** 📘 **SUPERADO** por el [ADR-04b · Umbral de carrier definitivo (8h)](ARD-04b.md)
 * **Contexto Técnico:** Fase 1 / Análisis Exploratorio de Datos (EDA)
 * **Referencias:** Configuración inicial de código duro
 
