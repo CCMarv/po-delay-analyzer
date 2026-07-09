@@ -2,7 +2,7 @@
 
 * **Estatus:** 🔵 **BORRADOR** (lo cierra el equipo)
 * **Contexto Técnico:** Fase 3 / Integración LLM — incorporar capacidades del modelo (conocimiento de dominio preentrenado, razonamiento, síntesis) por encima de la lógica determinista ya validada
-* **Referencias:** Feedback de mentores posterior a la validación de main; README del repo original del mentor (métrica *LLM Explanation Quality*); `03_llm_integration/fixtures/eval_quality_20pos_C0_t09.md` / `_kb.md` (evidencia del síntoma); ADR-14 (anti-alucinación — se ajusta su alcance); ADR-12 (prompt); ADR-10 (severidad híbrida); ADR-07 (taxonomía de Indeterminado); ADR-15 (KB condicional — superado por este marco); `03_llm_integration/llm_integration.py`; `03_llm_integration/eval_quality.py` / `eval_diversity.py`
+* **Referencias:** Feedback de mentores posterior a la validación de main; README del repo original del mentor (métrica *LLM Explanation Quality*); `03_llm_integration/fixtures/eval_quality_20pos_C0_t09.md` / `_kb.md` (evidencia del síntoma); ADR-14 (anti-alucinación — se ajusta su alcance); ADR-12 (prompt); ADR-10 (severidad híbrida); ADR-07 (taxonomía de Indeterminado); [ADR-15](ARD-15.md) (KB condicional — superado por este marco); `03_llm_integration/llm_integration.py`; `03_llm_integration/eval_quality.py` / `eval_diversity.py`
 
 ## Contexto y Problema
 
@@ -122,7 +122,15 @@ suelta invita a sobre-lectura.
    * **Reglas de concreción:** los verbos meta (revisar, analizar, investigar, monitorear,
      dar seguimiento) no cuentan como acción principal; toda verificación nombra el dato
      exacto y la decisión que depende de él. Si hubo short-ship, el plan incluye la
-     decisión del faltante (re-emitir / esperar / cancelar) con su criterio.
+     decisión del faltante (re-emitir / esperar / cancelar) con su criterio. Cuando el
+     mecanismo de la hipótesis principal no está confirmado por un dato citado en la
+     evidencia (se infiere del patrón de etapa, no de un hecho concreto de la PO), la
+     acción inmediata converge al dato de `paso_discriminante` en vez de una solicitud
+     genérica de explicación/informe/plan de acción (refinamiento post-ola 3; en el
+     cierre del carril 1 esta regla, la de verbos meta y el caso Indeterminado se
+     fusionaron en una sola regla con dos ramas — mecanismo confirmado → ejecución o
+     coordinación; no confirmado → obtención del dato — porque medían tres posturas
+     distintas sobre si obtener un dato cuenta como acción, ver Decisión 8).
    * **Insumos:** el diagnóstico de la primera llamada, los hechos crudos, las magnitudes
      hoy ocultas (fill rate real, magnitud del reschedule en horas, tamaño de la orden) y
      hechos comparativos globales calculados determinísticamente (percentil del exceso,
@@ -137,7 +145,8 @@ suelta invita a sobre-lectura.
      consecuencias del rescheduling) que el modelo responde con su conocimiento antes de
      recomendar; glosario abierto de términos de industria (expedite, chargeback, carrier
      scorecard, re-cita de dock, split shipment, safety stock, OTIF) como vocabulario
-     disponible, términos sueltos con prohibición de transcribir frases.
+     disponible, términos sueltos con prohibición de transcribir frases. *(Ambos
+     retirados en el cierre del carril 1 por evidencia de uso casi nulo, ver Decisión 8.)*
    * **Señales adicionales:** la discrepancia REASON_DSC vs. etapa medida entra como
      meta-señal del proceso de anotación —habilita hipótesis de proceso (handoff mal
      registrado) sin promover el REASON_DSC a etapa (regla vigente)—, derivada
@@ -155,6 +164,13 @@ suelta invita a sobre-lectura.
    `pos_similares`, `detalle_short_ship`) con presupuesto de llamadas y log de preguntas
    persistido por PO como rastro auditable del razonamiento. El estadio agéntico cambia el
    contrato `call(prompt)` de los backends; se difiere hasta tener la evidencia.
+
+   La evidencia llegó con la ola 3: los fixtures midieron 0–1/20 POs citando cifras del
+   bloque HISTORIAL — el modelo ignora los agregados inyectados. El estadio estático se
+   retiró del prompt en el cierre del carril 1 (los agregados siguen precomputados en
+   `compute_dataset_stats` como insumo futuro); el estadio agéntico queda con evidencia a
+   favor pero diferido: la siguiente instancia de validación es la evaluación a nivel
+   dataset que desarrolla el equipo, y conviene decidirlo con ella.
 5. **Carril 3 — capacidades de producto.** Síntesis ejecutiva del portafolio de retrasos y
    Q&A sobre el dataset, diseñadas junto con las vistas de Fase 4 (user personas de
    ADR-09). Issues propios.
@@ -190,6 +206,45 @@ suelta invita a sobre-lectura.
    evidencia, los condicionales no se disparan: la profundidad alcanzó sin razonamiento
    extendido ni modelo más capaz, y el conocimiento del modelo no se quedó corto, así que
    la búsqueda offline materializada se descarta.
+
+   Validación humana de ola 3 (2026-07-08), fixture
+   `03_llm_integration/fixtures/eval_quality_20pos_C0_t09_accion_ola3.md`, criterio (c):
+   8/20 POs (100158, 100087, 100182, 100092, 100324, 100366, 100367, 100157; cruza Vendor,
+   DC e Indeterminado) fallan por el mismo patrón — `paso_discriminante` ya nombra el dato
+   puntual que confirmaría el mecanismo, pero `accion_inmediata` no lo reutiliza y cae en
+   una solicitud genérica. No es falta de profundidad de razonamiento ni de conocimiento
+   del modelo (el dato correcto sí aparece en la salida), así que no dispara un
+   condicional: es un hueco de especificación del contrato, cerrado con el refinamiento a
+   las Reglas de concreción de la Decisión 3.
+
+   Cierre del carril 1 (2026-07-08). El refinamiento anterior se midió con A/B de semilla
+   fija (`seed` de la API de OpenAI, best-effort, agregado a `llm_config.json`): movió
+   2/8 POs — señal débil; una regla declarativa más no corrige el patrón cuando compite
+   con un bloque de instrucciones que ya era el ~73% de un prompt de ~2,450 tokens. Con
+   ese diagnóstico, el cierre optimiza la llamada en vez de sumarle reglas:
+   * Se retiran los tres refuerzos de la ola 3 — auto-cuestionario de elicitación (con su
+     llave del contrato), glosario e historial estático — por costo alto con uso medido
+     casi nulo (glosario 1–3/20, historial 0–1/20, elicitación ~220 tokens de salida por
+     PO en texto que las hipótesis no reutilizan) y sin mejora en el gate (ola 3 no superó
+     a la ola 2).
+   * Las tres posturas sobre la acción inmediata (regla de verbos meta, refinamiento
+     post-ola 3, caso Indeterminado) se fusionan en una regla con dos ramas, con versión
+     micro en la descripción del campo `accion_inmediata` del contrato; las instrucciones
+     por etapa (Indeterminado, pointer Vendor, multi-actor) se emiten solo donde aplican.
+   * Plomería que reduce regeneraciones: `response_format json_object` en el backend
+     oficial (elimina fallos de parseo) y claves del check de decisión del faltante
+     ampliadas a stems (falsos positivos observados con "re-envío" / "espera").
+   * Resultado: entrada ~2,450 → ~1,500 tokens por llamada de acción (−~40%) y salida
+     −~25%, verificado con remedición del fixture (`_ola3-cierre`).
+   * Considerado y descartado: reordenar instrucciones-primero para el prompt caching de
+     OpenAI (tras el recorte el prefijo estático queda bajo el umbral de 1,024 tokens);
+     separar system/user (cambia el contrato `call_raw` de los cuatro backends, el mismo
+     costo por el que se difirió el estadio agéntico); check semántico de convergencia
+     acción↔paso discriminante (no calibrable léxicamente: pases y fallos comparten forma
+     superficial — queda para el juez LLM local de la Decisión 7).
+
+   La validación de calidad siguiente del carril 1 corresponde a la evaluación a nivel
+   dataset que desarrolla el equipo, que reemplaza al fixture de 20 POs como instrumento.
 9. **Pendientes de implementación.** Interacción del contrato nuevo con el few-shot
    (C1–C3); exposición en Fase 4 del razonamiento, las dos confianzas, los `qa_flags` y
    las capacidades del carril 3; calibración del juez local.
@@ -238,7 +293,7 @@ humana muestral.
 Ajusta el alcance de **ADR-14**: su restricción se mantiene para la llamada determinista y
 para las premisas factuales de la capa; deja de aplicar a las generalizaciones de dominio.
 Preserva **ADR-10** (la severidad la emite el LLM y la audita Fase 2) y reusa **ADR-07** y
-la infraestructura de **ADR-12**. **ADR-15** (corrección de la redacción vía conocimiento
+la infraestructura de **ADR-12**. **[ADR-15](ARD-15.md)** (corrección de la redacción vía conocimiento
 curado) queda superado por este marco (📘, encadenado): la diversidad que su KB buscaba la
 produce el diagnóstico diferencial de la llamada de acción sin conocimiento curado; el flag
 opt-in de #151 permanece en la llamada 1 y no se revierte. Un borrador previo no versionado
