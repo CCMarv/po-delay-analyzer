@@ -5,7 +5,7 @@
 * **Referencias:** Consulta de Ronda 2 (Mentor, 2026-06-18), Discussion #57, PR #62
 
 ## Contexto y Problema
-Al elevar el umbral de Vendor a 24 horas (ver [ADR-06](ADR-06.md)) y evaluar pedidos con registros incompletos, surgieron casos donde un pedido se consideraba tardío pero no se le podía imputar responsabilidad directa a ninguno de los tres actores principales (Vendor, Carrier o DC). El reto de diseño consistía en clasificar estos pedidos sin forzar una asignación errónea por descarte, lo cual reintroduciría sesgos en el modelo y alteraría las métricas de negocio.
+Al elevar el umbral de Vendor a 24 horas (ver [ADR-06b](ARD-06b.md)) y evaluar pedidos con registros incompletos, surgieron casos donde un pedido se consideraba tardío pero no se le podía imputar responsabilidad directa a ninguno de los tres actores principales (Vendor, Carrier o DC). El reto de diseño consistía en clasificar estos pedidos sin forzar una asignación errónea por descarte, lo cual reintroduciría sesgos en el modelo y alteraría las métricas de negocio.
 
 ## Opciones Consideradas
 

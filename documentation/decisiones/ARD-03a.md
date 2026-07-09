@@ -1,6 +1,6 @@
 # ADR-03a · Etapa VENDOR: Medición inicial por residuo operativo
 
-* **Estatus:** 📘 **SUPERADO** por el [ADR-03b · Etapa VENDOR: Medición por señal directa STA push](ADR-03b.md)
+* **Estatus:** 📘 **SUPERADO** por el [ADR-03b · Etapa VENDOR: Medición por señal directa STA push](ARD-03b.md)
 * **Contexto Técnico:** Fase 2 / Primer modelo de atribución de retrasos
 * **Referencias:** PR #59 (Desplegado el 15 de junio de 2026)
 

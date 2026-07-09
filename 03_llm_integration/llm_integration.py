@@ -39,6 +39,7 @@ import os
 import re
 import sys
 import time
+import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
@@ -68,6 +69,13 @@ DEFAULT_TEMPERATURE = 0.3
 DEFAULT_MAX_TOKENS = 512
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_MAX_RETRIES = 3
+# Llamada de acción (ARD-16): el contrato híbrido no cabe en 512 tokens. Se mantiene
+# 1536 tras el cierre del carril 1 (que redujo la salida ~25%): el tope no cobra si no
+# se usa y un JSON truncado a media llave se paga en reintentos de QA; degradación si
+# llm_config.json no trae la clave max_tokens_action.
+DEFAULT_MAX_TOKENS_ACTION = 1536
+# Reintentos del pase de autocrítica (ARD-16 Decisión 7): 1 llamada + 2 regeneraciones.
+DEFAULT_ACTION_QA_RETRIES = 2
 
 # --- Operativo (despliegue) ---
 # Cambia por entorno, no por lógica del producto: se lee de .env con default en
@@ -214,7 +222,174 @@ def _examples_block(examples: Optional[List[Dict[str, Any]]]) -> str:
     return "\n".join(partes)
 
 
-def build_prompt(row: pd.Series, examples: Optional[List[Dict[str, Any]]] = None) -> str:
+# ============================================================
+# Contexto de dominio condicional por (actor × señal) (#151)
+# ============================================================
+# El LLM producía acciones correctas pero HOMOGÉNEAS dentro de una etapa: casi no se
+# diferenciaban entre POs del mismo responsable. La diversidad no puede venir del
+# conocimiento compartido-por-actor (idéntico para todas sus POs); viene de lo que
+# DIFIERE entre POs. Por eso se inyecta, según las SEÑALES que ya emite Fase 2, un
+# repertorio de acciones de referencia acotado al caso (no la base entera).
+#
+# Recuperación = lookup determinista, NO RAG: la clave de ruteo (stage_primary) ya está
+# calculada en Fase 2, así que basta un diccionario indexado por (actor × señal). Sin
+# embeddings: reproducible y testeable.
+
+_DEFAULT_DOMAIN_KB_PATH = Path(__file__).resolve().parent / "domain_kb.json"
+
+# Umbrales de Fase 2: FUENTE ÚNICA en rules_config.json (no se duplican aquí). La banda de
+# magnitud normaliza el exceso por la tolerancia de cada tramo leyendo de ahí.
+_RULES_CONFIG_PATH = (
+    Path(__file__).resolve().parent.parent / "02_clasif_reglas_negocio" / "rules_config.json"
+)
+_rules_thresholds_cache: Optional[Dict[str, float]] = None
+
+# Encabezados del bloque inyectado (constantes, no literales sueltos).
+_DOMAIN_HEADER = "CONTEXTO DE DOMINIO (relevante a esta PO):"
+_DOMAIN_LEVERS_LEAD = (
+    "Palancas y tensiones de dominio relevantes a las señales de esta PO "
+    "(úsalas como insumo para razonar la causa y construir UNA recomendación "
+    "anclada en las cifras; no las transcribas). Estas palancas están en horas; "
+    "no dejes de citar también el retraso en días en tu causa_raiz:"
+)
+_DEFAULT_BAND_CUTOFFS = (1.0, 3.0)
+
+# Etapa atribuida → campo de exceso que la banda de magnitud normaliza.
+_EXCESS_FIELD = {
+    "Vendor":  "excess_vendor_hrs",
+    "Carrier": "excess_carrier_hrs",
+    "DC":      "excess_dc_hrs",
+}
+# Claves de condición reconocidas por _cond_matches (una clave fuera de este set no matchea).
+_COND_BOOL_KEYS = ("is_rescheduled", "is_short_ship")
+_COND_STR_KEYS = ("dc_substage", "indeterminado_substage")
+
+
+def load_domain_kb(path=None) -> dict:
+    """Carga domain_kb.json (base de conocimiento de dominio) y devuelve su dict.
+
+    Input:  path opcional (str | Path); None usa el JSON junto a este módulo.
+    Output: dict con `band_cutoffs` y `actors` (primer + palancas por actor).
+    """
+    kb_path = Path(path) if path else _DEFAULT_DOMAIN_KB_PATH
+    with open(kb_path, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def _load_rules_thresholds(path=None) -> Dict[str, float]:
+    """Devuelve {nombre_umbral: valor} desde rules_config.json de Fase 2 (fuente única).
+
+    Cachea el default a nivel de módulo (se lee una vez, no por PO). Un `path` explícito
+    (tests) no usa ni puebla el cache.
+    """
+    global _rules_thresholds_cache
+    if path is not None:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        return {k: v["value"] for k, v in data["thresholds"].items()}
+    if _rules_thresholds_cache is None:
+        data = json.loads(_RULES_CONFIG_PATH.read_text(encoding="utf-8"))
+        _rules_thresholds_cache = {k: v["value"] for k, v in data["thresholds"].items()}
+    return _rules_thresholds_cache
+
+
+def _excess_band(row: pd.Series, actor: str, cutoffs=_DEFAULT_BAND_CUTOFFS) -> Optional[str]:
+    """Banda de magnitud del exceso de la etapa ATRIBUIDA: 'bajo' / 'medio' / 'alto'.
+
+    r = exceso_de_la_etapa / umbral_de_Fase_2 de ese tramo. cutoffs=(lo, hi):
+    r ≤ lo → bajo · lo < r ≤ hi → medio · r > hi → alto. Devuelve None cuando la banda
+    no aplica (Indeterminado / On-Time / actor sin campo de exceso, o exceso ≤ 0). En
+    Indeterminado el exceso se retira a propósito (ADR-14), así que no hay banda.
+    """
+    field = _EXCESS_FIELD.get(actor)
+    if not field:
+        return None
+    try:
+        excess = float(row.get(field, 0) or 0)
+    except (TypeError, ValueError):
+        return None
+    if excess <= 0:
+        return None
+    thr = _load_rules_thresholds()
+    if actor == "DC":
+        threshold = thr["dock_hrs"] if row.get("dc_substage") == "Dock" else thr["yard_wait_hrs"]
+    elif actor == "Vendor":
+        threshold = thr["vendor_gap_hrs"]
+    else:  # Carrier
+        threshold = thr["carrier_lag_hrs"]
+    if threshold <= 0:
+        return None
+    r = excess / threshold
+    lo, hi = cutoffs
+    if r <= lo:
+        return "bajo"
+    if r <= hi:
+        return "medio"
+    return "alto"
+
+
+def _one_cond_ok(key: str, want, row: pd.Series, band: Optional[str]) -> bool:
+    """Evalúa UNA condición del `cond`. Clave no reconocida → False (falla cerrada)."""
+    if key == "excess_band":
+        return band == want
+    if key == "hot":
+        return (row.get("HOT_PO_FLAG", 0) == 1) == bool(want)
+    if key in _COND_BOOL_KEYS:
+        return bool(row.get(key, False)) == bool(want)
+    if key in _COND_STR_KEYS:
+        return str(row.get(key, "")) == str(want)
+    return False
+
+
+def _cond_matches(cond: dict, row: pd.Series, band: Optional[str]) -> bool:
+    """True si la fila cumple TODAS las condiciones de `cond` (AND lógico).
+
+    Claves reconocidas: is_rescheduled / is_short_ship (bool), hot (HOT_PO_FLAG == 1),
+    excess_band ('bajo'/'medio'/'alto', ya calculada), dc_substage / indeterminado_substage
+    (igualdad). Una clave no reconocida → la acción no aplica (falla cerrada; un lint del KB
+    caza el typo). `cond` vacío → True (acción incondicional del actor).
+    """
+    return all(_one_cond_ok(key, want, row, band) for key, want in cond.items())
+
+
+def select_domain_context(row: pd.Series, kb: Optional[dict]) -> str:
+    """Arma el bloque CONTEXTO DE DOMINIO acotado a ESTA PO, o '' si no aplica.
+
+    Rutea por stage_primary al bucket del actor en `kb`, calcula la banda de magnitud y
+    filtra las palancas a aquellas cuyas condiciones cumple la PO (vía _cond_matches).
+    Devuelve '' cuando kb es None/vacío, cuando el actor no está en el KB (On-Time,
+    Desconocido) o cuando no hay ni primer ni palancas que mostrar — así, con kb=None el
+    prompt no cambia (invariante zero-shot).
+    """
+    if not kb:
+        return ""
+    actor = str(row.get("stage_primary", ""))
+    entry = kb.get("actors", {}).get(actor)
+    if not entry:
+        return ""
+    cutoffs = kb.get("band_cutoffs", _DEFAULT_BAND_CUTOFFS)
+    band = _excess_band(row, actor, cutoffs)
+    lines = [_DOMAIN_HEADER]
+    primer = str(entry.get("primer", "")).strip()
+    if primer:
+        lines.append(f"- {primer}")
+    matched = [
+        lever["lever"]
+        for lever in entry.get("levers", [])
+        if "lever" in lever and _cond_matches(lever.get("cond", {}), row, band)
+    ]
+    if matched:
+        lines.append(_DOMAIN_LEVERS_LEAD)
+        lines.extend(f"- {a}" for a in matched)
+    if len(lines) == 1:  # solo el encabezado, sin contenido útil
+        return ""
+    return "\n".join(lines)
+
+
+def build_prompt(
+    row: pd.Series,
+    examples: Optional[List[Dict[str, Any]]] = None,
+    kb: Optional[dict] = None,
+) -> str:
     """
     Construye el prompt para el LLM a partir de una fila del DataFrame.
 
@@ -245,6 +420,10 @@ def build_prompt(row: pd.Series, examples: Optional[List[Dict[str, Any]]] = None
         examples: lista opcional de ejemplos resueltos (few-shot). Cada uno es un dict
             con los campos curados de entrada y la salida ideal (ver `_format_example`).
             None o lista vacía → zero-shot.
+        kb: dict opcional de la base de conocimiento de dominio (domain_kb.json). Si se
+            pasa, `select_domain_context` inyecta un bloque CONTEXTO DE DOMINIO con el
+            primer del actor (stage_primary) y las acciones de referencia cuyas condiciones
+            cumple la PO. None (default) → sin bloque, prompt byte-idéntico al zero-shot.
 
     Returns:
         Prompt formateado listo para enviar al LLM.
@@ -291,6 +470,36 @@ def build_prompt(row: pd.Series, examples: Optional[List[Dict[str, Any]]] = None
         ]
     metric_lines[-1] += "\n"
 
+    # Contexto de dominio condicional (#151): vacío salvo que se pase kb. Con kb=None el
+    # bloque no se añade y el prompt es byte-idéntico al zero-shot histórico.
+    domain_block = select_domain_context(row, kb)
+
+    # Cierre de CÓMO RAZONAR sobre la acción (#151): con kb=None se preserva el cierre
+    # histórico (dos líneas ilustrativas) para no tocar el prompt zero-shot que sirve de
+    # baseline de no-regresión. Con kb, esas dos líneas fijas se sustituyen por un puntero
+    # a las palancas por-PO de CONTEXTO DE DOMINIO, para no competir con ellas como plantilla.
+    if kb:
+        accion_guidance = (
+            "La acción se dirige al responsable de la etapa MEDIDA —no al que sugiere el motivo "
+            "si discrepa— y su firmeza depende del impacto: la magnitud del exceso/retraso y los "
+            "agravantes (hot PO, short ship) marcan si toca un escalamiento urgente o una "
+            "revisión operativa ligera. Las palancas y tensiones de CONTEXTO DE DOMINIO (arriba) "
+            "son el insumo concreto para esa firmeza y ese destinatario en ESTE PO: úsalas para "
+            "razonar la acción, no un fraseo fijo.\n"
+        )
+    else:
+        accion_guidance = (
+            "La acción se dirige al responsable de la etapa MEDIDA —no al que sugiere el motivo "
+            "si discrepa— y su firmeza depende del impacto: la magnitud del exceso/retraso y los "
+            "agravantes (hot PO, short ship) marcan si toca un escalamiento urgente o una "
+            "revisión operativa ligera. El fraseo y el tono varían según el caso; estas dos "
+            "líneas solo ilustran el rango, no son plantillas:\n"
+            "- \"Abrir un reclamo con [transportista] por las 30.8 h de exceso de tránsito y "
+            "exigir un plan correctivo con fecha.\"\n"
+            "- \"Revisar con el equipo del [DC] el tiempo de descarga, que concentra el grueso "
+            "del retraso.\"\n"
+        )
+
     prompt_lines = [
         "Eres un analista experto en cadena de suministro. "
         "Analiza este Purchase Order retrasado.\n",
@@ -311,6 +520,7 @@ def build_prompt(row: pd.Series, examples: Optional[List[Dict[str, Any]]] = None
         f"- Etapa primaria del retraso: {row.get('stage_primary', 'Desconocido')}",
         f"- Causas múltiples: {row.get('stage_multi', 'Ninguna')}\n",
         "\n".join(context_lines) + "\n",
+        *([domain_block + "\n"] if domain_block else []),
         _examples_block(examples),
         "INSTRUCCIONES:",
         "Tu trabajo es INTERPRETAR los datos dados, NO calcular. Usa ÚNICAMENTE las "
@@ -335,15 +545,7 @@ def build_prompt(row: pd.Series, examples: Optional[List[Dict[str, Any]]] = None
         "a la misma etapa → la evidencia lo respalda), que discrepen (apunta a otra causa → "
         "di en qué difieren) o que el motivo sea vacío o 'Not applicable' (indícalo sin "
         "evaluarlo). Decide con los datos de ESTE PO, no por la forma de los ejemplos.\n",
-        "La acción se dirige al responsable de la etapa MEDIDA —no al que sugiere el motivo "
-        "si discrepa— y su firmeza depende del impacto: la magnitud del exceso/retraso y los "
-        "agravantes (hot PO, short ship) marcan si toca un escalamiento urgente o una "
-        "revisión operativa ligera. El fraseo y el tono varían según el caso; estas dos "
-        "líneas solo ilustran el rango, no son plantillas:\n"
-        "- \"Abrir un reclamo con [transportista] por las 30.8 h de exceso de tránsito y "
-        "exigir un plan correctivo con fecha.\"\n"
-        "- \"Revisar con el equipo del [DC] el tiempo de descarga, que concentra el grueso "
-        "del retraso.\"\n",
+        accion_guidance,
         "Genera un análisis en formato JSON. "
         "Responde ÚNICAMENTE con el JSON, sin texto adicional.\n",
         "Formato requerido:",
@@ -366,6 +568,829 @@ def build_prompt(row: pd.Series, examples: Optional[List[Dict[str, Any]]] = None
     ]
 
     return "\n".join(prompt_lines)
+
+
+# ============================================================
+# Llamada de acción (ARD-16, ola 1): contrato híbrido + checks por regla
+# ============================================================
+# Segunda llamada por PO detrás del flag opt-in `action_call` (patrón de ARD-15:
+# default apagado, producción intacta). La llamada 1 diagnostica (etapa/causa/severidad,
+# auditada por Fase 2); esta llamada PLANIFICA: hipótesis de mecanismo bajo el nivel
+# etapa, plan (inmediata/correctiva/preventiva) e hipótesis alternativa con su paso
+# discriminante. Perímetro de ARD-16 Decisión 2: los hechos provienen solo de los datos
+# (cifras citadas textualmente — ADR-14 se conserva para las premisas factuales); las
+# generalizaciones de dominio del modelo quedan permitidas y MARCADAS en la redacción.
+# Sin playbook y sin few-shot de acciones (descartes registrados en el ARD).
+
+# Llaves de nivel superior del contrato, EN ORDEN. El orden es requisito, no estilo:
+# condiciona el plan al razonamiento ya generado (generación autoregresiva). La llave
+# `elicitacion` de la ola 3 se retiró en el cierre del carril 1 (ARD-16 D8).
+_ACTION_TOP_KEYS = (
+    "razonamiento", "hipotesis_principal", "hipotesis_alternativa", "confianza",
+)
+
+# Campos planos que devuelve el parseo del contrato; todos son de texto (la confianza
+# va aparte) y participan del check de esquema y del de cifras ∈ input.
+_ACTION_TEXT_FIELDS = (
+    "razonamiento", "hipotesis", "hipotesis_evidencia",
+    "accion_inmediata", "accion_correctiva", "accion_preventiva",
+    "hipotesis_alt", "paso_discriminante",
+)
+
+# Verbos meta (lista CERRADA de ARD-16 Decisión 3): no cuentan como acción principal.
+# Detección por stem del primer token (cubre conjugaciones: revisar/revise/revisa...)
+# más el compuesto dar/hacer seguimiento.
+_META_VERB_STEMS = ("revis", "analiz", "investig", "monitor")
+_META_COMPOUND_LEADS = ("dar", "da", "de", "dando", "hacer", "haz", "haga", "haciendo")
+
+# Términos que satisfacen la decisión del faltante ante short ship (ARD-16 Decisión 3).
+# Stems, no palabras completas: la corrida ola3-fix-seed mostró falsos positivos con
+# planes que SÍ decidían ("solicitar su re-envío", "espera al faltante") pero en formas
+# fuera de la lista, y cada falso positivo cuesta hasta 2 regeneraciones (llamadas API).
+_SHORT_SHIP_DECISION_KEYS = (
+    "re-emit", "reemit", "re emit", "re-envi", "reenvi", "re envi",
+    "reponer", "reposicion", "resurt", "esper", "cancel",
+)
+
+# Términos con los que la HIPÓTESIS (el campo solo, no el razonamiento) reconoce la
+# indeterminación en POs Indeterminado (ARD-16 ola 2). Compartida con la tasa del
+# evaluador (patrón de is_meta_action: check y métrica usan la misma lista).
+_INDET_HYP_KEYS = (
+    "indetermin", "dato faltante", "no atribuible", "no se puede atribuir",
+    "esclarecer", "por confirmar", "si se confirma",
+)
+# "si" condicional como token: la formulación que el prompt pide ("si <dato> muestra X,
+# el mecanismo es A"). El gate de la ola 2 mostró el hueco: las 4 hipótesis Indeterminado
+# salieron condicionales pero sin palabra literal de la lista, y el check las marcaba
+# (mismo tipo de hueco de vocabulario que sin_decision_faltante en la ola 1). Solo se
+# evalúa en POs Indeterminado, donde el falso positivo del token es mínimo ("sí" afirmativo
+# también normaliza a "si"; aceptado y raro dentro de una hipótesis).
+_COND_SI_RE = re.compile(r"\bsi\b")
+
+# Grupos de reason_group_manual que apuntan a una etapa (línea de concordancia
+# motivo↔etapa de la llamada 2; Unknown / On-Time no son etapas evaluables).
+_REASON_STAGE_GROUPS = ("Vendor", "Carrier", "DC")
+
+# Alias en español de cada etapa para el check `etapa_incorrecta`: el gate de la ola 2
+# mostró el falso positivo — el modelo escribe "proveedor" y el check buscaba el literal
+# "Vendor" (100197/100318). Comparación sobre texto normalizado (_norm_text).
+_STAGE_ALIASES = {
+    "Vendor": ("vendor", "proveedor"),
+    "Carrier": ("carrier", "transportista"),
+    "DC": ("dc", "centro de distribucion"),
+}
+
+# Cifras: el MISMO patrón se aplica al prompt y a la salida; la comparación es por
+# float, de modo que 4.2 y 4.20 cuentan como la misma cifra.
+_NUMBER_RE = re.compile(r"\d+(?:[.,]\d+)?")
+
+
+def _norm_text(texto) -> str:
+    """Minúsculas sin acentos, para comparar texto del LLM de forma robusta."""
+    sin_acentos = "".join(
+        c for c in unicodedata.normalize("NFD", str(texto))
+        if unicodedata.category(c) != "Mn"
+    )
+    return sin_acentos.lower()
+
+
+def reconoce_indeterminacion(texto) -> bool:
+    """True si una hipótesis reconoce la indeterminación (ARD-16 ola 2).
+
+    Dos vías: una clave literal de _INDET_HYP_KEYS ("indetermin", "dato faltante"...)
+    o la formulación condicional que el prompt pide (el "si" condicional como token,
+    _COND_SI_RE). Función ÚNICA para el check `indeterminado_sin_reconocer` y la tasa
+    del evaluador: los dos miden lo mismo por construcción.
+    """
+    t = _norm_text(texto)
+    return any(k in t for k in _INDET_HYP_KEYS) or bool(_COND_SI_RE.search(t))
+
+
+def compute_dataset_stats(df: pd.DataFrame) -> Dict[str, Any]:
+    """Estadísticos globales DETERMINISTAS para los comparativos de la llamada 2.
+
+    Se computan una vez por corrida sobre los tardíos (delay_days_calc > 0) del
+    DataFrame clasificado completo — no por PO ni sobre una muestra:
+      - delay_values / delay_median: retraso total de todos los tardíos.
+      - excess[etapa]: valores y mediana del exceso de esa etapa ENTRE los POs
+        ATRIBUIDOS a ella (la magnitud típica cuando esa etapa es la causa).
+    ARD-16 Decisión 3: estos comparativos van al prompt de TODA PO — presentarlos
+    condicionalmente introduciría juicio por selección.
+    """
+    tardios = df[df["delay_days_calc"] > 0]
+    delays = tardios["delay_days_calc"].dropna().astype(float)
+    stats: Dict[str, Any] = {
+        "delay_values": delays.tolist(),
+        "delay_median": float(delays.median()) if len(delays) else 0.0,
+        "excess": {},
+    }
+    for etapa, campo in _EXCESS_FIELD.items():
+        if campo in tardios.columns:
+            serie = tardios.loc[
+                tardios["stage_primary"] == etapa, campo
+            ].dropna().astype(float)
+        else:
+            serie = pd.Series(dtype=float)
+        stats["excess"][etapa] = {
+            "values": serie.tolist(),
+            "median": float(serie.median()) if len(serie) else 0.0,
+        }
+
+    # --- Historial dentro del dataset (agregados por actor, patrón de señales y
+    # short-ship global), precomputado una vez por corrida. El bloque HISTORIAL del
+    # prompt que los renderizaba se retiró en el cierre del carril 1 (uso medido
+    # 0-1/20, ARD-16 D8); los agregados se conservan como insumo del condicional
+    # agéntico de ARD-16 D4. Guards por columna: un df mínimo (p. ej. de la suite)
+    # produce dicts vacíos.
+    stats["vendor_history"] = {}
+    if "VENDOR_NAME" in df.columns:
+        for nombre, g in df.groupby("VENDOR_NAME"):
+            g_tardias = g[g["delay_days_calc"] > 0]
+            attr = g_tardias[g_tardias["stage_primary"] == "Vendor"]
+            stats["vendor_history"][str(nombre)] = {
+                "n_pos": int(len(g)),
+                "n_tardias": int(len(g_tardias)),
+                "n_attr": int(len(attr)),
+                "exceso_values": (
+                    attr["excess_vendor_hrs"].dropna().astype(float).tolist()
+                    if "excess_vendor_hrs" in g.columns else []
+                ),
+                "n_short": (
+                    int(g["_short_ship"].fillna(False).astype(bool).sum())
+                    if "_short_ship" in g.columns else 0
+                ),
+                "n_resched": (
+                    int(g["is_rescheduled"].fillna(False).astype(bool).sum())
+                    if "is_rescheduled" in g.columns else 0
+                ),
+            }
+    stats["carrier_history"] = {}
+    if "CARRIER_PARTY_NAME" in df.columns:
+        for nombre, g in df.groupby("CARRIER_PARTY_NAME"):
+            g_tardias = g[g["delay_days_calc"] > 0]
+            attr = g_tardias[g_tardias["stage_primary"] == "Carrier"]
+            stats["carrier_history"][str(nombre)] = {
+                "n_pos": int(len(g)),
+                "n_tardias": int(len(g_tardias)),
+                "n_attr": int(len(attr)),
+                "exceso_values": (
+                    attr["excess_carrier_hrs"].dropna().astype(float).tolist()
+                    if "excess_carrier_hrs" in g.columns else []
+                ),
+            }
+    # Patrón de señales sobre los TARDÍOS: llave (short_ship, rescheduled, hot) y la
+    # distribución de etapa medida dentro del grupo (base rate de evidencia→etapa).
+    stats["pattern"] = {}
+    señales = ("_short_ship", "is_rescheduled", "HOT_PO_FLAG")
+    if all(c in tardios.columns for c in señales) and len(tardios):
+        llaves = tardios.apply(
+            lambda r: (
+                bool(r["_short_ship"]) and not pd.isna(r["_short_ship"]),
+                bool(r["is_rescheduled"]) and not pd.isna(r["is_rescheduled"]),
+                (r["HOT_PO_FLAG"] == 1) if not pd.isna(r["HOT_PO_FLAG"]) else False,
+            ),
+            axis=1,
+        )
+        for llave, grupo in tardios.groupby(llaves):
+            stats["pattern"][llave] = {
+                "n": int(len(grupo)),
+                "por_etapa": {
+                    str(k): int(v)
+                    for k, v in grupo["stage_primary"].value_counts().items()
+                },
+            }
+    # Short-ship global entre tardíos. Las cajas faltantes NO se precalculan
+    # (decisión congelada de la ola): solo conteo y fill rate mediano.
+    if "_short_ship" in tardios.columns:
+        ss = tardios[tardios["_short_ship"].fillna(False).astype(bool)]
+    else:
+        ss = tardios.iloc[0:0]
+    fill = (ss["_fill_rate"].dropna().astype(float)
+            if "_fill_rate" in ss.columns else pd.Series(dtype=float))
+    stats["short_ship_global"] = {
+        "n_tardios": int(len(tardios)),
+        "n_short": int(len(ss)),
+        "fill_values": fill.tolist(),
+    }
+    return stats
+
+
+def _percentile_rank(values: List[float], x: float) -> Optional[int]:
+    """Percentil entero (0-100) de x dentro de values: % de valores estrictamente
+    menores. Determinista; None si la lista está vacía."""
+    if not values:
+        return None
+    return round(100 * sum(1 for v in values if v < x) / len(values))
+
+
+def _reschedule_line(row: pd.Series) -> str:
+    """Línea de la magnitud del reschedule en horas (primera cita aprobada → vigente).
+
+    Magnitud hoy oculta al prompt (ARD-16 Decisión 3). No está precalculada en el
+    pipeline: se deriva determinista de DT_APPT_CURRENT_APPROVED −
+    DT_APPT_FIRST_APPROVED. Valor neutro cuando no hubo reprogramación (línea
+    incondicional, sin juicio por selección).
+    """
+    if not bool(row.get("is_rescheduled", False)):
+        return "- Reprogramación de la cita: sin reprogramación (0.0 h)"
+    try:
+        delta = (
+            pd.Timestamp(row.get("DT_APPT_CURRENT_APPROVED"))
+            - pd.Timestamp(row.get("DT_APPT_FIRST_APPROVED"))
+        )
+        horas = delta.total_seconds() / 3600
+    except (TypeError, ValueError):
+        return "- Reprogramación de la cita: magnitud no disponible (falta timestamp)"
+    if pd.isna(horas):
+        return "- Reprogramación de la cita: magnitud no disponible (falta timestamp)"
+    return (
+        f"- Reprogramación de la cita: {horas:+.1f} horas entre la primera cita "
+        "aprobada y la vigente"
+    )
+
+
+def _reason_concordance_line(row: pd.Series) -> str:
+    """Línea de concordancia motivo↔etapa medida (ARD-16 ola 2, meta-señal REASON_DSC).
+
+    DETERMINISTA: compara reason_group_manual (mapeo REASON_DSC → etapa de Fase 2,
+    classifier_core) contra stage_primary — no depende del juicio de la llamada 1, que
+    hereda la varianza entre corridas. Incondicional con 3 estados (concuerda / discrepa /
+    no evaluable), como la línea de reschedule: sin juicio por selección. La discrepancia
+    se presenta como meta-señal del PROCESO DE ANOTACIÓN (habilita hipótesis de proceso),
+    nunca como etapa alternativa: la regla vigente de no promover el REASON_DSC no cambia.
+    """
+    grupo = str(row.get("reason_group_manual", "Unknown"))
+    etapa = str(row.get("stage_primary", "Desconocido"))
+    if grupo not in _REASON_STAGE_GROUPS:
+        return ("- Concordancia motivo↔etapa: no evaluable (el motivo anotado no "
+                "apunta a una etapa).")
+    if grupo == etapa:
+        return (f"- Concordancia motivo↔etapa: el motivo anotado apunta a la misma "
+                f"etapa medida ({etapa}).")
+    return (
+        f"- Concordancia motivo↔etapa: DISCREPA — el motivo anotado apunta a {grupo} "
+        f"y la etapa medida es {etapa}. Trátala como meta-señal del PROCESO DE "
+        "ANOTACIÓN (p. ej. handoff mal registrado o anotación por inercia): puede "
+        "sustentar una hipótesis de proceso, nunca sustituir la etapa medida."
+    )
+
+
+def _order_magnitude_lines(row: pd.Series) -> List[str]:
+    """Bloque MAGNITUDES DE LA ORDEN: los datos hoy ocultos al prompt (ARD-16 D3).
+
+    Incondicionales, con valor neutro cuando no aplican: tamaño de la orden, cajas
+    embarcadas + fill rate real (con el umbral de short ship al lado, para que el
+    modelo dimensione el margen) y la magnitud de la reprogramación en horas.
+    """
+    lineas = ["MAGNITUDES DE LA ORDEN:"]
+    pedidas = row.get("NUM_CASES_ORDERED")
+    if pedidas is not None and not pd.isna(pedidas):
+        lineas.append(f"- Tamaño de la orden: {float(pedidas):.0f} cajas pedidas")
+    else:
+        lineas.append("- Tamaño de la orden: no disponible")
+    embarcadas = row.get("NUM_CASES_SHIPPED")
+    fill = row.get("_fill_rate")
+    umbral_ss = _load_rules_thresholds()["short_ship_fill_rate"] * 100
+    if (embarcadas is not None and not pd.isna(embarcadas)
+            and fill is not None and not pd.isna(fill)):
+        lineas.append(
+            f"- Cajas embarcadas: {float(embarcadas):.0f} (fill rate: "
+            f"{float(fill) * 100:.1f}%; umbral de short ship: por debajo de "
+            f"{umbral_ss:.0f}%)"
+        )
+    else:
+        lineas.append("- Cajas embarcadas: no disponible")
+    lineas.append(_reschedule_line(row))
+    return lineas
+
+
+def _comparative_lines(row: pd.Series, stats: Dict[str, Any]) -> List[str]:
+    """Bloque COMPARATIVOS DEL DATASET: percentiles y medianas ya calculados.
+
+    Incondicionales para toda PO (ARD-16 D3). La línea del exceso solo existe para
+    etapas ATRIBUIDAS (Vendor/Carrier/DC): en Indeterminado el exceso se retira por
+    ADR-14 — regla por etapa, no juicio por PO; medianas y percentil del delay sí van.
+    """
+    lineas = ["COMPARATIVOS DEL DATASET (ya calculados; no los recalcules):"]
+    delay = float(row.get("delay_days_calc", 0) or 0)
+    p_delay = _percentile_rank(stats.get("delay_values", []), delay)
+    if p_delay is not None:
+        lineas.append(
+            f"- El retraso total de esta PO ({delay:.2f} días) está en el percentil "
+            f"{p_delay} de los POs tardíos del dataset "
+            f"(mediana: {stats['delay_median']:.2f} días)."
+        )
+    etapa = str(row.get("stage_primary", ""))
+    campo = _EXCESS_FIELD.get(etapa)
+    if campo:
+        exceso = float(row.get(campo, 0) or 0)
+        info = stats.get("excess", {}).get(etapa, {})
+        p_exc = _percentile_rank(info.get("values", []), exceso)
+        if p_exc is not None:
+            lineas.append(
+                f"- El exceso de {etapa} de esta PO ({exceso:.1f} h) está en el "
+                f"percentil {p_exc} de los POs tardíos atribuidos a {etapa} "
+                f"(mediana de esa etapa: {info['median']:.1f} h)."
+            )
+    medianas = stats.get("excess", {})
+    if medianas:
+        partes = " · ".join(
+            f"{et} {medianas[et]['median']:.1f} h"
+            for et in ("Vendor", "Carrier", "DC") if et in medianas
+        )
+        lineas.append(f"- Medianas de exceso por etapa entre tardíos: {partes}.")
+    return lineas
+
+
+def build_action_prompt(
+    row: pd.Series,
+    diagnosis: Dict[str, Any],
+    stats: Dict[str, Any],
+) -> str:
+    """Construye el prompt de la LLAMADA DE ACCIÓN (llamada 2, ARD-16 ola 1).
+
+    Rol: planner de abastecimiento con autoridad de decisión, no analista que asesora
+    (el antídoto directo a la meta-acción: quien ejecuta no puede delegar). Recibe el
+    diagnóstico de la llamada 1 como fuente de verdad — sin esa ancla el modelo
+    re-diagnosticaría la etapa que Fase 2 ya validó — y pide el contrato híbrido
+    razonamiento → hipotesis_principal{hipotesis, evidencia, plan{...}}
+    → hipotesis_alternativa{hipotesis, paso_discriminante} → confianza, con las llaves
+    EN ORDEN. Sin límite de longitud por campo (a diferencia de la llamada 1).
+
+    Los bloques DATOS/TIMELINE/MÉTRICAS/CONTEXTO espejan build_prompt para que ambas
+    llamadas vean los mismos hechos; se suman las magnitudes destapadas
+    (_order_magnitude_lines) y los comparativos globales (_comparative_lines).
+
+    Cierre del carril 1 (ARD-16 D8): se retiraron el auto-cuestionario de elicitación,
+    el glosario de industria y el historial del dataset — costo alto en tokens con uso
+    medido casi nulo en el fixture (glosario 1-3/20, historial 0-1/20) y sin mejora en
+    el gate; las instrucciones se compactaron y las condicionales por etapa se emiten
+    solo cuando aplican. El bloque de instrucciones compite por la atención del modelo
+    objetivo (gpt-4o-mini): menos reglas, sin solaparse, se siguen mejor.
+
+    Args:
+        row: fila del DataFrame clasificado (una PO tardía).
+        diagnosis: dict devuelto por la llamada 1 (causa_raiz, severidad, ...).
+        stats: dict de compute_dataset_stats sobre el DataFrame completo.
+
+    Returns:
+        Prompt de la llamada de acción, listo para backend.call_raw().
+    """
+    stage = row.get("stage_primary", "Desconocido")
+
+    hot_flag = "Sí" if row.get("HOT_PO_FLAG", 0) == 1 else "No"
+    short_ship = "Sí" if row.get("_short_ship", False) else "No"
+    rescheduled = "Sí" if row.get("is_rescheduled", False) else "No"
+    context_lines = [
+        "CONTEXTO ADICIONAL:",
+        f"- ¿Es Hot PO (urgente)? {hot_flag}",
+        f"- ¿Es short ship (envío incompleto)? {short_ship}",
+        f"- ¿Se reprogramó la cita de entrega? {rescheduled}",
+    ]
+    if stage == "Indeterminado":
+        substage = row.get("indeterminado_substage", "")
+        if substage:
+            context_lines.append(f"- Sub-categoría INDETERMINADO: {substage}")
+    context_lines.append(
+        f"- Código de motivo registrado por el DC: {row.get('REASON_DSC', 'No registrado')}"
+    )
+    context_lines.append(_reason_concordance_line(row))
+
+    # Espejo de build_prompt: en Indeterminado los excesos se retiran (ADR-14).
+    metric_lines = [
+        "MÉTRICAS CALCULADAS:",
+        f"- Días de retraso: {row.get('delay_days_calc', 0):.2f} días",
+        f"- Espera en patio (yard): {row.get('yard_wait_calc_hrs', 0):.1f} horas",
+        f"- Tiempo de descarga (dock): {row.get('dock_calc_hrs', 0):.1f} horas",
+    ]
+    if stage != "Indeterminado":
+        metric_lines += [
+            f"- Exceso del proveedor: {row.get('excess_vendor_hrs', 0):.1f} horas",
+            f"- Exceso del transportista: {row.get('excess_carrier_hrs', 0):.1f} horas",
+            f"- Exceso del centro de distribución: {row.get('excess_dc_hrs', 0):.1f} horas",
+        ]
+    metric_lines[-1] += "\n"
+
+    magnitude_lines = _order_magnitude_lines(row)
+    magnitude_lines[-1] += "\n"
+    comparative_lines = _comparative_lines(row, stats)
+    comparative_lines[-1] += "\n"
+
+    # Diagnóstico diferencial (ARD-16 ola 2): la regla mecanismo-vs-etiqueta es genérica
+    # para toda etapa; SOLO Vendor recibe el pointer de señales (fill rate /
+    # reprogramación) porque ahí está el síntoma del baseline (5/8 hipótesis convergen a
+    # "capacidad del proveedor"). Condicional por etapa determinista (patrón de #151),
+    # no un menú curado de causas (descarte de ARD-16, Opción B).
+    differential_lines = [
+        "DIAGNÓSTICO DIFERENCIAL (obligatorio):",
+        "- Tu hipótesis nombra un MECANISMO, no una etiqueta: qué falló y cómo eso "
+        "produce exactamente las cifras observadas. Una etiqueta genérica (\"capacidad "
+        "del proveedor\", \"congestión\") sin el dato que la sostiene no cuenta como "
+        "mecanismo.",
+        "- Las dos hipótesis nombran mecanismos DISTINTOS y DISTINGUIBLES: si la "
+        "alternativa es compatible con exactamente la misma evidencia y ningún dato "
+        "podría separarlas, elige otra alternativa.",
+        "- La evidencia de cada hipótesis cita las cifras que la favorecen SOBRE la "
+        "otra.",
+    ]
+    if stage == "Vendor":
+        differential_lines.append(
+            "- En esta etapa (Vendor), el fill rate y la magnitud de la reprogramación "
+            "separan mecanismos: un fill rate corto apunta a falta de producto "
+            "(inventario/producción); una entrega completa pero reprogramada apunta a "
+            "planificación/agenda, no a falta de producto."
+        )
+    differential_lines[-1] += "\n"
+
+    # Reparto multi-actor (ARD-16 ola 2): solo con stage_multi activo (≥2 etapas). El
+    # plan puede repartir correctiva/preventiva entre actores, pero la acción inmediata
+    # es UNA: la del cuello de botella (stage_primary, la etapa dominante por medición).
+    stage_multi = str(row.get("stage_multi", "Ninguno"))
+    multi_actor_lines = []
+    if " + " in stage_multi:
+        multi_actor_lines.append(
+            f"- Hay causas múltiples activas ({stage_multi}): las acciones correctiva "
+            "y preventiva pueden repartirse entre esos actores, cada una citando la "
+            "cifra de exceso de la etapa que atiende; la acción inmediata sigue siendo "
+            f"UNA sola, dirigida al cuello de botella (la etapa primaria: {stage})."
+        )
+
+    # Bloque de diagnóstico: la línea de causas múltiples solo cuando las hay (con
+    # etapa única imprimía "Causas múltiples: Vendor", que se lee como contradicción).
+    diagnostico_lines = [
+        "DIAGNÓSTICO VALIDADO (fuente de verdad, no lo re-litigues):",
+        f"- Etapa primaria del retraso: {stage}",
+    ]
+    if " + " in stage_multi:
+        diagnostico_lines.append(f"- Causas múltiples: {stage_multi}")
+    diagnostico_lines += [
+        f"- Causa raíz identificada: {diagnosis.get('causa_raiz', '')}",
+        f"- Severidad: {diagnosis.get('severidad', '')}\n",
+    ]
+
+    # TU TAREA condicional por etapa (cierre ARD-16 D8): la instrucción de
+    # indeterminación solo va a POs Indeterminado; en el resto era ruido que competía
+    # por atención. El paso de esclarecimiento como acción lo cubre la regla fusionada
+    # del plan (rama "mecanismo no confirmado"), única fuente de esa instrucción.
+    if stage == "Indeterminado":
+        tarea_lines = [
+            "TU TAREA:",
+            "La etapa es Indeterminado: tu hipótesis NO afirma un mecanismo como "
+            "causa. Reconoce explícitamente la indeterminación, identifica el dato "
+            "faltante que impide atribuir la etapa y formula el mecanismo en "
+            "condicional (\"si <dato> muestra X, el mecanismo es A; si muestra Y, "
+            "es B\").\n",
+        ]
+    else:
+        tarea_lines = [
+            "TU TAREA:",
+            f"La etapa ya está decidida ({stage}); tu trabajo es el mecanismo DEBAJO "
+            "de ese nivel (inventario o capacidad del proveedor, documentación, "
+            "congestión de puertas o de patio, planificación de rutas…) y el plan "
+            "que se deriva de él.\n",
+        ]
+
+    prompt_lines = [
+        "Eres el planner de abastecimiento responsable de esta Purchase Order "
+        "retrasada. Tienes autoridad para decidir los siguientes pasos: el plan que "
+        "emitas es el que se ejecuta, no una sugerencia para otro equipo.\n",
+        *diagnostico_lines,
+        "DATOS DE LA PO:",
+        f"- Número de PO: {row.get('PO_NBR', 'N/A')}",
+        f"- Proveedor: {row.get('VENDOR_NAME', 'N/A')}",
+        f"- Centro de distribución: {row.get('DC_LOC_NAME', 'N/A')}",
+        f"- Transportista: {row.get('CARRIER_PARTY_NAME', 'N/A')}\n",
+        "TIMELINE (fechas clave):",
+        f"- Fecha prometida (STA): {row.get('STA_DT', 'N/A')}",
+        f"- Fecha real de recibo: {row.get('RECPT_DT', 'N/A')}",
+        f"- Cita aprobada: {row.get('APPROVED_DT', 'N/A')}",
+        f"- Llegada del tráiler: {row.get('TRAILER_ARRIVE_DT', 'N/A')}",
+        f"- Check-in (inicio descarga): {row.get('CHECKIN_DT', 'N/A')}",
+        f"- Check-out (fin descarga): {row.get('CHECKOUT_DT', 'N/A')}\n",
+        *metric_lines,
+        *magnitude_lines,
+        *comparative_lines,
+        "\n".join(context_lines) + "\n",
+        "PERÍMETRO DE RAZONAMIENTO:",
+        "- Los HECHOS de esta PO y del dataset son solo los datos de arriba; toda "
+        "cifra que uses debe ser una de las dadas, citada textualmente. No inventes "
+        "hechos ni números.",
+        "- Tu conocimiento de dominio de cadena de suministro SÍ está habilitado "
+        "para generalizar; cuando lo uses, márcalo en la redacción (\"como patrón "
+        "de industria…\", \"típicamente…\"), separado de lo que los datos muestran.",
+        "- Si los datos no alcanzan para distinguir dos mecanismos, decláralo: eso "
+        "es lo que tu paso discriminante debe resolver.\n",
+        *tarea_lines,
+        *differential_lines,
+        "REGLAS DEL PLAN (obligatorias):",
+        "- La acción inmediata es UNA medida ejecutable hoy, con destinatario y "
+        "objeto concretos, y depende del estado del mecanismo: si un dato citado en "
+        "la evidencia ya lo sostiene, es coordinación o ejecución directa; si solo "
+        "lo infieres del patrón de la etapa, es conseguir hoy el dato preciso que "
+        "lo confirmaría o descartaría —el mismo de tu paso_discriminante—, nunca "
+        "una solicitud genérica de explicación, informe o plan de acción.",
+        "- Revisar, analizar, investigar, monitorear o dar seguimiento no cuentan "
+        "como acción principal; toda verificación nombra el DATO exacto y la "
+        "DECISIÓN que depende de él (\"obtener X: si X supera Y, hacer A; si no, B\").",
+        "- Si hubo short ship, el plan decide qué hacer con el faltante —re-emitir, "
+        "esperar o cancelar— y con qué criterio.",
+        *multi_actor_lines,
+        "- La etapa que nombres es exactamente la del diagnóstico.\n",
+        "Responde ÚNICAMENTE con el JSON, sin texto adicional, con las llaves EN "
+        "ESTE ORDEN:",
+        "{",
+        '  "razonamiento": "tu análisis del mecanismo: qué observas en los datos, '
+        'qué mecanismos son compatibles y cuál pesa más y por qué",',
+        '  "hipotesis_principal": {',
+        '    "hipotesis": "el mecanismo concreto bajo la etapa diagnosticada",',
+        '    "evidencia": "los datos citados que la sostienen",',
+        '    "plan": {',
+        '      "accion_inmediata": "qué se hace hoy, dirigida a quién y sobre qué; '
+        'si el mecanismo no está confirmado por un dato citado, es conseguir el '
+        'dato de tu paso_discriminante",',
+        '      "accion_correctiva": "qué corrige la causa en esta PO o este flujo",',
+        '      "accion_preventiva": "qué evita que se repita"',
+        "    }",
+        "  },",
+        '  "hipotesis_alternativa": {',
+        '    "hipotesis": "el segundo mecanismo compatible con los datos",',
+        '    "paso_discriminante": "el dato exacto que separa ambas hipótesis y la '
+        'decisión que depende de él"',
+        "  },",
+        '  "confianza": 0.0 a 1.0 (tu confianza en la hipótesis principal)',
+        "}",
+    ]
+    return "\n".join(prompt_lines)
+
+
+def is_meta_action(text) -> bool:
+    """True si la acción ARRANCA con un verbo meta (lista cerrada de ARD-16).
+
+    Es la MISMA lógica del check `verbo_meta` y de la métrica de la eval (#94):
+    prompt, check y métrica comparten la lista para no discrepar. Detecta por stem
+    del primer token normalizado (revise/revisa/revisar → revis-) y el compuesto
+    dar/hacer seguimiento en los primeros tokens. Texto vacío NO es meta (lo caza
+    el check de esquema, no este).
+    """
+    tokens = _norm_text(text).split()
+    if not tokens:
+        return False
+    if tokens[0].startswith(_META_VERB_STEMS):
+        return True
+    return tokens[0] in _META_COMPOUND_LEADS and "seguimiento" in tokens[:4]
+
+
+def _extract_numbers(text) -> set:
+    """Cifras del texto como set de floats (coma decimal normalizada a punto)."""
+    return {float(m.replace(",", ".")) for m in _NUMBER_RE.findall(str(text))}
+
+
+def _action_keys_in_order(raw_response: str) -> bool:
+    """True si las llaves de nivel superior aparecen en el crudo en el orden del
+    contrato. json.loads no falla por orden, así que se verifica sobre el TEXTO."""
+    posiciones = [raw_response.find(f'"{k}"') for k in _ACTION_TOP_KEYS]
+    return all(p >= 0 for p in posiciones) and posiciones == sorted(posiciones)
+
+
+def _parse_action_json(raw_response: str) -> Optional[Dict[str, Any]]:
+    """Extrae el contrato híbrido de la llamada de acción y lo APLANA a campos planos.
+
+    Estricto a propósito (sin dict de emergencia, a diferencia de _parse_llm_json):
+    los fallos los maneja el ciclo de QA (regeneración citando el defecto → qa_flags).
+    Las llaves faltantes devuelven "" — las caza el check de esquema, que además
+    reporta CUÁLES faltan.
+
+    Returns:
+        dict con _ACTION_TEXT_FIELDS + confianza_hipotesis, o None si la respuesta
+        no contiene un JSON parseable.
+    """
+    json_match = re.search(r'\{[\s\S]*\}', raw_response or "")
+    if not json_match:
+        return None
+    try:
+        parsed = json.loads(json_match.group())
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+
+    hp = parsed.get("hipotesis_principal")
+    hp = hp if isinstance(hp, dict) else {}
+    plan = hp.get("plan")
+    plan = plan if isinstance(plan, dict) else {}
+    ha = parsed.get("hipotesis_alternativa")
+    ha = ha if isinstance(ha, dict) else {}
+    try:
+        confianza = float(parsed.get("confianza", FALLBACK_CONFIDENCE))
+    except (TypeError, ValueError):
+        confianza = FALLBACK_CONFIDENCE
+
+    def _texto(valor) -> str:
+        return str(valor).strip() if valor is not None else ""
+
+    return {
+        "razonamiento": _texto(parsed.get("razonamiento")),
+        "hipotesis": _texto(hp.get("hipotesis")),
+        "hipotesis_evidencia": _texto(hp.get("evidencia")),
+        "accion_inmediata": _texto(plan.get("accion_inmediata")),
+        "accion_correctiva": _texto(plan.get("accion_correctiva")),
+        "accion_preventiva": _texto(plan.get("accion_preventiva")),
+        "hipotesis_alt": _texto(ha.get("hipotesis")),
+        "paso_discriminante": _texto(ha.get("paso_discriminante")),
+        "confianza_hipotesis": confianza,
+    }
+
+
+def run_action_checks(
+    parsed: Dict[str, Any],
+    raw_response: str,
+    row: pd.Series,
+    prompt: str,
+) -> List[tuple]:
+    """Checks por regla post-llamada (ARD-16 Decisión 7 — solo la parte por regla;
+    el juez LLM es de otra ola). En código y sin costo.
+
+    Returns:
+        Lista de (código, detalle); vacía = pasa. El detalle se cita en la
+        regeneración; el código alimenta qa_flags.
+    """
+    defectos: List[tuple] = []
+
+    # 1. Esquema completo: todos los campos del contrato con contenido.
+    faltantes = [c for c in _ACTION_TEXT_FIELDS if not parsed.get(c)]
+    if faltantes:
+        defectos.append((
+            "esquema_incompleto",
+            "el JSON no trae (o trae vacíos) estos campos del contrato: "
+            + ", ".join(faltantes),
+        ))
+
+    # 2. Orden de llaves (verificado sobre el crudo).
+    if not _action_keys_in_order(raw_response):
+        defectos.append((
+            "orden_de_llaves",
+            "las llaves de nivel superior no están en el orden requerido: "
+            + " → ".join(_ACTION_TOP_KEYS),
+        ))
+
+    # 3. Verbo meta como acción principal.
+    if parsed.get("accion_inmediata") and is_meta_action(parsed["accion_inmediata"]):
+        defectos.append((
+            "verbo_meta",
+            "la accion_inmediata arranca con un verbo meta (revisar/analizar/"
+            f"investigar/monitorear/dar seguimiento): \"{parsed['accion_inmediata']}\". "
+            "Sustitúyela por una medida ejecutable con destinatario y objeto concretos.",
+        ))
+
+    # 4. Cifras ∈ input (ADR-14 para premisas factuales). confianza_hipotesis se
+    #    excluye: es estimación propia del modelo, no una cifra de los datos.
+    dadas = _extract_numbers(prompt)
+    citadas: set = set()
+    for campo in _ACTION_TEXT_FIELDS:
+        citadas |= _extract_numbers(parsed.get(campo, ""))
+    fuera = sorted(c for c in citadas if c not in dadas)
+    if fuera:
+        defectos.append((
+            "cifra_fuera_de_input",
+            "estas cifras de tu salida NO están entre los datos dados (cítalas "
+            f"textualmente de los datos o quítalas): {fuera}",
+        ))
+
+    # 4b. Evidencia de la hipótesis sin cifra (ARD-16 ola 2): el diferencial exige
+    #     anclar cada hipótesis en las cifras que la favorecen sobre la alternativa.
+    #     El caso vacío lo caza el check de esquema, no este.
+    if parsed.get("hipotesis_evidencia") and not _extract_numbers(
+        parsed["hipotesis_evidencia"]
+    ):
+        defectos.append((
+            "evidencia_sin_cifra",
+            "la evidencia de la hipótesis no cita ninguna cifra de los datos: "
+            "ánclala en las cifras dadas (fill rate, excesos, reprogramación, "
+            "percentiles).",
+        ))
+
+    # 5. Decisión del faltante si hubo short ship.
+    if bool(row.get("is_short_ship", row.get("_short_ship", False))):
+        plan_texto = _norm_text(" ".join(
+            str(parsed.get(c, "")) for c in
+            ("accion_inmediata", "accion_correctiva", "accion_preventiva")
+        ))
+        if not any(k in plan_texto for k in _SHORT_SHIP_DECISION_KEYS):
+            defectos.append((
+                "sin_decision_faltante",
+                "hubo short ship y el plan no decide el destino del faltante: "
+                "incluye re-emitir, esperar o cancelar, con su criterio.",
+            ))
+
+    # 6. Etapa nombrada = stage_primary (Indeterminado: declararlo, no adoptar una).
+    etapa = str(row.get("stage_primary", ""))
+    texto_diag = _norm_text(" ".join(
+        (str(parsed.get("razonamiento", "")), str(parsed.get("hipotesis", "")))
+    ))
+    if etapa == "Indeterminado":
+        ok_etapa = any(k in texto_diag for k in (
+            "indetermin", "no atribuible", "no se puede atribuir",
+            "sin datos", "sin causa dominante", "dato faltante",
+        ))
+    else:
+        ok_etapa = any(
+            alias in texto_diag
+            for alias in _STAGE_ALIASES.get(etapa, (_norm_text(etapa),))
+        )
+    if etapa and not ok_etapa:
+        defectos.append((
+            "etapa_incorrecta",
+            f"tu razonamiento/hipótesis no nombra la etapa del diagnóstico ({etapa}); "
+            "la etapa ya está decidida y tu mecanismo debe vivir dentro de ella.",
+        ))
+
+    # 7. Indeterminado: la HIPÓTESIS misma reconoce la indeterminación (ARD-16 ola 2).
+    #    El check 6 acepta la declaración en razonamiento+hipótesis concatenados; el
+    #    hueco del baseline es que la hipótesis afirmaba un mecanismo ("congestión de
+    #    patio") aunque el razonamiento declarara indeterminado. Aquí se inspecciona
+    #    SOLO el campo hipotesis, con la lista compartida _INDET_HYP_KEYS (la misma
+    #    que usa la tasa del evaluador, para no discrepar).
+    if etapa == "Indeterminado" and parsed.get("hipotesis"):
+        if not reconoce_indeterminacion(parsed["hipotesis"]):
+            defectos.append((
+                "indeterminado_sin_reconocer",
+                "la etapa es Indeterminado pero tu hipótesis afirma un mecanismo sin "
+                "reconocer la indeterminación: nómbrala, identifica el dato faltante "
+                "y formula el mecanismo en condicional.",
+            ))
+
+    return defectos
+
+
+def _regeneration_prompt(
+    prompt: str, defectos: List[tuple], intento: int, total: int
+) -> str:
+    """Prompt de reintento: el original + bloque de REGENERACIÓN citando los defectos
+    (ARD-16 Decisión 7: regenerar citando el defecto, no repetir a ciegas)."""
+    lineas = [
+        prompt,
+        "",
+        f"REGENERACIÓN (intento {intento} de {total}): tu respuesta anterior falló "
+        "estas verificaciones:",
+    ]
+    lineas += [f"- {detalle}" for _, detalle in defectos]
+    lineas.append(
+        "Corrige exactamente esos defectos y vuelve a emitir el JSON COMPLETO, con "
+        "las llaves en el orden requerido."
+    )
+    return "\n".join(lineas)
+
+
+def call_action_with_qa(
+    backend,
+    prompt: str,
+    row: pd.Series,
+    max_qa_retries: int = DEFAULT_ACTION_QA_RETRIES,
+) -> tuple:
+    """Llamada de acción + pase de autocrítica por regla (ARD-16 Decisión 7).
+
+    Ciclo: call_raw → _parse_action_json → run_action_checks. Con defectos, re-llama
+    con el prompt original + bloque de regeneración que los cita; máximo
+    `max_qa_retries` reintentos (default 2 → 3 llamadas). Si persisten, NO bloquea:
+    devuelve la última salida utilizable con sus qa_flags visibles.
+
+    Args:
+        backend: backend con call_raw() (los cuatro de este módulo lo exponen).
+        prompt: prompt de build_action_prompt.
+        row: fila de la PO (los checks leen is_short_ship / stage_primary).
+        max_qa_retries: reintentos de regeneración tras la primera llamada.
+
+    Returns:
+        (parsed, qa_flags): parsed es el dict aplanado del contrato ({} si nunca
+        hubo JSON utilizable); qa_flags la lista de códigos de defecto de la última
+        iteración (vacía si pasó limpio).
+    """
+    total = max_qa_retries + 1
+    parsed_final: Dict[str, Any] = {}
+    defectos: List[tuple] = []
+    prompt_actual = prompt
+    for intento in range(1, total + 1):
+        raw = backend.call_raw(prompt_actual)
+        if raw is None:
+            # Red/backend agotado: call_raw ya reintenta HTTP; repetir el ciclo QA
+            # no ayuda.
+            defectos = [("sin_respuesta", "el backend no devolvió respuesta")]
+            break
+        parsed = _parse_action_json(raw)
+        if parsed is None:
+            defectos = [(
+                "json_invalido",
+                "no se encontró un JSON parseable con el contrato pedido; responde "
+                "únicamente con el JSON.",
+            )]
+        else:
+            parsed_final = parsed
+            defectos = run_action_checks(parsed, raw, row, prompt)
+        if not defectos:
+            return parsed_final, []
+        if intento < total:
+            prompt_actual = _regeneration_prompt(prompt, defectos, intento + 1, total)
+    return parsed_final, [codigo for codigo, _ in defectos]
 
 
 # ============================================================
@@ -465,15 +1490,18 @@ class QwenBackend:
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
 
-    def call(self, prompt: str) -> Optional[Dict]:
+    def call_raw(self, prompt: str) -> Optional[str]:
         """
-        Llama a Qwen y parsea la respuesta.
+        Llama a Qwen y devuelve el TEXTO crudo de la respuesta (o None si falló).
+
+        La llamada de acción (ARD-16) necesita el crudo para verificar el orden de
+        llaves del contrato híbrido; call() lo envuelve con el parseo de la llamada 1.
 
         Args:
             prompt: Texto a enviar al modelo.
 
         Returns:
-            Diccionario con la respuesta parseada o None si falló.
+            Texto crudo devuelto por el modelo, o None si agotó los reintentos.
         """
         for attempt in range(self.max_retries):
             try:
@@ -493,9 +1521,7 @@ class QwenBackend:
                 response.raise_for_status()
 
                 result = response.json()
-                raw_response = result.get('response', '')
-                # fallback=True: Qwen puede responder en texto libre
-                return _parse_llm_json(raw_response, fallback=True)
+                return result.get('response', '')
 
             except requests.exceptions.HTTPError as e:
                 print(f"  Error HTTP {e.response.status_code}, "
@@ -507,6 +1533,22 @@ class QwenBackend:
                 time.sleep(RETRY_SLEEP_SECONDS)
 
         return None
+
+    def call(self, prompt: str) -> Optional[Dict]:
+        """
+        Llama a Qwen y parsea la respuesta (contrato de la llamada 1).
+
+        Args:
+            prompt: Texto a enviar al modelo.
+
+        Returns:
+            Diccionario con la respuesta parseada o None si falló.
+        """
+        raw_response = self.call_raw(prompt)
+        if raw_response is None:
+            return None
+        # fallback=True: Qwen puede responder en texto libre
+        return _parse_llm_json(raw_response, fallback=True)
 
 
 # ============================================================
@@ -540,15 +1582,15 @@ class ClaudeBackend:
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
 
-    def call(self, prompt: str) -> Optional[Dict]:
+    def call_raw(self, prompt: str) -> Optional[str]:
         """
-        Llama a Claude y parsea la respuesta.
+        Llama a Claude y devuelve el TEXTO crudo de la respuesta (o None si falló).
 
         Args:
             prompt: Texto a enviar al modelo.
 
         Returns:
-            Diccionario con la respuesta parseada o None si falló.
+            Texto crudo devuelto por el modelo, o None si agotó los reintentos.
         """
         headers = {
             "x-api-key": self.api_key,
@@ -574,9 +1616,7 @@ class ClaudeBackend:
                 result = response.json()
                 content = result.get('content', [])
                 # Guardia explícita contra lista vacía
-                raw_response = content[0].get('text', '') if content else ''
-                # fallback=False: se espera JSON estricto de Claude
-                return _parse_llm_json(raw_response, fallback=False)
+                return content[0].get('text', '') if content else ''
 
             except requests.exceptions.HTTPError as e:
                 print(f"  Error HTTP {e.response.status_code}: "
@@ -589,6 +1629,22 @@ class ClaudeBackend:
                 time.sleep(RETRY_SLEEP_SECONDS)
 
         return None
+
+    def call(self, prompt: str) -> Optional[Dict]:
+        """
+        Llama a Claude y parsea la respuesta (contrato de la llamada 1).
+
+        Args:
+            prompt: Texto a enviar al modelo.
+
+        Returns:
+            Diccionario con la respuesta parseada o None si falló.
+        """
+        raw_response = self.call_raw(prompt)
+        if raw_response is None:
+            return None
+        # fallback=False: se espera JSON estricto de Claude
+        return _parse_llm_json(raw_response, fallback=False)
 
 
 # ============================================================
@@ -628,15 +1684,15 @@ class DeepSeekBackend:
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
 
-    def call(self, prompt: str) -> Optional[Dict]:
+    def call_raw(self, prompt: str) -> Optional[str]:
         """
-        Llama a DeepSeek y parsea la respuesta.
+        Llama a DeepSeek y devuelve el TEXTO crudo de la respuesta (o None si falló).
 
         Args:
             prompt: Texto a enviar al modelo.
 
         Returns:
-            Diccionario con la respuesta parseada o None si falló.
+            Texto crudo devuelto por el modelo, o None si agotó los reintentos.
         """
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -661,12 +1717,10 @@ class DeepSeekBackend:
                 result = response.json()
                 choices = result.get('choices', [])
                 # Guardia explícita contra lista vacía
-                raw_response = (
+                return (
                     choices[0].get('message', {}).get('content', '')
                     if choices else ''
                 )
-                # fallback=False: se espera JSON estricto de DeepSeek
-                return _parse_llm_json(raw_response, fallback=False)
 
             except requests.exceptions.HTTPError as e:
                 print(f"  Error HTTP {e.response.status_code}: "
@@ -679,6 +1733,22 @@ class DeepSeekBackend:
                 time.sleep(RETRY_SLEEP_SECONDS)
 
         return None
+
+    def call(self, prompt: str) -> Optional[Dict]:
+        """
+        Llama a DeepSeek y parsea la respuesta (contrato de la llamada 1).
+
+        Args:
+            prompt: Texto a enviar al modelo.
+
+        Returns:
+            Diccionario con la respuesta parseada o None si falló.
+        """
+        raw_response = self.call_raw(prompt)
+        if raw_response is None:
+            return None
+        # fallback=False: se espera JSON estricto de DeepSeek
+        return _parse_llm_json(raw_response, fallback=False)
 
 
 # ============================================================
@@ -696,6 +1766,7 @@ class OpenAIBackend:
         max_tokens: int = DEFAULT_MAX_TOKENS,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
         max_retries: int = DEFAULT_MAX_RETRIES,
+        seed: Optional[int] = None,
     ) -> None:
         """
         Inicializa el backend de OpenAI.
@@ -703,6 +1774,10 @@ class OpenAIBackend:
         Args:
             api_key: API key de OpenAI.
             model: Modelo a utilizar ('gpt-4o-mini', 'gpt-4', 'gpt-4-turbo', etc).
+            seed: semilla para muestreo determinista *best-effort* de la API (no
+                garantizado; OpenAI expone `system_fingerprint` en la respuesta para
+                detectar cambios de backend). None desactiva el parámetro. Exclusivo
+                de OpenAI: Claude/DeepSeek/Qwen no lo soportan en este cliente.
         """
         self.api_key = api_key
         self.model = model
@@ -711,16 +1786,17 @@ class OpenAIBackend:
         self.max_tokens = max_tokens
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
+        self.seed = seed
 
-    def call(self, prompt: str) -> Optional[Dict]:
+    def call_raw(self, prompt: str) -> Optional[str]:
         """
-        Llama a OpenAI y parsea la respuesta.
+        Llama a OpenAI y devuelve el TEXTO crudo de la respuesta (o None si falló).
 
         Args:
             prompt: Texto a enviar al modelo.
 
         Returns:
-            Diccionario con la respuesta parseada o None si falló.
+            Texto crudo devuelto por el modelo, o None si agotó los reintentos.
         """
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -730,10 +1806,16 @@ class OpenAIBackend:
             "model": self.model,
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
+            # Ambas llamadas del proyecto esperan SIEMPRE JSON; el modo json_object
+            # elimina preámbulos y fallos de parseo (menos regeneraciones de QA).
+            # Requiere que el prompt contenga la palabra "JSON" (ambos la traen).
+            "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "user", "content": prompt}
             ]
         }
+        if self.seed is not None:
+            body["seed"] = self.seed
 
         for attempt in range(self.max_retries):
             try:
@@ -745,12 +1827,10 @@ class OpenAIBackend:
                 result = response.json()
                 choices = result.get('choices', [])
                 # Guardia explícita contra lista vacía
-                raw_response = (
+                return (
                     choices[0].get('message', {}).get('content', '')
                     if choices else ''
                 )
-                # fallback=False: se espera JSON estricto de OpenAI
-                return _parse_llm_json(raw_response, fallback=False)
 
             except requests.exceptions.HTTPError as e:
                 print(f"  Error HTTP {e.response.status_code}: "
@@ -763,6 +1843,22 @@ class OpenAIBackend:
                 time.sleep(RETRY_SLEEP_SECONDS)
 
         return None
+
+    def call(self, prompt: str) -> Optional[Dict]:
+        """
+        Llama a OpenAI y parsea la respuesta (contrato de la llamada 1).
+
+        Args:
+            prompt: Texto a enviar al modelo.
+
+        Returns:
+            Diccionario con la respuesta parseada o None si falló.
+        """
+        raw_response = self.call_raw(prompt)
+        if raw_response is None:
+            return None
+        # fallback=False: se espera JSON estricto de OpenAI
+        return _parse_llm_json(raw_response, fallback=False)
 
 
 # ============================================================
@@ -780,6 +1876,7 @@ def create_backend(
     openai_model: Optional[str] = None,
     openai_api_key: Optional[str] = None,
     temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
 ) -> Union[QwenBackend, ClaudeBackend, DeepSeekBackend, OpenAIBackend]:
     """
     Crea el backend apropiado según la configuración.
@@ -800,6 +1897,10 @@ def create_backend(
         ollama_url: URL de Ollama (endpoint operativo, no en el JSON de inferencia).
         claude_api_key/deepseek_api_key/openai_api_key: API key (opcional si está en .env).
         temperature: override de temperatura para esta corrida; None usa llm_config.json.
+        max_tokens: override de tokens de salida; None usa llm_config.json. Lo usa la
+            llamada de acción (ARD-16): su contrato híbrido no cabe en los 512 default.
+        (El `seed` de llm_config.json se aplica solo al backend OpenAI, sin argumento
+        propio aquí: es best-effort de la API, no exclusivo de una corrida.)
 
     Returns:
         Instancia del backend configurado.
@@ -810,7 +1911,7 @@ def create_backend(
     cfg = load_llm_config()
     inference = {
         "temperature": temperature if temperature is not None else cfg["temperature"],
-        "max_tokens": cfg["max_tokens"],
+        "max_tokens": max_tokens if max_tokens is not None else cfg["max_tokens"],
         "timeout_seconds": cfg["timeout_seconds"],
         "max_retries": cfg["max_retries"],
     }
@@ -847,7 +1948,7 @@ def create_backend(
             )
         model = openai_model or models["openai"]
         print(f"🔑 Usando OpenAI API (modelo: {model})")
-        return OpenAIBackend(api_key, model, **inference)
+        return OpenAIBackend(api_key, model, **inference, seed=cfg.get("seed"))
 
     # Default: backend local con Qwen/Ollama
     model = ollama_model or models["local"]
@@ -859,6 +1960,19 @@ def create_backend(
 # Función principal de procesamiento
 # ============================================================
 
+# Columna del DataFrame → campo aplanado del contrato de la llamada de acción.
+_ACTION_COLUMN_MAP = {
+    "llm_razonamiento": "razonamiento",
+    "llm_hipotesis": "hipotesis",
+    "llm_hipotesis_evidencia": "hipotesis_evidencia",
+    "llm_accion_inmediata": "accion_inmediata",
+    "llm_accion_correctiva": "accion_correctiva",
+    "llm_accion_preventiva": "accion_preventiva",
+    "llm_hipotesis_alt": "hipotesis_alt",
+    "llm_paso_discriminante": "paso_discriminante",
+}
+
+
 def add_llm_explanations(
     df: pd.DataFrame,
     backend: Union[QwenBackend, ClaudeBackend, DeepSeekBackend, OpenAIBackend],
@@ -866,7 +1980,10 @@ def add_llm_explanations(
     test_mode: bool = False,
     test_limit: int = 10,
     save_every: int = DEFAULT_SAVE_EVERY,
-    output_path: Optional[str] = None
+    output_path: Optional[str] = None,
+    kb: Optional[dict] = None,
+    action_call: bool = False,
+    action_backend=None,
 ) -> pd.DataFrame:
     """
     Añade columnas con explicaciones del LLM al DataFrame clasificado.
@@ -879,6 +1996,15 @@ def add_llm_explanations(
         test_limit: Número de POs a procesar en modo test.
         save_every: Guardar resultados cada N POs.
         output_path: Ruta para guardar resultados parciales.
+        kb: dict opcional de la base de conocimiento de dominio (#151), tal cual lo
+            devuelve `load_domain_kb`. Se pasa sin modificar a `build_prompt`. None
+            (default) → sin bloque de contexto de dominio, comportamiento sin cambios.
+        action_call: activa la llamada de acción (ARD-16 ola 1): segunda llamada por
+            PO con el contrato híbrido + checks por regla. False (default) → una sola
+            llamada, columnas y comportamiento históricos sin cambios. OJO: duplica
+            las llamadas al backend (2 por PO, más reintentos de QA).
+        action_backend: backend para la llamada de acción (típicamente el mismo
+            proveedor con max_tokens_action). None → se reusa `backend`.
 
     Returns:
         DataFrame con columnas adicionales de análisis LLM.
@@ -895,6 +2021,19 @@ def add_llm_explanations(
 
     if 'llm_confianza' not in df_result.columns:
         df_result['llm_confianza'] = 0.0
+
+    # Llamada de acción (ARD-16): columnas propias + estadísticos globales, SOLO en
+    # modo opt-in — con action_call=False el DataFrame de salida no cambia.
+    if action_call:
+        for col in _ACTION_COLUMN_MAP:
+            if col not in df_result.columns:
+                df_result[col] = ''
+        if 'llm_confianza_hipotesis' not in df_result.columns:
+            df_result['llm_confianza_hipotesis'] = 0.0
+        if 'llm_qa_flags' not in df_result.columns:
+            df_result['llm_qa_flags'] = ''
+        action_stats = compute_dataset_stats(df_result)
+        action_be = action_backend or backend
 
     # Filtrar POs con retraso
     delayed_mask = df_result['delay_days_calc'] > 0
@@ -915,7 +2054,7 @@ def add_llm_explanations(
         po_nbr = row.get('PO_NBR', 'N/A')
         pbar.set_description(f"PO {po_nbr}")
 
-        prompt = build_prompt(row)
+        prompt = build_prompt(row, kb=kb)
         response = backend.call(prompt)
 
         if response:
@@ -931,6 +2070,25 @@ def add_llm_explanations(
             pbar.set_postfix({"status": "OK"})
         else:
             pbar.set_postfix({"status": "FALLÓ"})
+
+        # Llamada de acción (ARD-16 ola 1): planifica SOBRE el diagnóstico de la
+        # llamada 1. Política ante fallback de la primera (pendiente del ARD que la
+        # ola 1 resuelve operativamente): sin diagnóstico no hay insumo para el plan
+        # → no se llama y se marca el qa_flag.
+        if action_call:
+            if response:
+                action_prompt = build_action_prompt(row, response, action_stats)
+                parsed_action, qa_flags = call_action_with_qa(
+                    action_be, action_prompt, row
+                )
+                for col, campo in _ACTION_COLUMN_MAP.items():
+                    df_result.at[idx, col] = parsed_action.get(campo, '')
+                df_result.at[idx, 'llm_confianza_hipotesis'] = parsed_action.get(
+                    'confianza_hipotesis', 0.0
+                )
+                df_result.at[idx, 'llm_qa_flags'] = ";".join(qa_flags)
+            else:
+                df_result.at[idx, 'llm_qa_flags'] = 'sin_diagnostico_llamada1'
 
         # Guardado automático cada N POs
         if output_path and (i + 1) % save_every == 0:
@@ -1169,6 +2327,15 @@ def main() -> None:
             "recomputa. Tambien activable con la env var PO_USE_PREV_CSV."
         )
     )
+    parser.add_argument(
+        "--action-call", action="store_true",
+        help=(
+            "Activa la llamada de acción (ARD-16 ola 1): segunda llamada por PO con "
+            "contrato híbrido (hipótesis + plan) y checks por regla. Default: apagado "
+            "(solo la llamada 1, comportamiento histórico). DUPLICA las llamadas al "
+            "backend (2 por PO, más reintentos de QA)."
+        )
+    )
     args = parser.parse_args()
 
     print("=" * 60)
@@ -1208,6 +2375,24 @@ def main() -> None:
         print(e)
         sys.exit(1)
 
+    # Backend de la llamada de acción (ARD-16): mismo proveedor, max_tokens_action
+    # (el contrato híbrido no cabe en los 512 default de la llamada 1).
+    action_backend = None
+    if args.action_call:
+        cfg = load_llm_config()
+        action_backend = create_backend(
+            backend_type=args.backend,
+            ollama_model=args.ollama_model,
+            ollama_url=args.ollama_url,
+            claude_model=args.claude_model,
+            claude_api_key=claude_api_key,
+            deepseek_model=args.deepseek_model,
+            deepseek_api_key=deepseek_api_key,
+            openai_model=args.openai_model,
+            openai_api_key=openai_api_key,
+            max_tokens=cfg.get("max_tokens_action", DEFAULT_MAX_TOKENS_ACTION),
+        )
+
     # Configurar modo
     if args.mode == "test":
         test_mode = True
@@ -1230,7 +2415,9 @@ def main() -> None:
         backend=backend,
         test_mode=test_mode,
         test_limit=test_limit,
-        output_path=str(output_path)
+        output_path=str(output_path),
+        action_call=args.action_call,
+        action_backend=action_backend,
     )
 
     # Guardar resultado final (artefacto interno df_with_llm_*.csv)

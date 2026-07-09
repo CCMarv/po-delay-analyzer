@@ -1,11 +1,11 @@
 # ADR-06b · Umbral propio de vendor: Configuración definitiva de 24h
 
-* **Estatus:** 🟢 **VIGENTE** (Reemplaza al [ADR-06a · Umbral propio de vendor: Modelo inicial sin umbral](ADR-06a.md))
+* **Estatus:** 🟢 **VIGENTE** (Reemplaza al [ADR-06a · Umbral propio de vendor: Modelo inicial sin umbral](ARD-06a.md))
 * **Contexto Técnico:** Cierre de Fase 2 / Análisis de Sensibilidad y Calibración
 * **Referencias:** Consulta de Ronda 2 del mentor (2026-06-18), Discussion #57, Stack de PRs #62, #66 y #64
 
 ## Contexto y Problema
-Tras detectar la asimetría de construcción del modelo inicial (detallada en el [ADR-06a](ADR-06a.md)), necesitábamos balancear el clasificador con un umbral simétrico para Vendor que eliminara los micro-retrasos insignificantes, pero sin alterar artificialmente la distribución real del negocio.
+Tras detectar la asimetría de construcción del modelo inicial (detallada en el [ADR-06a](ARD-06a.md)), necesitábamos balancear el clasificador con un umbral simétrico para Vendor que eliminara los micro-retrasos insignificantes, pero sin alterar artificialmente la distribución real del negocio.
 
 ## Opciones Consideradas
 
@@ -26,5 +26,5 @@ El cálculo de la variable `_etapa_primaria` se normalizó a `max(0, push − 24
 
 ## Consecuencias
 * **Positivas:** Eliminación definitiva de la asimetría de construcción y alta estabilidad del pipeline. Se comprobó que endurecer el umbral incrementó el acuerdo con la anotación humana (*Reason agreement*) del 88.7% al 89.7%.
-* **Negativas:** Los pedidos excluidos por el umbral de 24h ya no se asignan a Vendor; al demostrarse mediante el análisis de migración que no pertenecían a Carrier ni a DC, requirieron una nueva estructura de clasificación neutra (detallada en el [ADR-07](ADR-07.md)).
+* **Negativas:** Los pedidos excluidos por el umbral de 24h ya no se asignan a Vendor; al demostrarse mediante el análisis de migración que no pertenecían a Carrier ni a DC, requirieron una nueva estructura de clasificación neutra (detallada en el [ADR-07](ARD-07.md)).
 

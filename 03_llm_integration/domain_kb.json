@@ -1,0 +1,77 @@
+{
+  "version": 1,
+  "_doc": "Base de conocimiento de dominio para el prompt de Fase 3 (#151). Indexada por (actor x señal por-PO): cada actor da un `primer` que encuadra la causa y `levers` (palancas + tensiones de dominio) que se filtran por la señal de la PO vía _cond_matches. Los levers NO son acciones terminadas: son insumo para que el LLM razone causa y acción ancladas en las cifras de la PO. La diversidad viene de las señales por-PO, no del conocimiento compartido del actor. band_cutoffs={1,3} aplican sobre r=exceso/umbral_Fase2 (calibrado con datos reales). Los umbrales de Fase 2 viven en 02_clasif_reglas_negocio/rules_config.json (fuente única).",
+  "band_cutoffs": [1, 3],
+  "actors": {
+    "Vendor": {
+      "primer": "El proveedor responde por tener el embarque listo y la cita cumplida a tiempo. Su señal medible es el push de la cita (cuánto se corrió la cita aprobada respecto a la STA), contado por encima de 24 h; el ASN, la huella de cuándo embarcó de verdad, no está en los datos, así que su ejecución no se deduce por descarte: razona la causa desde el push medido y nombra lo que no se puede ver.",
+      "levers": [
+        { "id": "vendor_band_bajo", "cond": { "excess_band": "bajo" },
+          "lever": "El push apenas supera la tolerancia (hasta 1× el umbral): señal débil. Sopesa si la causa es marginal frente al retraso total y si amerita más que un registro." },
+        { "id": "vendor_band_medio", "cond": { "excess_band": "medio" },
+          "lever": "El push está en rango medio (entre 1× y 3× el umbral): desvío real, no extremo. Calibra la firmeza contra la magnitud concreta y el retraso total de esta PO." },
+        { "id": "vendor_band_alto", "cond": { "excess_band": "alto" },
+          "lever": "El push es severo (más de 3× el umbral): la magnitud, por sí sola, inclina a escalar más que a revisar. Ánclalo en las horas de esta PO." },
+        { "id": "vendor_hot", "cond": { "hot": true },
+          "lever": "PO urgente (Hot): modula el tono y habilita palancas temporales (p. ej. expedite), sin que la urgencia reemplace el análisis de causa." },
+        { "id": "vendor_rescheduled", "cond": { "is_rescheduled": true },
+          "lever": "Hubo reprogramación. Dominio: un reschedule puede ser consecuencia de un miss aguas abajo, no causa del proveedor, y la autoría no está en los datos. ¿El push es genuino del proveedor o artefacto de la reprogramación? Ajusta la confianza." },
+        { "id": "vendor_short_ship", "cond": { "is_short_ship": true },
+          "lever": "Envío incompleto: es falla de In-Full, una dimensión paralela al tiempo, no la causa del retraso. No la vuelvas la causa temporal; trátala como agravante y, si acaso, una acción aparte." }
+      ]
+    },
+    "Carrier": {
+      "primer": "El transportista mueve el tráiler desde el proveedor hasta el DC; responde por el tránsito y por respetar la cita. Su señal medible es el lag de tránsito por encima de 8 h. Como en Vendor, no hay huella de handoff que reparta con precisión la culpa entre proveedor y transportista: razona desde el lag medido y no atribuyas al carrier lo que el dato no separa.",
+      "levers": [
+        { "id": "carrier_band_bajo", "cond": { "excess_band": "bajo" },
+          "lever": "El lag apenas supera 8 h (hasta 1× el umbral): señal débil. Sopesa si es ruido operativo o causa marginal frente al retraso total." },
+        { "id": "carrier_band_medio", "cond": { "excess_band": "medio" },
+          "lever": "Lag en rango medio (entre 1× y 3× el umbral): tránsito claramente lento. Calibra la firmeza contra la magnitud y el retraso total de esta PO." },
+        { "id": "carrier_band_alto", "cond": { "excess_band": "alto" },
+          "lever": "Lag severo (más de 3× el umbral): la magnitud inclina a escalar con el transportista (ruta, capacidad, cumplimiento de cita), no solo a registrar. Ánclalo en las horas de esta PO." },
+        { "id": "carrier_hot", "cond": { "hot": true },
+          "lever": "PO urgente (Hot): habilita expedite o desvío en tránsito y modula el tono, sin sustituir el análisis de causa." },
+        { "id": "carrier_rescheduled", "cond": { "is_rescheduled": true },
+          "lever": "Hubo reprogramación. Puede originarse aguas arriba (proveedor) o aguas abajo (DC), y la autoría no está en los datos; no asumas que el transportista la pidió. Pesa esa ambigüedad." },
+        { "id": "carrier_short_ship", "cond": { "is_short_ship": true },
+          "lever": "Envío incompleto: falla de In-Full del proveedor, ajena al tránsito. No la cargues al transportista ni la vuelvas la causa del retraso; trátala aparte." }
+      ]
+    },
+    "DC": {
+      "primer": "El DC responde por recibir: la espera en patio (yard) hasta asignar puerta, y el procesamiento en puerta (dock). Su señal medible es el exceso sobre el umbral del sub-tramo (yard 4 h / dock 6 h). Yard y dock tienen palancas distintas; nombra cuál sub-tramo domina antes de recomendar.",
+      "levers": [
+        { "id": "dc_substage_yard", "cond": { "dc_substage": "Yard" },
+          "lever": "Domina la espera en patio: la palanca es la asignación de puertas y la programación de citas de recepción, no la cuadrilla de descarga." },
+        { "id": "dc_substage_dock", "cond": { "dc_substage": "Dock" },
+          "lever": "Domina el procesamiento en puerta: la palanca es la cuadrilla, la estiba y la disponibilidad de puerta, no la espera en patio." },
+        { "id": "dc_band_bajo", "cond": { "excess_band": "bajo" },
+          "lever": "Exceso apenas sobre el umbral del sub-tramo (hasta 1× el umbral): señal débil; sopesa si amerita más que un registro." },
+        { "id": "dc_band_medio", "cond": { "excess_band": "medio" },
+          "lever": "Exceso medio (entre 1× y 3× el umbral): congestión real; calibra la firmeza contra la magnitud y el retraso total." },
+        { "id": "dc_band_alto", "cond": { "excess_band": "alto" },
+          "lever": "Exceso severo (más de 3× el umbral): la magnitud inclina a intervenir la operación del DC (turnos, personal, citas de recepción), no solo a registrar." },
+        { "id": "dc_hot", "cond": { "hot": true },
+          "lever": "PO urgente (Hot): prioriza esta recepción (cita o puerta preferente) y modula el tono, sin sustituir el análisis de causa." },
+        { "id": "dc_rescheduled", "cond": { "is_rescheduled": true },
+          "lever": "Hubo reprogramación: puede originarse en el propio DC (sin puerta o cita disponible) o aguas arriba. Distingue si el DC la provocó antes de atribuir la causa." },
+        { "id": "dc_short_ship", "cond": { "is_short_ship": true },
+          "lever": "Envío incompleto: falla de In-Full del proveedor, ajena a la recepción. No la cargues al DC ni la vuelvas la causa del retraso; trátala aparte." }
+      ]
+    },
+    "Indeterminado": {
+      "primer": "No hay una etapa con exceso dominante: la causa no es atribuible con los datos. La recomendación honesta no inventa un culpable; apunta a cerrar la brecha de evidencia (qué dato falta, o por qué ninguna etapa domina), no a una acción operativa sobre un actor.",
+      "levers": [
+        { "id": "indeterminado_sin_datos", "cond": { "indeterminado_substage": "sin_datos" },
+          "lever": "Faltan timestamps del lifecycle para reconstruir el caso: la acción es recuperar o auditar la captura de esos hitos, no señalar a un actor." },
+        { "id": "indeterminado_sin_causa_dominante", "cond": { "indeterminado_substage": "sin_causa_dominante" },
+          "lever": "Hay datos pero ninguna etapa concentra el exceso (retraso repartido): revisa el caso end-to-end o márcalo para análisis manual, sin forzar un único responsable." },
+        { "id": "indeterminado_hot", "cond": { "hot": true },
+          "lever": "PO urgente (Hot) pero sin causa atribuible: prioriza el esclarecimiento (revisión manual expedita), no una acción sobre un actor no identificado." },
+        { "id": "indeterminado_rescheduled", "cond": { "is_rescheduled": true },
+          "lever": "Hubo reprogramación aunque la causa no sea atribuible: puede ser la pista; revisar quién la originó es un buen primer paso del esclarecimiento." },
+        { "id": "indeterminado_short_ship", "cond": { "is_short_ship": true },
+          "lever": "Envío incompleto aunque el tiempo no tenga causa dominante: registra la falla de In-Full por separado; no la conviertas en la causa temporal." }
+      ]
+    }
+  }
+}
