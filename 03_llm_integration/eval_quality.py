@@ -39,7 +39,7 @@ import pandas as pd
 # Reusar la infraestructura de F3 (mismo dir): no se reimplementa la corrida del LLM.
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from llm_integration import (  # noqa: E402
-    DEFAULT_MAX_TOKENS_ACTION, _extract_numbers, _history_lines, _STAGE_ALIASES,
+    DEFAULT_MAX_TOKENS_ACTION, _STAGE_ALIASES,
     build_action_prompt, build_prompt, call_action_with_qa, compute_dataset_stats,
     create_backend, is_meta_action, load_domain_kb, load_llm_config,
     prepare_classified_df, reconoce_indeterminacion,
@@ -175,45 +175,10 @@ def hypothesis_convergence(hipotesis: List[str],
     )
 
 
-# ── Uso de vocabulario de industria (ARD-16 ola 3, solo reporte) ──────────────
-# Claves de detección derivadas del glosario del prompt (_INDUSTRY_GLOSSARY): formas
-# acortadas a propósito ("scorecard" caza "carrier scorecard" y "scorecard del
-# transportista"; "re-cita" caza "re-cita de dock"), comparadas sobre texto
-# normalizado (_norm). Se mide sobre los TRES campos del plan — el glosario habilita
-# instrumentos "para el plan"; no es pasa/falla, solo tasa informativa.
-
-_GLOSSARY_MATCH_KEYS = (
-    "expedite", "chargeback", "scorecard", "re-cita", "split shipment",
-    "safety stock", "otif",
-)
-
-_PLAN_FIELDS = ("llm_accion_inmediata", "llm_accion_correctiva",
-                "llm_accion_preventiva")
-
-
-def usa_vocabulario(acciones: List[str]) -> bool:
-    """True si algún término del glosario aparece en alguna acción del plan."""
-    texto = _norm(" ".join(str(a) for a in acciones))
-    return any(k in texto for k in _GLOSSARY_MATCH_KEYS)
-
-
-# ── Uso de agregados del historial (ARD-16 ola 3, solo reporte) ───────────────
-# La evidencia que decide el condicional del estadio agéntico del carril 2 (D4:
-# "solo si el benchmark muestra que el modelo ignora los agregados inyectados").
-# Determinista: cifras EXCLUSIVAS del bloque HISTORIAL (no aparecen en el resto del
-# prompt) intersectadas con las cifras de la salida — la comparación numérica es la
-# misma de los checks (_extract_numbers, floats: 4.2 ≡ 4.20).
-
-def usa_agregados(campos_salida: List[str], prompt: str, bloque_historial: str) -> bool:
-    """True si la salida cita ≥1 cifra que SOLO existe en el bloque HISTORIAL."""
-    exclusivas = (_extract_numbers(bloque_historial)
-                  - _extract_numbers(prompt.replace(bloque_historial, "")))
-    if not exclusivas:
-        return False
-    citadas = set()
-    for campo in campos_salida:
-        citadas |= _extract_numbers(str(campo))
-    return bool(citadas & exclusivas)
+# Las métricas de ola 3 "uso de vocabulario de industria" y "uso de agregados del
+# historial" se retiraron junto con sus bloques del prompt (cierre del carril 1,
+# ARD-16 D8): midieron 1-3/20 y 0-1/20 respectivamente — la evidencia que motivó el
+# retiro y que queda registrada en el ARD y en los fixtures de la ola 3.
 
 
 def _hipotesis_reconoce_indet(texto: str) -> bool:
@@ -307,7 +272,6 @@ def evaluate(df_sample: pd.DataFrame, backend, examples=None, kb=None,
                 # Política ola 1: sin diagnóstico de la llamada 1 no hay llamada 2.
                 parsed, qa_flags = {}, ["sin_diagnostico_llamada1"]
             fila.update({
-                "llm_elicitacion": parsed.get("elicitacion", ""),
                 "llm_hipotesis": parsed.get("hipotesis", ""),
                 "llm_hipotesis_alt": parsed.get("hipotesis_alt", ""),
                 "llm_accion_inmediata": parsed.get("accion_inmediata", ""),
@@ -316,14 +280,6 @@ def evaluate(df_sample: pd.DataFrame, backend, examples=None, kb=None,
                 "llm_paso_discriminante": parsed.get("paso_discriminante", ""),
                 "qa_flags": ";".join(qa_flags),
             })
-            fila["usa_vocab"] = usa_vocabulario(
-                [fila[c] for c in _PLAN_FIELDS]
-            )
-            # Sin diagnóstico no hubo llamada 2 (no existe action_prompt): False.
-            fila["usa_agregados"] = usa_agregados(
-                [v for k, v in parsed.items() if k != "confianza_hipotesis"],
-                action_prompt, "\n".join(_history_lines(row, stats)),
-            ) if resp else False
             accion_principal = fila["llm_accion_inmediata"]
         fila.update({
             "chk_a_etapa": _check_etapa(causa, row["stage_primary"]),
@@ -365,27 +321,6 @@ def _ola2_metric_lines(df_eval: pd.DataFrame) -> List[str]:
     ]
 
 
-def _ola3_metric_lines(df_eval: pd.DataFrame) -> List[str]:
-    """Líneas del resumen con las tasas de la ola 3 (ARD-16, SOLO reporte — sin
-    pasa/falla): uso del vocabulario de industria en el plan. Con guard por columna:
-    un df sin la métrica (fixture previo re-procesado) no rompe la tabla."""
-    lineas = []
-    if "usa_vocab" in df_eval.columns:
-        k = int(df_eval["usa_vocab"].sum())
-        lineas.append(
-            f"Uso de vocabulario de industria en el plan: {k}/{len(df_eval)} "
-            "(ola 3, solo reporte: el glosario es opcional por diseño)."
-        )
-    if "usa_agregados" in df_eval.columns:
-        k = int(df_eval["usa_agregados"].sum())
-        lineas.append(
-            f"Uso de agregados del historial: {k}/{len(df_eval)} POs citan ≥1 cifra "
-            "exclusiva del bloque HISTORIAL (ola 3, solo reporte: evidencia del "
-            "condicional agéntico de ARD-16 D4)."
-        )
-    return lineas
-
-
 def to_markdown(df_eval: pd.DataFrame) -> str:
     """Arma el documento .md del benchmark: criterio + tabla + resumen pre-evaluado.
 
@@ -420,7 +355,6 @@ def to_markdown(df_eval: pd.DataFrame) -> str:
     ]
     if action_mode:
         lineas += _ola2_metric_lines(df_eval)
-        lineas += _ola3_metric_lines(df_eval)
     lineas += [
         "",
         "_(c) y el veredicto final los confirma una persona; rellenar las columnas vacías._",
@@ -428,11 +362,11 @@ def to_markdown(df_eval: pd.DataFrame) -> str:
     ]
     if action_mode:
         lineas += [
-            "| PO | etapa | delay (d) | REASON_DSC | explicación LLM | elicitación | "
+            "| PO | etapa | delay (d) | REASON_DSC | explicación LLM | "
             "hipótesis | hipótesis alternativa | acción inmediata | acción correctiva | "
             "acción preventiva | paso discriminante "
             "| qa_flags | (a) | (b) | (meta) | (c)? | veredicto |",
-            "|---|---|--:|---|---|---|---|---|---|---|---|---|---|:--:|:--:|:--:|:--:|:--:|",
+            "|---|---|--:|---|---|---|---|---|---|---|---|---|:--:|:--:|:--:|:--:|:--:|",
         ]
     else:
         lineas += [
@@ -451,8 +385,7 @@ def to_markdown(df_eval: pd.DataFrame) -> str:
         if action_mode:
             lineas.append(
                 base
-                + f"{_celda(r['llm_elicitacion'])} | "
-                f"{_celda(r['llm_hipotesis'])} | {_celda(r['llm_hipotesis_alt'])} | "
+                + f"{_celda(r['llm_hipotesis'])} | {_celda(r['llm_hipotesis_alt'])} | "
                 f"{_celda(r['llm_accion_inmediata'])} | "
                 f"{_celda(r['llm_accion_correctiva'])} | {_celda(r['llm_accion_preventiva'])} | "
                 f"{_celda(r['llm_paso_discriminante'])} | {_celda(r['qa_flags'])} | "

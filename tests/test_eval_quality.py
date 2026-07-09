@@ -16,7 +16,6 @@ import pytest
 from eval_quality import (
     ANCHOR_TEMP, _check_etapa, _hipotesis_reconoce_indet, _hyp_tokens, _jaccard,
     _temp_suffix, hypothesis_convergence, resolve_temperature, to_markdown,
-    usa_agregados, usa_vocabulario,
 )
 from llm_integration import load_llm_config
 
@@ -152,68 +151,34 @@ def test_check_etapa_indeterminado_sin_cambios():
 
 
 # ════════════════════════════════════════════════════════════════════════════
-# F. Tabla del benchmark en modo acción (ARD-16 ola 3) — determinística pura
+# F. Tabla del benchmark en modo acción — determinística pura
 # ════════════════════════════════════════════════════════════════════════════
 def _df_eval_accion_min() -> pd.DataFrame:
     """Una fila con TODAS las columnas del modo acción (forma de evaluate())."""
     return pd.DataFrame([{
         "PO_NBR": "100001", "stage_primary": "Vendor", "delay_days_calc": 2.5,
         "REASON_DSC": "Vendor fill rate", "llm_causa_raiz": "La etapa Vendor...",
-        "llm_accion": "", "llm_elicitacion": "Como patrón de industria, faltas de "
-        "inventario y capacidad de producción.", "llm_hipotesis": "Falta de producto",
+        "llm_accion": "", "llm_hipotesis": "Falta de producto",
         "llm_hipotesis_alt": "Agenda", "llm_accion_inmediata": "Emitir reposición",
         "llm_accion_correctiva": "x", "llm_accion_preventiva": "y",
         "llm_paso_discriminante": "z", "qa_flags": "",
         "chk_a_etapa": True, "chk_b_cuantifica": True, "chk_meta": False,
-        "chk_c_accion_viable": "", "veredicto": "", "usa_vocab": True,
-        "usa_agregados": True,
+        "chk_c_accion_viable": "", "veredicto": "",
     }])
 
 
-def test_usa_vocabulario_detecta_terminos_normalizados():
-    # Claves acortadas sobre texto normalizado: "scorecard" caza la mención parcial,
-    # OTIF es case-insensitive vía _norm. Sin término del glosario → False.
-    assert usa_vocabulario(["Solicitar un expedite del faltante al proveedor"]) is True
-    assert usa_vocabulario(["", "Aplicar el chargeback contractual", ""]) is True
-    assert usa_vocabulario(["Registrar el evento en el scorecard del transportista"]) is True
-    assert usa_vocabulario(["Medir el OTIF del proveedor cada mes"]) is True
-    assert usa_vocabulario(["Contactar al proveedor y exigir plan correctivo"]) is False
-    assert usa_vocabulario([]) is False
-
-
-def test_to_markdown_accion_reporta_tasas_ola3_con_guard():
-    md = to_markdown(_df_eval_accion_min())
-    assert "Uso de vocabulario de industria en el plan: 1/1" in md
-    assert "Uso de agregados del historial: 1/1" in md
-    # Guard por columna: un df de modo acción SIN la métrica no rompe ni reporta.
-    sin_col = _df_eval_accion_min().drop(columns=["usa_vocab", "usa_agregados"])
-    md2 = to_markdown(sin_col)
-    assert "Uso de vocabulario de industria" not in md2
-    assert "Uso de agregados del historial" not in md2
-
-
-def test_usa_agregados_cifra_exclusiva_del_historial():
-    bloque = "- Proveedor ACME (incluye esta PO): 12 POs en el dataset, 9 tardías."
-    prompt = "Retraso de 3.00 días.\n" + bloque + "\nMediana: 2.50 días."
-    # 12 y 9 son exclusivas del bloque; 3.00 y 2.50 viven fuera de él.
-    assert usa_agregados(
-        ["El historial de 9 tardías de ACME sostiene la hipótesis"], prompt, bloque
-    ) is True
-    assert usa_agregados(["El retraso de 3.00 días es alto"], prompt, bloque) is False
-    assert usa_agregados([], prompt, bloque) is False
-    # Sin cifras exclusivas (las del bloque también viven fuera) → False.
-    bloque2 = "- Mediana del dataset: 2.50 días."
-    prompt2 = "Mediana global 2.50 días.\n" + bloque2
-    assert usa_agregados(["Cito 2.50 días"], prompt2, bloque2) is False
-
-
-def test_to_markdown_accion_incluye_columna_elicitacion():
+def test_to_markdown_accion_sin_columnas_de_ola3():
+    # Cierre del carril 1 (ARD-16 D8): la columna elicitación y las tasas de
+    # glosario/agregados salieron del fixture junto con sus bloques del prompt.
     md = to_markdown(_df_eval_accion_min())
     encabezado = next(l for l in md.splitlines() if l.startswith("| PO |"))
-    assert "| elicitación |" in encabezado
-    # La celda de la fila lleva el texto de la elicitación, antes de la hipótesis.
+    assert "elicitación" not in encabezado
+    assert "| hipótesis |" in encabezado
+    assert "Uso de vocabulario de industria" not in md
+    assert "Uso de agregados del historial" not in md
+    # La fila arranca en la hipótesis tras la explicación de la llamada 1.
     fila = next(l for l in md.splitlines() if l.startswith("| 100001 |"))
-    assert fila.index("Como patrón de industria") < fila.index("Falta de producto")
+    assert fila.index("La etapa Vendor") < fila.index("Falta de producto")
     # El separador de la tabla tiene el mismo número de columnas que el encabezado.
     separador = md.splitlines()[md.splitlines().index(encabezado) + 1]
     assert encabezado.count("|") == separador.count("|")
