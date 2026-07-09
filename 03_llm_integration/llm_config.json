@@ -2,6 +2,7 @@
   "version": 2,
   "_status": "Config de inferencia F3 (Twelve-Factor §III, #120-#123). Reproducible y auditable; se lee por nombre vía load_llm_config(). Lo operativo (delay/retry/save_every) vive en .env, no aquí.",
   "temperature": 0.9,
+  "seed": 42,
   "max_tokens": 512,
   "max_tokens_action": 1536,
   "timeout_seconds": 60,
