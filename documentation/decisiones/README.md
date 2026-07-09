@@ -32,6 +32,7 @@ Tras la aplicación rigurosa de los criterios de los ADRs vigentes (especialment
 | [ADR-14](ARD-14.md) | Endurecimiento del prompt de Fase 3 contra el overfitting al few-shot | 🔵 Borrador | Issue #143, #137/#144, #94 (benchmark), ADR-12, ADR-07, `llm_integration.py` (`build_prompt`) |
 | [ADR-15](ARD-15.md) | Contexto de dominio condicional por (actor × señal) para diversificar el prompt | 📘 Superado | Superado por [ADR-16](ARD-16.md); Issue #151, #143/#154, #94 (benchmark), ADR-12/13/14, ADR-07, `llm_integration.py` (`select_domain_context`), `domain_kb.json` |
 | [ADR-16](ARD-16.md) | El LLM como capa analítica sobre la base determinista validada | 🔵 Borrador | Feedback mentores (post-validación de main), ADR-14/12/10/07, [ADR-15](ARD-15.md) (📘 superado), `llm_integration.py` |
+| [ADR-17](ARD-17.md) | Lenguaje visual y codificación de color de la taxonomía | 🔵 Borrador | Issue #162, #159 (sistema de diseño), #163/#164; ADR-09/10, [ADR-07](ARD-07.md); `config.py`, `styles.css` |
 
 ## Notas de Proceso e Integración
 *   **Estándar de Documentación:** Todo el registro técnico del proyecto se rige bajo la plantilla **MADR (Markdown Architecture Decision Records)**, elegida formalmente por el equipo tras el debate documentado en la discusión [#79](#).
