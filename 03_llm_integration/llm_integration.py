@@ -69,10 +69,10 @@ DEFAULT_TEMPERATURE = 0.3
 DEFAULT_MAX_TOKENS = 512
 DEFAULT_TIMEOUT_SECONDS = 60
 DEFAULT_MAX_RETRIES = 3
-# Llamada de acción (ARD-16): el contrato híbrido no cabe en 512 tokens, y con la
-# elicitación de la ola 3 tampoco en 1024 con holgura (un JSON truncado a media llave
-# se paga en reintentos de QA); degradación si llm_config.json no trae la clave
-# max_tokens_action.
+# Llamada de acción (ARD-16): el contrato híbrido no cabe en 512 tokens. Se mantiene
+# 1536 tras el cierre del carril 1 (que redujo la salida ~25%): el tope no cobra si no
+# se usa y un JSON truncado a media llave se paga en reintentos de QA; degradación si
+# llm_config.json no trae la clave max_tokens_action.
 DEFAULT_MAX_TOKENS_ACTION = 1536
 # Reintentos del pase de autocrítica (ARD-16 Decisión 7): 1 llamada + 2 regeneraciones.
 DEFAULT_ACTION_QA_RETRIES = 2
@@ -583,20 +583,16 @@ def build_prompt(
 # Sin playbook y sin few-shot de acciones (descartes registrados en el ARD).
 
 # Llaves de nivel superior del contrato, EN ORDEN. El orden es requisito, no estilo:
-# condiciona el plan al razonamiento ya generado (generación autoregresiva). La
-# elicitación va PRIMERO (ARD-16 ola 3): el conocimiento de dominio se emite antes
-# de analizar la PO, así el resto de la salida queda condicionado a él.
+# condiciona el plan al razonamiento ya generado (generación autoregresiva). La llave
+# `elicitacion` de la ola 3 se retiró en el cierre del carril 1 (ARD-16 D8).
 _ACTION_TOP_KEYS = (
-    "elicitacion", "razonamiento", "hipotesis_principal",
-    "hipotesis_alternativa", "confianza",
+    "razonamiento", "hipotesis_principal", "hipotesis_alternativa", "confianza",
 )
 
 # Campos planos que devuelve el parseo del contrato; todos son de texto (la confianza
-# va aparte) y participan del check de esquema y del de cifras ∈ input. Que la
-# elicitación pase por el check de cifras es deliberado: el cuestionario pide
-# respuestas SIN cifras, y cualquier "típicamente N horas" inventado cae aquí.
+# va aparte) y participan del check de esquema y del de cifras ∈ input.
 _ACTION_TEXT_FIELDS = (
-    "elicitacion", "razonamiento", "hipotesis", "hipotesis_evidencia",
+    "razonamiento", "hipotesis", "hipotesis_evidencia",
     "accion_inmediata", "accion_correctiva", "accion_preventiva",
     "hipotesis_alt", "paso_discriminante",
 )
@@ -608,7 +604,13 @@ _META_VERB_STEMS = ("revis", "analiz", "investig", "monitor")
 _META_COMPOUND_LEADS = ("dar", "da", "de", "dando", "hacer", "haz", "haga", "haciendo")
 
 # Términos que satisfacen la decisión del faltante ante short ship (ARD-16 Decisión 3).
-_SHORT_SHIP_DECISION_KEYS = ("re-emitir", "reemitir", "re emitir", "esperar", "cancelar")
+# Stems, no palabras completas: la corrida ola3-fix-seed mostró falsos positivos con
+# planes que SÍ decidían ("solicitar su re-envío", "espera al faltante") pero en formas
+# fuera de la lista, y cada falso positivo cuesta hasta 2 regeneraciones (llamadas API).
+_SHORT_SHIP_DECISION_KEYS = (
+    "re-emit", "reemit", "re emit", "re-envi", "reenvi", "re envi",
+    "reponer", "reposicion", "resurt", "esper", "cancel",
+)
 
 # Términos con los que la HIPÓTESIS (el campo solo, no el razonamiento) reconoce la
 # indeterminación en POs Indeterminado (ARD-16 ola 2). Compartida con la tasa del
@@ -637,30 +639,6 @@ _STAGE_ALIASES = {
     "Carrier": ("carrier", "transportista"),
     "DC": ("dc", "centro de distribucion"),
 }
-
-# Pregunta 1 del auto-cuestionario de elicitación (ARD-16 ola 3), parametrizada por
-# etapa: "causas más comunes desde la etapa medida" (pregunta del mentor). Las otras
-# dos preguntas (shorting, rescheduling) son fijas. Etapa fuera del mapa → cae a la
-# formulación de Indeterminado (no afirma origen).
-_ELICIT_STAGE_QUESTION = {
-    "Vendor": "¿Cuáles son las causas más comunes de retraso que se originan en el "
-              "proveedor, antes del embarque?",
-    "Carrier": "¿Cuáles son las causas más comunes de retraso que se originan en el "
-               "tránsito del transportista?",
-    "DC": "¿Cuáles son las causas más comunes de retraso que se originan en la "
-          "recepción del centro de distribución (patio y descarga)?",
-    "Indeterminado": "¿Qué causas de retraso suelen quedar sin atribuir cuando los "
-                     "timestamps no permiten aislar una etapa dominante?",
-}
-
-# Glosario abierto de términos de industria (ARD-16 ola 3): vocabulario DISPONIBLE,
-# no plantilla — términos sueltos, sin definiciones ni frases de ejemplo (lección de
-# ADR-14: las frases ilustrativas se capturan como plantillas; los términos solos
-# activan vocabulario). La tasa de uso del evaluador se deriva de esta misma lista.
-_INDUSTRY_GLOSSARY = (
-    "expedite", "chargeback", "carrier scorecard", "re-cita de dock",
-    "split shipment", "safety stock", "OTIF",
-)
 
 # Cifras: el MISMO patrón se aplica al prompt y a la salida; la comparación es por
 # float, de modo que 4.2 y 4.20 cuentan como la misma cifra.
@@ -718,13 +696,12 @@ def compute_dataset_stats(df: pd.DataFrame) -> Dict[str, Any]:
             "median": float(serie.median()) if len(serie) else 0.0,
         }
 
-    # --- Carril 2 estático (ARD-16 ola 3): historial dentro del dataset ---
-    # Agregados por actor, patrón de señales y short-ship global, precomputados una
-    # vez por corrida y renderizados por PO en _history_lines. Cada bloque se guarda
-    # con sus n crudos (el render los presenta como "k de n": el n visible es
-    # requisito del ARD para que el modelo pondere celdas chicas). Guards por
-    # columna: un df mínimo (p. ej. de la suite) produce dicts vacíos y el render
-    # cae a líneas neutras.
+    # --- Historial dentro del dataset (agregados por actor, patrón de señales y
+    # short-ship global), precomputado una vez por corrida. El bloque HISTORIAL del
+    # prompt que los renderizaba se retiró en el cierre del carril 1 (uso medido
+    # 0-1/20, ARD-16 D8); los agregados se conservan como insumo del condicional
+    # agéntico de ARD-16 D4. Guards por columna: un df mínimo (p. ej. de la suite)
+    # produce dicts vacíos.
     stats["vendor_history"] = {}
     if "VENDOR_NAME" in df.columns:
         for nombre, g in df.groupby("VENDOR_NAME"):
@@ -925,94 +902,6 @@ def _comparative_lines(row: pd.Series, stats: Dict[str, Any]) -> List[str]:
     return lineas
 
 
-def _median_str(values: List[float]) -> str:
-    """Mediana de una lista no vacía, formateada a un decimal."""
-    return f"{float(pd.Series(values).median()):.1f}"
-
-
-def _history_lines(row: pd.Series, stats: Dict[str, Any]) -> List[str]:
-    """Bloque HISTORIAL EN EL DATASET (ARD-16 ola 3, carril 2 estático).
-
-    Agregados DETERMINISTAS precomputados por corrida (compute_dataset_stats) y
-    renderizados por PO. Reglas de forma: conteos como "k de n" — nunca %, para que
-    el n viaje con cada cifra y el modelo pondere las celdas chicas; la PO consultada
-    va INCLUIDA en sus propios conteos con etiqueta explícita (mismo criterio que los
-    percentiles de la ola 1); las cuatro líneas son incondicionales, con valor neutro
-    cuando falta el dato (sin juicio por selección). Con n_attr = 0 la mediana se
-    omite (no hay valores), los conteos van igual.
-    """
-    lineas = [
-        "HISTORIAL EN EL DATASET (agregados ya calculados; no los recalcules. "
-        "Pondera cada uno por su n: con pocas POs es evidencia débil):"
-    ]
-    vendor = str(row.get("VENDOR_NAME") or "")
-    vh = stats.get("vendor_history", {}).get(vendor)
-    if vh:
-        mediana = (
-            f" (mediana de exceso Vendor entre esas {vh['n_attr']}: "
-            f"{_median_str(vh['exceso_values'])} h)" if vh["exceso_values"] else ""
-        )
-        lineas.append(
-            f"- Proveedor {vendor} (incluye esta PO): {vh['n_pos']} POs en el "
-            f"dataset, {vh['n_tardias']} tardías; {vh['n_attr']} de las tardías "
-            f"atribuidas a Vendor{mediana}; short ship en {vh['n_short']} de "
-            f"{vh['n_pos']}; reprogramación en {vh['n_resched']} de {vh['n_pos']}."
-        )
-    else:
-        lineas.append("- Proveedor no disponible: sin historial en el dataset.")
-    carrier = str(row.get("CARRIER_PARTY_NAME") or "")
-    ch = stats.get("carrier_history", {}).get(carrier)
-    if ch:
-        mediana = (
-            f" (mediana de exceso Carrier entre esas {ch['n_attr']}: "
-            f"{_median_str(ch['exceso_values'])} h)" if ch["exceso_values"] else ""
-        )
-        lineas.append(
-            f"- Transportista {carrier} (incluye esta PO): {ch['n_pos']} POs, "
-            f"{ch['n_tardias']} tardías; {ch['n_attr']} atribuidas a "
-            f"Carrier{mediana}."
-        )
-    else:
-        lineas.append("- Transportista no disponible: sin historial en el dataset.")
-    ssg = stats.get("short_ship_global", {})
-    llave = (
-        bool(row.get("_short_ship", False)),
-        bool(row.get("is_rescheduled", False)),
-        row.get("HOT_PO_FLAG", 0) == 1,
-    )
-    pat = stats.get("pattern", {}).get(llave)
-    if pat and ssg:
-        etiquetas = (
-            f"short ship: {'Sí' if llave[0] else 'No'}, "
-            f"reprogramación: {'Sí' if llave[1] else 'No'}, "
-            f"urgente: {'Sí' if llave[2] else 'No'}"
-        )
-        por_etapa = " · ".join(
-            f"{et} {pat['por_etapa'].get(et, 0)}"
-            for et in ("Vendor", "Carrier", "DC", "Indeterminado")
-        )
-        lineas.append(
-            f"- POs tardías con el mismo patrón de señales ({etiquetas}): "
-            f"{pat['n']} de {ssg['n_tardios']} (incluye esta PO); su etapa "
-            f"medida: {por_etapa}."
-        )
-    else:
-        lineas.append("- Patrón de señales: sin agregados disponibles.")
-    if ssg:
-        cola = (
-            f"; fill rate mediano de esos envíos: "
-            f"{float(pd.Series(ssg['fill_values']).median()) * 100:.1f}%"
-            if ssg.get("fill_values") else ""
-        )
-        lineas.append(
-            f"- Short ship en el dataset: {ssg['n_short']} de {ssg['n_tardios']} "
-            f"POs tardías{cola}."
-        )
-    else:
-        lineas.append("- Short ship en el dataset: sin agregados disponibles.")
-    return lineas
-
-
 def build_action_prompt(
     row: pd.Series,
     diagnosis: Dict[str, Any],
@@ -1024,14 +913,20 @@ def build_action_prompt(
     (el antídoto directo a la meta-acción: quien ejecuta no puede delegar). Recibe el
     diagnóstico de la llamada 1 como fuente de verdad — sin esa ancla el modelo
     re-diagnosticaría la etapa que Fase 2 ya validó — y pide el contrato híbrido
-    elicitacion → razonamiento → hipotesis_principal{hipotesis, evidencia, plan{...}}
+    razonamiento → hipotesis_principal{hipotesis, evidencia, plan{...}}
     → hipotesis_alternativa{hipotesis, paso_discriminante} → confianza, con las llaves
     EN ORDEN. Sin límite de longitud por campo (a diferencia de la llamada 1).
 
     Los bloques DATOS/TIMELINE/MÉTRICAS/CONTEXTO espejan build_prompt para que ambas
     llamadas vean los mismos hechos; se suman las magnitudes destapadas
-    (_order_magnitude_lines), los comparativos globales (_comparative_lines) y el
-    historial del dataset (_history_lines, carril 2 estático de ARD-16).
+    (_order_magnitude_lines) y los comparativos globales (_comparative_lines).
+
+    Cierre del carril 1 (ARD-16 D8): se retiraron el auto-cuestionario de elicitación,
+    el glosario de industria y el historial del dataset — costo alto en tokens con uso
+    medido casi nulo en el fixture (glosario 1-3/20, historial 0-1/20) y sin mejora en
+    el gate; las instrucciones se compactaron y las condicionales por etapa se emiten
+    solo cuando aplican. El bloque de instrucciones compite por la atención del modelo
+    objetivo (gpt-4o-mini): menos reglas, sin solaparse, se siguen mejor.
 
     Args:
         row: fila del DataFrame clasificado (una PO tardía).
@@ -1080,8 +975,6 @@ def build_action_prompt(
     magnitude_lines[-1] += "\n"
     comparative_lines = _comparative_lines(row, stats)
     comparative_lines[-1] += "\n"
-    history_lines = _history_lines(row, stats)
-    history_lines[-1] += "\n"
 
     # Diagnóstico diferencial (ARD-16 ola 2): la regla mecanismo-vs-etiqueta es genérica
     # para toda etapa; SOLO Vendor recibe el pointer de señales (fill rate /
@@ -1098,7 +991,7 @@ def build_action_prompt(
         "alternativa es compatible con exactamente la misma evidencia y ningún dato "
         "podría separarlas, elige otra alternativa.",
         "- La evidencia de cada hipótesis cita las cifras que la favorecen SOBRE la "
-        "otra, no solo las que la acompañan.",
+        "otra.",
     ]
     if stage == "Vendor":
         differential_lines.append(
@@ -1108,41 +1001,6 @@ def build_action_prompt(
             "planificación/agenda, no a falta de producto."
         )
     differential_lines[-1] += "\n"
-
-    # Auto-cuestionario de elicitación (ARD-16 ola 3, pregunta del mentor ×3): el
-    # modelo emite su conocimiento de dominio ANTES de analizar la PO (por eso
-    # `elicitacion` es la primera llave del contrato). "SIN cifras" no es estilo:
-    # el check cifra_fuera_de_input cubre el campo y cazaría un "típicamente N h".
-    pregunta_etapa = _ELICIT_STAGE_QUESTION.get(
-        str(stage), _ELICIT_STAGE_QUESTION["Indeterminado"]
-    )
-    elicit_lines = [
-        "AUTO-CUESTIONARIO DE DOMINIO (respóndelo ANTES de analizar esta PO):",
-        "Responde primero, desde tu conocimiento de cadena de suministro y sin usar "
-        "los datos de esta PO, estas tres preguntas. Respuestas breves (2-3 líneas "
-        "cada una), cualitativas y SIN cifras: nombran mecanismos y consecuencias, "
-        "no números.",
-        f"1. {pregunta_etapa}",
-        "2. ¿Cómo afecta un short ship (envío incompleto) a la operación del "
-        "comprador y qué decisiones abre sobre la orden?",
-        "3. ¿Qué suele causar la reprogramación de una cita de entrega "
-        "(rescheduling) y qué consecuencias operativas tiene?",
-        "Escribe las respuestas en el campo `elicitacion` del JSON y contrasta "
-        "después tus hipótesis con ellas: tu mecanismo debería ser una de las "
-        "causas que tú mismo nombraste, o justificar por qué no.\n",
-    ]
-
-    # Glosario abierto (ARD-16 ola 3): activa vocabulario de instrumentos reales de
-    # industria para el plan, con la prohibición anti-plantilla explícita.
-    glossary_lines = [
-        "VOCABULARIO DE INDUSTRIA (disponible, no obligatorio):",
-        "- Instrumentos habituales del dominio que puedes emplear en el plan cuando "
-        f"apliquen: {', '.join(_INDUSTRY_GLOSSARY)}. La lista es abierta: puedes "
-        "usar otros instrumentos que conozcas.",
-        "- Es vocabulario, no plantilla: no transcribas frases de este prompt en tu "
-        "respuesta; nombra el instrumento dentro de una acción redactada con tus "
-        "palabras y con los datos de esta PO.\n",
-    ]
 
     # Reparto multi-actor (ARD-16 ola 2): solo con stage_multi activo (≥2 etapas). El
     # plan puede repartir correctiva/preventiva entre actores, pero la acción inmediata
@@ -1157,15 +1015,46 @@ def build_action_prompt(
             f"UNA sola, dirigida al cuello de botella (la etapa primaria: {stage})."
         )
 
+    # Bloque de diagnóstico: la línea de causas múltiples solo cuando las hay (con
+    # etapa única imprimía "Causas múltiples: Vendor", que se lee como contradicción).
+    diagnostico_lines = [
+        "DIAGNÓSTICO VALIDADO (fuente de verdad, no lo re-litigues):",
+        f"- Etapa primaria del retraso: {stage}",
+    ]
+    if " + " in stage_multi:
+        diagnostico_lines.append(f"- Causas múltiples: {stage_multi}")
+    diagnostico_lines += [
+        f"- Causa raíz identificada: {diagnosis.get('causa_raiz', '')}",
+        f"- Severidad: {diagnosis.get('severidad', '')}\n",
+    ]
+
+    # TU TAREA condicional por etapa (cierre ARD-16 D8): la instrucción de
+    # indeterminación solo va a POs Indeterminado; en el resto era ruido que competía
+    # por atención. El paso de esclarecimiento como acción lo cubre la regla fusionada
+    # del plan (rama "mecanismo no confirmado"), única fuente de esa instrucción.
+    if stage == "Indeterminado":
+        tarea_lines = [
+            "TU TAREA:",
+            "La etapa es Indeterminado: tu hipótesis NO afirma un mecanismo como "
+            "causa. Reconoce explícitamente la indeterminación, identifica el dato "
+            "faltante que impide atribuir la etapa y formula el mecanismo en "
+            "condicional (\"si <dato> muestra X, el mecanismo es A; si muestra Y, "
+            "es B\").\n",
+        ]
+    else:
+        tarea_lines = [
+            "TU TAREA:",
+            f"La etapa ya está decidida ({stage}); tu trabajo es el mecanismo DEBAJO "
+            "de ese nivel (inventario o capacidad del proveedor, documentación, "
+            "congestión de puertas o de patio, planificación de rutas…) y el plan "
+            "que se deriva de él.\n",
+        ]
+
     prompt_lines = [
         "Eres el planner de abastecimiento responsable de esta Purchase Order "
         "retrasada. Tienes autoridad para decidir los siguientes pasos: el plan que "
         "emitas es el que se ejecuta, no una sugerencia para otro equipo.\n",
-        "DIAGNÓSTICO VALIDADO (fuente de verdad, no lo re-litigues):",
-        f"- Etapa primaria del retraso: {stage}",
-        f"- Causas múltiples: {row.get('stage_multi', 'Ninguna')}",
-        f"- Causa raíz identificada: {diagnosis.get('causa_raiz', '')}",
-        f"- Severidad: {diagnosis.get('severidad', '')}\n",
+        *diagnostico_lines,
         "DATOS DE LA PO:",
         f"- Número de PO: {row.get('PO_NBR', 'N/A')}",
         f"- Proveedor: {row.get('VENDOR_NAME', 'N/A')}",
@@ -1181,37 +1070,27 @@ def build_action_prompt(
         *metric_lines,
         *magnitude_lines,
         *comparative_lines,
-        *history_lines,
         "\n".join(context_lines) + "\n",
         "PERÍMETRO DE RAZONAMIENTO:",
-        "- Los HECHOS de esta PO y del dataset son únicamente los datos de arriba. "
-        "Toda cifra que uses debe ser una de las dadas, citada textualmente. No "
-        "inventes hechos ni números.",
-        "- Tu conocimiento de dominio de cadena de suministro SÍ está habilitado para "
-        "generalizar (causas típicas, prácticas de industria, consecuencias "
-        "operativas). Cuando lo uses, márcalo en la redacción (p. ej. \"como patrón "
+        "- Los HECHOS de esta PO y del dataset son solo los datos de arriba; toda "
+        "cifra que uses debe ser una de las dadas, citada textualmente. No inventes "
+        "hechos ni números.",
+        "- Tu conocimiento de dominio de cadena de suministro SÍ está habilitado "
+        "para generalizar; cuando lo uses, márcalo en la redacción (\"como patrón "
         "de industria…\", \"típicamente…\"), separado de lo que los datos muestran.",
-        "- Si los datos no alcanzan para distinguir dos mecanismos, decláralo: esa "
-        "carencia es exactamente lo que tu paso discriminante debe resolver.\n",
-        *elicit_lines,
-        *glossary_lines,
-        "TU TAREA:",
-        f"La etapa ya está decidida ({stage}); tu trabajo es el mecanismo DEBAJO de "
-        "ese nivel (según la etapa: inventario o capacidad del proveedor, "
-        "documentación, congestión de puertas o de patio, planificación de rutas…) y "
-        "el plan que se deriva de él. Si la etapa es Indeterminado, tu hipótesis NO "
-        "afirma un mecanismo como causa: reconoce explícitamente la indeterminación, "
-        "identifica el dato faltante que impide atribuir la etapa y formula el "
-        "mecanismo en condicional (\"si <dato> muestra X, el mecanismo es A; si "
-        "muestra Y, es B\"). La acción inmediata es el paso de esclarecimiento: "
-        "conseguir hoy ese dato, con la decisión que depende de él.\n",
+        "- Si los datos no alcanzan para distinguir dos mecanismos, decláralo: eso "
+        "es lo que tu paso discriminante debe resolver.\n",
+        *tarea_lines,
         *differential_lines,
         "REGLAS DEL PLAN (obligatorias):",
-        "- La acción inmediata es una medida ejecutable hoy, con destinatario y "
-        "objeto concretos. Revisar, analizar, investigar, monitorear o dar "
-        "seguimiento NO cuentan como acción principal: delegan la decisión en vez de "
-        "tomarla.",
-        "- Toda verificación que incluyas nombra el DATO exacto a obtener y la "
+        "- La acción inmediata es UNA medida ejecutable hoy, con destinatario y "
+        "objeto concretos, y depende del estado del mecanismo: si un dato citado en "
+        "la evidencia ya lo sostiene, es coordinación o ejecución directa; si solo "
+        "lo infieres del patrón de la etapa, es conseguir hoy el dato preciso que "
+        "lo confirmaría o descartaría —el mismo de tu paso_discriminante—, nunca "
+        "una solicitud genérica de explicación, informe o plan de acción.",
+        "- Revisar, analizar, investigar, monitorear o dar seguimiento no cuentan "
+        "como acción principal; toda verificación nombra el DATO exacto y la "
         "DECISIÓN que depende de él (\"obtener X: si X supera Y, hacer A; si no, B\").",
         "- Si hubo short ship, el plan decide qué hacer con el faltante —re-emitir, "
         "esperar o cancelar— y con qué criterio.",
@@ -1220,14 +1099,15 @@ def build_action_prompt(
         "Responde ÚNICAMENTE con el JSON, sin texto adicional, con las llaves EN "
         "ESTE ORDEN:",
         "{",
-        '  "elicitacion": "tus respuestas breves a las preguntas 1-3",',
         '  "razonamiento": "tu análisis del mecanismo: qué observas en los datos, '
         'qué mecanismos son compatibles y cuál pesa más y por qué",',
         '  "hipotesis_principal": {',
         '    "hipotesis": "el mecanismo concreto bajo la etapa diagnosticada",',
         '    "evidencia": "los datos citados que la sostienen",',
         '    "plan": {',
-        '      "accion_inmediata": "qué se hace hoy, dirigida a quién y sobre qué",',
+        '      "accion_inmediata": "qué se hace hoy, dirigida a quién y sobre qué; '
+        'si el mecanismo no está confirmado por un dato citado, es conseguir el '
+        'dato de tu paso_discriminante",',
         '      "accion_correctiva": "qué corrige la causa en esta PO o este flujo",',
         '      "accion_preventiva": "qué evita que se repita"',
         "    }",
@@ -1309,7 +1189,6 @@ def _parse_action_json(raw_response: str) -> Optional[Dict[str, Any]]:
         return str(valor).strip() if valor is not None else ""
 
     return {
-        "elicitacion": _texto(parsed.get("elicitacion")),
         "razonamiento": _texto(parsed.get("razonamiento")),
         "hipotesis": _texto(hp.get("hipotesis")),
         "hipotesis_evidencia": _texto(hp.get("evidencia")),
@@ -1887,6 +1766,7 @@ class OpenAIBackend:
         max_tokens: int = DEFAULT_MAX_TOKENS,
         timeout_seconds: int = DEFAULT_TIMEOUT_SECONDS,
         max_retries: int = DEFAULT_MAX_RETRIES,
+        seed: Optional[int] = None,
     ) -> None:
         """
         Inicializa el backend de OpenAI.
@@ -1894,6 +1774,10 @@ class OpenAIBackend:
         Args:
             api_key: API key de OpenAI.
             model: Modelo a utilizar ('gpt-4o-mini', 'gpt-4', 'gpt-4-turbo', etc).
+            seed: semilla para muestreo determinista *best-effort* de la API (no
+                garantizado; OpenAI expone `system_fingerprint` en la respuesta para
+                detectar cambios de backend). None desactiva el parámetro. Exclusivo
+                de OpenAI: Claude/DeepSeek/Qwen no lo soportan en este cliente.
         """
         self.api_key = api_key
         self.model = model
@@ -1902,6 +1786,7 @@ class OpenAIBackend:
         self.max_tokens = max_tokens
         self.timeout_seconds = timeout_seconds
         self.max_retries = max_retries
+        self.seed = seed
 
     def call_raw(self, prompt: str) -> Optional[str]:
         """
@@ -1921,10 +1806,16 @@ class OpenAIBackend:
             "model": self.model,
             "max_tokens": self.max_tokens,
             "temperature": self.temperature,
+            # Ambas llamadas del proyecto esperan SIEMPRE JSON; el modo json_object
+            # elimina preámbulos y fallos de parseo (menos regeneraciones de QA).
+            # Requiere que el prompt contenga la palabra "JSON" (ambos la traen).
+            "response_format": {"type": "json_object"},
             "messages": [
                 {"role": "user", "content": prompt}
             ]
         }
+        if self.seed is not None:
+            body["seed"] = self.seed
 
         for attempt in range(self.max_retries):
             try:
@@ -2008,6 +1899,8 @@ def create_backend(
         temperature: override de temperatura para esta corrida; None usa llm_config.json.
         max_tokens: override de tokens de salida; None usa llm_config.json. Lo usa la
             llamada de acción (ARD-16): su contrato híbrido no cabe en los 512 default.
+        (El `seed` de llm_config.json se aplica solo al backend OpenAI, sin argumento
+        propio aquí: es best-effort de la API, no exclusivo de una corrida.)
 
     Returns:
         Instancia del backend configurado.
@@ -2055,7 +1948,7 @@ def create_backend(
             )
         model = openai_model or models["openai"]
         print(f"🔑 Usando OpenAI API (modelo: {model})")
-        return OpenAIBackend(api_key, model, **inference)
+        return OpenAIBackend(api_key, model, **inference, seed=cfg.get("seed"))
 
     # Default: backend local con Qwen/Ollama
     model = ollama_model or models["local"]
@@ -2069,7 +1962,6 @@ def create_backend(
 
 # Columna del DataFrame → campo aplanado del contrato de la llamada de acción.
 _ACTION_COLUMN_MAP = {
-    "llm_elicitacion": "elicitacion",
     "llm_razonamiento": "razonamiento",
     "llm_hipotesis": "hipotesis",
     "llm_hipotesis_evidencia": "hipotesis_evidencia",

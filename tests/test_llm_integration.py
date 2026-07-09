@@ -32,7 +32,6 @@ from llm_integration import (
     _action_keys_in_order,
     _excess_band,
     _cond_matches,
-    _history_lines,
     _parse_action_json,
     _parse_llm_json,
     _percentile_rank,
@@ -440,13 +439,8 @@ def _prompt_accion() -> str:
 def _raw_accion_ok() -> str:
     """Respuesta cruda VÁLIDA del contrato híbrido: llaves en orden, cifras del input
     (3.00 días y 10.0 h están en el prompt de _row_accion), etapa Carrier nombrada,
-    acción inmediata concreta (sin verbo meta). La elicitación va primera y SIN
-    cifras (regla del cuestionario: una cifra inventada caería en el check)."""
+    acción inmediata concreta (sin verbo meta)."""
     return json.dumps({
-        "elicitacion": "Como patrón de industria, los retrasos del transportista "
-                       "suelen venir de planificación de rutas, capacidad de flota o "
-                       "clima; un short ship obliga a decidir la reposición del "
-                       "faltante; una re-cita suele reflejar problemas de agenda.",
         "razonamiento": "El exceso del transportista de 10.0 horas concentra el "
                         "retraso en la etapa Carrier.",
         "hipotesis_principal": {
@@ -523,7 +517,7 @@ def test_percentile_rank_es_pct_de_menores():
 def test_build_action_prompt_contrato_con_llaves_en_orden():
     out = _prompt_accion()
     assert "EN ESTE ORDEN" in out
-    assert (out.index('"elicitacion"') < out.index('"razonamiento"')
+    assert (out.index('"razonamiento"')
             < out.index('"hipotesis_principal"')
             < out.index('"hipotesis_alternativa"') < out.index('"confianza"'))
     for campo in ('"accion_inmediata"', '"accion_correctiva"', '"accion_preventiva"',
@@ -583,7 +577,7 @@ def test_build_action_prompt_sin_fewshot_y_con_reglas_de_concrecion():
     out = _prompt_accion()
     assert "EJEMPLOS DE RAZONAMIENTO" not in out
     assert "REGLAS DEL PLAN (obligatorias):" in out
-    assert "NO cuentan como acción principal" in out
+    assert "no cuentan como acción principal" in out
     assert "re-emitir" in out                       # decisión del faltante
     assert "PERÍMETRO DE RAZONAMIENTO:" in out
     assert "márcalo en la redacción" in out          # generalizaciones marcadas
@@ -609,7 +603,7 @@ def test_is_meta_action_no_dispara_en_acciones_concretas():
 # --- _parse_action_json / _action_keys_in_order: contrato híbrido ---
 def test_parse_action_json_aplana_contrato():
     out = _parse_action_json(_raw_accion_ok())
-    assert out["elicitacion"].startswith("Como patrón de industria")
+    assert out["razonamiento"].startswith("El exceso del transportista")
     assert out["hipotesis"].startswith("Planificación")
     assert out["hipotesis_evidencia"].startswith("Exceso del transportista")
     assert out["accion_inmediata"].startswith("Exigir")
@@ -625,21 +619,19 @@ def test_parse_action_json_sin_json_devuelve_none():
 def test_parse_action_json_llaves_faltantes_dan_vacio():
     out = _parse_action_json('{"razonamiento": "solo esto"}')
     assert out["razonamiento"] == "solo esto"
-    assert out["elicitacion"] == ""
     assert out["accion_inmediata"] == ""
     assert out["confianza_hipotesis"] == 0.5    # default documentado del parser
 
 
 def test_action_keys_in_order_verifica_sobre_el_crudo():
     assert _action_keys_in_order(_raw_accion_ok()) is True
-    desordenado = ('{"confianza": 0.8, "elicitacion": "x", "razonamiento": "x", '
+    desordenado = ('{"confianza": 0.8, "razonamiento": "x", '
                    '"hipotesis_principal": {}, "hipotesis_alternativa": {}}')
     assert _action_keys_in_order(desordenado) is False
-    # La elicitación fuera de su lugar (tras el razonamiento) también rompe el orden.
-    elicit_tarde = ('{"razonamiento": "x", "elicitacion": "x", '
-                    '"hipotesis_principal": {}, "hipotesis_alternativa": {}, '
-                    '"confianza": 0.8}')
-    assert _action_keys_in_order(elicit_tarde) is False
+    # La alternativa antes del principal también rompe el orden.
+    alt_temprana = ('{"razonamiento": "x", "hipotesis_alternativa": {}, '
+                    '"hipotesis_principal": {}, "confianza": 0.8}')
+    assert _action_keys_in_order(alt_temprana) is False
 
 
 # --- run_action_checks: cada check con caso que pasa y caso que falla ---
@@ -833,70 +825,55 @@ def test_run_action_checks_indeterminado_no_aplica_en_atribuidas():
     assert "indeterminado_sin_reconocer" not in codigos
 
 
-# --- ARD-16 ola 3: auto-cuestionario de elicitación (campo `elicitacion`) ---
-def test_action_prompt_cuestionario_pregunta_por_etapa():
-    # La pregunta 1 se parametriza por stage_primary (las otras dos son fijas).
-    esperado = {
-        "Vendor": "se originan en el proveedor, antes del embarque",
-        "Carrier": "se originan en el tránsito del transportista",
-        "DC": "recepción del centro de distribución (patio y descarga)",
-        "Indeterminado": "suelen quedar sin atribuir cuando los timestamps",
-    }
-    for etapa, fragmento in esperado.items():
+# --- Cierre del carril 1 (ARD-16 D8): bloques de ola 3 retirados del prompt ---
+def test_action_prompt_sin_bloques_de_ola3():
+    # Elicitación, glosario e historial salieron del prompt y del contrato (uso
+    # medido 0-3/20 en los fixtures de la ola 3, sin mejora en el gate).
+    for etapa in ("Vendor", "Carrier", "DC", "Indeterminado"):
         row = _row_accion()
         row["stage_primary"] = etapa
         out = build_action_prompt(row, _diag_ejemplo(), _stats_ejemplo())
-        assert fragmento in out, etapa
+        assert "AUTO-CUESTIONARIO" not in out, etapa
+        assert "VOCABULARIO DE INDUSTRIA" not in out, etapa
+        assert "HISTORIAL EN EL DATASET" not in out, etapa
+        assert '"elicitacion"' not in out, etapa
 
 
-def test_action_prompt_cuestionario_bloque_antes_de_la_tarea():
+def test_action_prompt_tarea_condicional_por_etapa():
+    # La instrucción de indeterminación solo va a POs Indeterminado; en etapas
+    # atribuidas la tarea pide el mecanismo bajo el nivel etapa.
+    out = _prompt_accion()                       # _row_accion es Carrier
+    assert "mecanismo DEBAJO" in out
+    assert "reconoce explícitamente la indeterminación" not in out.lower()
+    row = _row_accion()
+    row["stage_primary"] = "Indeterminado"
+    out_indet = build_action_prompt(row, _diag_ejemplo(), _stats_ejemplo())
+    assert "Reconoce explícitamente la indeterminación" in out_indet
+    assert "mecanismo DEBAJO" not in out_indet
+
+
+def test_action_prompt_regla_de_accion_con_dos_ramas():
+    # Regla fusionada (única fuente): mecanismo confirmado → ejecución/coordinación;
+    # no confirmado → conseguir el dato del paso_discriminante. La versión micro va
+    # en la descripción del campo accion_inmediata del contrato (recency).
     out = _prompt_accion()
-    assert "AUTO-CUESTIONARIO DE DOMINIO" in out
-    # Sin cifras: la instrucción previene lo que el check de cifras haría cumplir.
-    assert "SIN cifras" in out
-    # Las preguntas fijas del mentor (shorting y rescheduling) van en toda PO.
-    assert "¿Cómo afecta un short ship" in out
-    assert "reprogramación de una cita de entrega" in out
-    # El cuestionario se responde ANTES de analizar la PO: bloque previo a TU TAREA.
-    assert out.index("AUTO-CUESTIONARIO DE DOMINIO") < out.index("TU TAREA:")
+    assert "depende del estado del mecanismo" in out
+    assert "nunca una solicitud genérica" in out
+    assert out.count("paso_discriminante") >= 2  # regla + campo del contrato
 
 
-def test_run_action_checks_elicitacion_faltante_es_esquema_incompleto():
-    raw = _raw_accion_ok()
-    parsed = _parse_action_json(raw)
-    parsed["elicitacion"] = ""
-    defectos = run_action_checks(parsed, raw, _row_accion(), _prompt_accion())
-    detalles = {c: d for c, d in defectos}
-    assert "esquema_incompleto" in detalles
-    assert "elicitacion" in detalles["esquema_incompleto"]
+def test_action_prompt_causas_multiples_solo_con_multi_actor():
+    out = _prompt_accion()                       # stage_multi ausente → sin línea
+    assert "Causas múltiples" not in out
+    row = _row_accion()
+    row["stage_multi"] = "Vendor + Carrier"
+    out_multi = build_action_prompt(row, _diag_ejemplo(), _stats_ejemplo())
+    assert "- Causas múltiples: Vendor + Carrier" in out_multi
 
 
-# --- ARD-16 ola 3: glosario abierto de vocabulario de industria ---
-def test_action_prompt_glosario_terminos_sueltos_y_anti_plantilla():
-    out = _prompt_accion()
-    assert "VOCABULARIO DE INDUSTRIA (disponible, no obligatorio):" in out
-    # Términos sueltos, sin definiciones ni frases de ejemplo (lección de ADR-14).
-    for termino in ("expedite", "chargeback", "carrier scorecard", "re-cita de dock",
-                    "split shipment", "safety stock", "OTIF"):
-        assert termino in out, termino
-    assert "La lista es abierta" in out
-    assert "no transcribas frases de este prompt" in out
-    assert out.index("VOCABULARIO DE INDUSTRIA") < out.index("TU TAREA:")
-
-
-def test_run_action_checks_elicitacion_con_cifra_inventada():
-    # El cuestionario pide respuestas sin cifras; un "típicamente N horas" inventado
-    # cae en el check de cifras ∈ input (elicitacion es campo de texto del contrato).
-    parsed = _parse_action_json(_raw_accion_ok())
-    parsed["elicitacion"] = "Típicamente estos retrasos duran 48 horas."
-    codigos = [c for c, _ in run_action_checks(
-        parsed, _raw_accion_ok(), _row_accion(), _prompt_accion())]
-    assert "cifra_fuera_de_input" in codigos
-
-
-# --- ARD-16 ola 3: carril 2 estático (historial del dataset en el prompt) ---
 def _df_historial() -> pd.DataFrame:
-    """df clasificado mínimo con las columnas del historial (carril 2 estático)."""
+    """df clasificado mínimo con las columnas del historial (agregados que conserva
+    compute_dataset_stats como insumo del condicional agéntico de ARD-16 D4)."""
     return pd.DataFrame({
         "delay_days_calc": [0.0, 1.0, 2.0, 3.0],
         "stage_primary": ["On-Time", "Vendor", "Vendor", "Carrier"],
@@ -943,53 +920,6 @@ def test_compute_dataset_stats_sin_columnas_de_historial_no_rompe():
     assert stats["carrier_history"] == {}
     assert stats["pattern"] == {}
     assert stats["short_ship_global"]["n_short"] == 0
-
-
-def test_history_lines_k_de_n_incluye_esta_po():
-    stats = compute_dataset_stats(_df_historial())
-    row = pd.Series({"VENDOR_NAME": "ACME", "CARRIER_PARTY_NAME": "FAST",
-                     "_short_ship": True, "is_rescheduled": False, "HOT_PO_FLAG": 0})
-    texto = "\n".join(_history_lines(row, stats))
-    assert ("- Proveedor ACME (incluye esta PO): 3 POs en el dataset, 2 tardías; "
-            "2 de las tardías atribuidas a Vendor (mediana de exceso Vendor entre "
-            "esas 2: 35.0 h); short ship en 1 de 3; reprogramación en 1 de 3."
-            ) in texto
-    assert ("- Transportista FAST (incluye esta PO): 3 POs, 2 tardías; 1 atribuidas "
-            "a Carrier (mediana de exceso Carrier entre esas 1: 12.0 h).") in texto
-    assert ("patrón de señales (short ship: Sí, reprogramación: No, urgente: No): "
-            "1 de 3 (incluye esta PO); su etapa medida: Vendor 1 · Carrier 0 · "
-            "DC 0 · Indeterminado 0.") in texto
-    assert ("- Short ship en el dataset: 1 de 3 POs tardías; fill rate mediano de "
-            "esos envíos: 72.0%.") in texto
-
-
-def test_history_lines_mediana_omitida_sin_atribuidas():
-    # BETA: su única tardía está atribuida a Carrier → 0 atribuidas a Vendor; los
-    # conteos van igual y el paréntesis de la mediana se omite (no hay valores).
-    stats = compute_dataset_stats(_df_historial())
-    row = pd.Series({"VENDOR_NAME": "BETA", "CARRIER_PARTY_NAME": "SLOW",
-                     "_short_ship": False, "is_rescheduled": True, "HOT_PO_FLAG": 0})
-    texto = "\n".join(_history_lines(row, stats))
-    assert ("- Proveedor BETA (incluye esta PO): 1 POs en el dataset, 1 tardías; "
-            "0 de las tardías atribuidas a Vendor; short ship en 0 de 1") in texto
-    assert "mediana de exceso Vendor" not in texto
-
-
-def test_build_action_prompt_historial_incondicional_con_lineas_neutras():
-    # _stats_ejemplo no trae claves de historial: el bloque aparece IGUAL (las 4
-    # líneas incondicionales), con valor neutro — sin juicio por selección.
-    out = _prompt_accion()
-    assert "HISTORIAL EN EL DATASET" in out
-    assert "Pondera cada uno por su n" in out
-    assert "- Proveedor no disponible: sin historial en el dataset." in out
-    assert "- Transportista no disponible: sin historial en el dataset." in out
-    assert "- Patrón de señales: sin agregados disponibles." in out
-    assert "- Short ship en el dataset: sin agregados disponibles." in out
-    # También en Indeterminado: son agregados del dataset, no el exceso de la PO.
-    row = _row_accion()
-    row["stage_primary"] = "Indeterminado"
-    out2 = build_action_prompt(row, _diag_ejemplo(), _stats_ejemplo())
-    assert "HISTORIAL EN EL DATASET" in out2
 
 
 # --- call_action_with_qa: regeneración citando el defecto, tope, sin bloqueo ---
@@ -1051,7 +981,7 @@ def test_add_llm_explanations_default_sin_columnas_de_accion():
     out = add_llm_explanations(_df_min_clasificado(),
                                backend=_Backend1Stub(_diag_ejemplo()),
                                delay_between_calls=0)
-    for col in ("llm_elicitacion", "llm_razonamiento", "llm_hipotesis",
+    for col in ("llm_razonamiento", "llm_hipotesis",
                 "llm_accion_inmediata", "llm_qa_flags", "llm_confianza_hipotesis"):
         assert col not in out.columns
     assert out.loc[0, "llm_causa_raiz"].startswith("La etapa Carrier")
@@ -1067,7 +997,6 @@ def test_add_llm_explanations_action_call_llena_plan():
                                delay_between_calls=0, action_call=True)
     assert out.loc[0, "llm_accion_inmediata"].startswith("Exigir")
     assert out.loc[0, "llm_paso_discriminante"].startswith("Obtener el log")
-    assert out.loc[0, "llm_elicitacion"].startswith("Como patrón de industria")
     assert out.loc[0, "llm_qa_flags"] == ""
     assert out.loc[0, "llm_confianza_hipotesis"] == 0.8
     # El on-time no se procesa (misma regla que la llamada 1).
