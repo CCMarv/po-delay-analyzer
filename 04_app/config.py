@@ -31,6 +31,25 @@ COL_IS_SHORT_SHIP = "is_short_ship"
 COL_REASON_DSC = "REASON_DSC"
 COL_LLM_COINCIDE = "llm_coincide_con_reason"
 
+# ── Columnas de enriquecimiento tier 1 (contrato F3→F4, #158/#167) ────────
+COL_LLM_CONFIANZA = "llm_confianza"
+COL_VENDOR_NAME = "VENDOR_NAME"
+COL_CARRIER_NAME = "CARRIER_PARTY_NAME"
+COL_DC_NAME = "DC_LOC_NAME"
+COL_DELAY_DAYS = "delay_days_calc"
+COL_EXCESS_VENDOR_HRS = "excess_vendor_hrs"
+COL_EXCESS_CARRIER_HRS = "excess_carrier_hrs"
+COL_EXCESS_DC_HRS = "excess_dc_hrs"
+
+# Etapa → timestamps que delimitan su tramo de responsabilidad en el lifecycle
+# (ver 02_clasif_reglas_negocio/classifier_core.py — Vendor: STA push; Carrier:
+# tránsito; DC: yard+dock consolidados). Indeterminado no tiene tramo propio.
+STAGE_SEGMENT_COLUMNS = {
+    "vendor": (COL_STA_DT, COL_APPROVED_DT),
+    "carrier": (COL_APPROVED_DT, COL_TRAILER_ARRIVE_DT),
+    "dc": (COL_TRAILER_ARRIVE_DT, COL_CHECKIN_DT, COL_CHECKOUT_DT),
+}
+
 # ── Sistema de diseño — paleta (ARD-17) ─────────────────────────────────────
 # Etapa: hue categórico Okabe-Ito (CUD), idéntico en toda la app. Indeterminado
 # usa gris neutro (no un hue) porque señala "sin causa atribuible", no una
