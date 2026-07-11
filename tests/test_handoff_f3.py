@@ -26,6 +26,7 @@ from llm_integration import (
     export_deliverable_csv,
     _DELIVERABLE_COLUMNS,
     _MENTOR_COLUMNS,
+    _ENRICHMENT_COLUMNS,
 )
 
 _SEVERITY_DOMAIN = {"HIGH", "MEDIUM", "LOW"}
@@ -45,6 +46,13 @@ def _df_clasificado_con_llm() -> pd.DataFrame:
         "is_short_ship": [False, True, False],
         "REASON_DSC": ["Vendor late appt", "Carrier delay", ""],
         "llm_coincide_con_reason": [True, False, False],
+        "llm_confianza": [0.82, 0.65, 0.0],
+        "VENDOR_NAME": ["Acme Corp", "Globex Inc", "N/A"],
+        "CARRIER_PARTY_NAME": ["FastFreight", "SpeedyLogistics", "N/A"],
+        "DC_LOC_NAME": ["DC Houston", "DC Dallas", "N/A"],
+        "excess_vendor_hrs": [12.0, 0.0, 0.0],
+        "excess_carrier_hrs": [0.0, 8.0, 0.0],
+        "excess_dc_hrs": [0.0, 0.0, 0.0],
     }
     for col in ("PO_DT", "STA_DT", "APPROVED_DT", "TRAILER_ARRIVE_DT",
                 "CHECKIN_DT", "CHECKOUT_DT", "RECPT_DT"):
@@ -88,6 +96,16 @@ def test_contrato_f3_soporte_para_timeline_presente(tmp_path):
                 "CHECKIN_DT", "CHECKOUT_DT", "RECPT_DT",
                 "HOT_PO_FLAG", "is_short_ship",
                 "REASON_DSC", "llm_coincide_con_reason"):
+        assert col in releido.columns
+
+
+def test_contrato_f3_enriquecimiento_tier1_presente(tmp_path):
+    # Tier 1 (#158): confianza, nombres de entidad y exceso por etapa están en el
+    # artefacto → Fase 4 dibuja scorecards y magnitud del delay SIN recomputar.
+    out_path = tmp_path / "po_output.csv"
+    export_deliverable_csv(_df_clasificado_con_llm(), out_path)
+    releido = pd.read_csv(out_path)
+    for col in _ENRICHMENT_COLUMNS:
         assert col in releido.columns
 
 

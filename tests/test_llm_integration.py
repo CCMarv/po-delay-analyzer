@@ -41,6 +41,7 @@ from llm_integration import (
     export_deliverable_csv,
     _DELIVERABLE_COLUMNS,
     _MENTOR_COLUMNS,
+    _ENRICHMENT_COLUMNS,
 )
 
 
@@ -1162,7 +1163,14 @@ def _df_con_llm() -> pd.DataFrame:
         "llm_coincide_con_reason": [True, False, False],
         # columna interna que NO debe aparecer en el entregable:
         "severity": ["HIGH", "LOW", ""],
+        # enriquecimiento tier-1 (#158): sí se exporta.
         "llm_confianza": [0.9, 0.5, 0.0],
+        "VENDOR_NAME": ["Acme Corp", "Globex Inc", "N/A"],
+        "CARRIER_PARTY_NAME": ["FastFreight", "SpeedyLogistics", "N/A"],
+        "DC_LOC_NAME": ["DC Houston", "DC Dallas", "N/A"],
+        "excess_vendor_hrs": [12.0, 0.0, 0.0],
+        "excess_carrier_hrs": [0.0, 8.0, 0.0],
+        "excess_dc_hrs": [0.0, 0.0, 0.0],
     }
     # soporte: timeline (7 timestamps)
     for col in ("PO_DT", "STA_DT", "APPROVED_DT", "TRAILER_ARRIVE_DT",
@@ -1180,8 +1188,7 @@ def test_export_deliverable_columnas_exactas_y_orden(tmp_path):
     # Las 5 del mentor van PRIMERO y en orden (contrato canónico inamovible).
     assert list(releido.columns[:5]) == _MENTOR_COLUMNS
     assert _MENTOR_COLUMNS == ["PO_NBR", "stage", "severity", "explanation", "action"]
-    # Columnas internas que NO deben filtrarse al artefacto (no aportan a la app).
-    assert "llm_confianza" not in releido.columns
+    # Columna interna que NO debe filtrarse al artefacto (no aporta a la app).
     assert "stage_primary" not in releido.columns   # se canoniza a 'stage'
 
 
@@ -1193,6 +1200,16 @@ def test_export_deliverable_incluye_soporte_app(tmp_path):
     releido = pd.read_csv(out_path)
     for col in ("PO_DT", "RECPT_DT", "HOT_PO_FLAG", "is_short_ship",
                 "REASON_DSC", "llm_coincide_con_reason"):
+        assert col in releido.columns
+
+
+def test_export_deliverable_incluye_enriquecimiento_tier1(tmp_path):
+    # Tier 1 (#158): confianza, nombres de entidad y exceso por etapa SÍ se exportan
+    # (a diferencia de columnas puramente internas como stage_primary).
+    out_path = tmp_path / "po_output.csv"
+    export_deliverable_csv(_df_con_llm(), out_path)
+    releido = pd.read_csv(out_path)
+    for col in _ENRICHMENT_COLUMNS:
         assert col in releido.columns
 
 
