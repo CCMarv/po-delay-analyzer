@@ -31,14 +31,52 @@ COL_IS_SHORT_SHIP = "is_short_ship"
 COL_REASON_DSC = "REASON_DSC"
 COL_LLM_COINCIDE = "llm_coincide_con_reason"
 
-# ── Paleta de colores ─────────────────────────────────────────────────────
+# ── Sistema de diseño — paleta (ARD-17) ─────────────────────────────────────
+# Etapa: hue categórico Okabe-Ito (CUD), idéntico en toda la app. Indeterminado
+# usa gris neutro (no un hue) porque señala "sin causa atribuible", no una
+# categoría más de la taxonomía.
+STAGE_COLORS = {
+    "vendor": "#0072B2",         # Blue
+    "carrier": "#E69F00",        # Orange
+    "dc": "#009E73",             # Bluish Green
+    "indeterminado": "#767676",  # Gris neutro
+}
+
+# Severidad: ordinal, NO compite por hue con la etapa — rampa de luminancia
+# acromática (gris-carbón) + ícono/forma + etiqueta de texto. La codificación
+# por color es redundante, no la única señal.
+SEVERITY = {
+    "HIGH":   {"color": "#3D3D3D", "icon": "■", "label": "Alta"},
+    "MEDIUM": {"color": "#6B6B6B", "icon": "◆", "label": "Media"},
+    "LOW":    {"color": "#A8A8A8", "icon": "●", "label": "Baja"},
+}
+
+# Confianza (llm_confianza, escalar 0–1): mismo mecanismo ordinal que
+# severidad (rampa acromática), sin ícono — solo bucket + texto.
+CONFIDENCE_BUCKETS = [
+    {"key": "alta", "min": 0.80, "max": 1.00, "color": "#3D3D3D", "label": "Alta",
+     "description": "Evidencia suficiente"},
+    {"key": "media", "min": 0.50, "max": 0.79, "color": "#6B6B6B", "label": "Media",
+     "description": "Requiere verificación humana"},
+    {"key": "baja", "min": 0.00, "max": 0.49, "color": "#A8A8A8", "label": "Baja",
+     "description": "Datos insuficientes"},
+]
+
+
+def confidence_bucket(score: float) -> dict:
+    """Mapea un score de confianza escalar (0-1) a su bucket ordinal."""
+    for bucket in CONFIDENCE_BUCKETS:
+        if bucket["min"] <= score <= bucket["max"]:
+            return bucket
+    return CONFIDENCE_BUCKETS[-1]
+
+
+# Vista plana (retrocompat): las páginas actuales resuelven color por etapa o
+# severidad con `COLORS.get(clave.lower(), ...)`. Se consolida aquí para que
+# no haya una segunda fuente de verdad de hex.
 COLORS = {
-    "vendor": "#2E86AB",
-    "carrier": "#A23B72",
-    "dc": "#F18F01",
-    "indeterminado": "#C73E1D",
-    "on_time": "#6A994E",
-    "high": "#E63946",
-    "medium": "#F4A261",
-    "low": "#2A9D8F",
+    **STAGE_COLORS,
+    "high": SEVERITY["HIGH"]["color"],
+    "medium": SEVERITY["MEDIUM"]["color"],
+    "low": SEVERITY["LOW"]["color"],
 }

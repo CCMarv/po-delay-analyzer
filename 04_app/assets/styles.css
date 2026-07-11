@@ -1,69 +1,271 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   Sistema de diseño — PO Delay Analyzer (ARD-17)
+   Tokens de color/espaciado/tipografía con variante clara y oscura. Los hues
+   de etapa y la rampa de severidad/confianza viven aquí como fuente única;
+   las páginas y componentes solo consumen `var(--token)`, nunca hex suelto.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+    /* Superficie y texto — tema claro (default) */
+    --surface-bg: #f8f9fa;
+    --surface-card: #ffffff;
+    --surface-elevated: #f3f4f6;
+    --border-subtle: #e2e8f0;
+    --text-primary: #1a202c;
+    --text-secondary: #4a5568;
+    --text-muted: #718096;
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.08);
+    --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12);
+    --accent: #4299e1;
+    --accent-hover: #3182ce;
+
+    /* Etapa — hue Okabe-Ito (CUD), idéntico en toda la app (ARD-17) */
+    --stage-vendor: #0072B2;
+    --stage-carrier: #E69F00;
+    --stage-dc: #009E73;
+    --stage-indeterminado: #767676;
+
+    /* Severidad / Confianza — rampa de luminancia acromática (no compite
+       por hue con la etapa); HIGH/Alta = extremo más saliente. */
+    --ordinal-high: #3D3D3D;
+    --ordinal-medium: #6B6B6B;
+    --ordinal-low: #A8A8A8;
+
+    /* Tipografía: bold sans para identificadores, monospace para fecha/hora
+       (alineación vertical para escanear anomalías del timeline). */
+    --font-sans: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    --font-mono: 'Consolas', 'SFMono-Regular', Menlo, monospace;
+
+    /* Navbar: chrome oscuro fijo (no cambia con el tema de la página).
+       Colores opacos, no rgba sobre fondo implícito, para que el contraste
+       sea verificable de forma estática. */
+    --navbar-bg-start: #2d3748;
+    --navbar-bg-end: #1a202c;
+    --navbar-text: #e2e8f0;
+    --navbar-text-hover: #ffffff;
+    --navbar-pill-bg: #3a4557;
+    --navbar-pill-bg-hover: #47536b;
+    --navbar-pill-border: #4a5568;
+    --navbar-active-bg-start: #2C5F8A;
+    --navbar-active-bg-end: #1B4F72;
+
+    --space-xs: 0.25rem;
+    --space-sm: 0.5rem;
+    --space-md: 1rem;
+    --space-lg: 1.5rem;
+    --space-xl: 2rem;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --surface-bg: #12161c;
+        --surface-card: #1c222b;
+        --surface-elevated: #262d38;
+        --border-subtle: #333c48;
+        --text-primary: #e8eaed;
+        --text-secondary: #b0b8c4;
+        --text-muted: #8892a0;
+        --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+        --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+        --accent: #5aa9e6;
+        --accent-hover: #4d94cc;
+
+        /* Etapa: aclarada para mantener contraste ≥3:1 (objeto gráfico) sobre
+           fondo oscuro; mismo hue, luminancia ajustada por tema. */
+        --stage-vendor: #4DA8DB;
+        --stage-carrier: #F0B840;
+        --stage-dc: #3FC79A;
+        --stage-indeterminado: #9B9B9B;
+
+        /* Severidad/Confianza: rampa invertida en luminancia — el extremo
+           más saliente (HIGH/Alta) sigue siendo el de mayor contraste con el
+           fondo, ahora el más claro en vez del más oscuro. */
+        --ordinal-high: #E8E8E8;
+        --ordinal-medium: #A8A8A8;
+        --ordinal-low: #6B6B6B;
+    }
+}
+
 /* ── Ocultar elementos por defecto de Streamlit (Footer, Menú, Header) ── */
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 header {visibility: hidden;}
+header[data-testid="stHeader"] {display: none;}
 
 /* ── Tipografía y colores base ─────────────────────────────────────────── */
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background-color: #f8f9fa;
-    color: #333;
+    font-family: var(--font-sans);
+    background-color: var(--surface-bg);
+    color: var(--text-secondary);
 }
 
 h1, h2, h3 {
-    color: #1d3557;
+    color: var(--text-primary);
     font-weight: 600;
+}
+
+/* Identificadores (PO_NBR, nombres de entidad): bold sans, ya cubierto por
+   la tipografía base; se marca explícitamente para uso en componentes. */
+.identifier {
+    font-family: var(--font-sans);
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+/* Columnas de fecha/hora del lifecycle: monospace para alinear verticalmente
+   y escanear anomalías entre timestamps. */
+.timestamp {
+    font-family: var(--font-mono);
+    color: var(--text-secondary);
 }
 
 /* ── Header de página ──────────────────────────────────────────────────── */
 .page-header {
-    margin-bottom: 2rem;
-    padding: 1.5rem 0;
+    margin-bottom: var(--space-xl);
+    padding: var(--space-lg) 0;
 }
 
 .page-header h1 {
-    color: #2d3748;
+    color: var(--text-primary);
     font-size: 2.25rem;
     font-weight: 700;
     margin: 0;
 }
 
-/* ── Badges de Severidad ───────────────────────────────────────────────── */
-.badge-high {
-    background-color: rgba(230, 57, 70, 0.15);
-    color: #E63946;
+.page-header p {
+    color: var(--text-muted);
+    font-size: 1.1rem;
+}
+
+/* ── Badge de etapa (hue categórico) ───────────────────────────────────── */
+.badge-stage {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    background-color: var(--surface-elevated);
+    color: var(--text-primary);
     padding: 4px 10px;
     border-radius: 12px;
     font-size: 0.85em;
     font-weight: 600;
 }
 
-.badge-medium {
-    background-color: rgba(244, 162, 97, 0.15);
-    color: #d97706;
+.badge-stage::before {
+    content: "";
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: var(--stage-color, var(--stage-indeterminado));
+    flex-shrink: 0;
+}
+
+.badge-stage--vendor { --stage-color: var(--stage-vendor); }
+.badge-stage--carrier { --stage-color: var(--stage-carrier); }
+.badge-stage--dc { --stage-color: var(--stage-dc); }
+.badge-stage--indeterminado { --stage-color: var(--stage-indeterminado); }
+
+/* ── Badge de severidad (luminancia + ícono/forma + texto) ─────────────── */
+.badge-severity {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    background-color: var(--surface-elevated);
+    color: var(--text-primary);
     padding: 4px 10px;
     border-radius: 12px;
     font-size: 0.85em;
     font-weight: 600;
 }
 
-.badge-low {
-    background-color: rgba(42, 157, 143, 0.15);
-    color: #2A9D8F;
+.badge-severity__icon {
+    color: var(--ordinal-color, var(--ordinal-medium));
+}
+
+.badge-severity--high { --ordinal-color: var(--ordinal-high); }
+.badge-severity--medium { --ordinal-color: var(--ordinal-medium); }
+.badge-severity--low { --ordinal-color: var(--ordinal-low); }
+
+/* ── Badge de confianza (bucket: sin ícono, mismo mecanismo ordinal) ────── */
+.badge-confidence {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-xs);
+    background-color: var(--surface-elevated);
+    color: var(--text-primary);
     padding: 4px 10px;
     border-radius: 12px;
     font-size: 0.85em;
     font-weight: 600;
 }
 
-/* ── Tarjetas personalizadas (si usas HTML custom) ─────────────────────── */
+.badge-confidence::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 2px;
+    background-color: var(--ordinal-color, var(--ordinal-medium));
+    flex-shrink: 0;
+}
+
+.badge-confidence--alta { --ordinal-color: var(--ordinal-high); }
+.badge-confidence--media { --ordinal-color: var(--ordinal-medium); }
+.badge-confidence--baja { --ordinal-color: var(--ordinal-low); }
+
+/* ── Segmento de timeline (tramo del lifecycle) ─────────────────────────── */
+.timeline-segment {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: var(--space-sm) var(--space-md);
+    border-radius: 8px;
+    border-left: 4px solid var(--stage-color, var(--stage-indeterminado));
+    background-color: var(--surface-card);
+    margin-bottom: var(--space-xs);
+}
+
+.timeline-segment--highlighted {
+    background-color: var(--surface-elevated);
+    box-shadow: var(--shadow-sm);
+}
+
+.timeline-segment--vendor { --stage-color: var(--stage-vendor); }
+.timeline-segment--carrier { --stage-color: var(--stage-carrier); }
+.timeline-segment--dc { --stage-color: var(--stage-dc); }
+.timeline-segment--indeterminado { --stage-color: var(--stage-indeterminado); }
+
+/* ── Tarjetas ───────────────────────────────────────────────────────────── */
 .custom-card {
-    background-color: #ffffff;
-    padding: 1.5rem;
+    background-color: var(--surface-card);
+    padding: var(--space-lg);
     border-radius: 0.75rem;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-    border: 1px solid #e9ecef;
-    margin-bottom: 1rem;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-subtle);
+    margin-bottom: var(--space-md);
+}
+
+/* Tarjeta de métrica (T0.3) */
+.metric-card {
+    background-color: var(--surface-card);
+    border-radius: 0.75rem;
+    padding: var(--space-lg);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-subtle);
+}
+
+.metric-card__label {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    margin: 0 0 var(--space-xs) 0;
+}
+
+.metric-card__value {
+    color: var(--text-primary);
+    font-size: 2rem;
+    font-weight: 700;
+    margin: 0;
 }
 
 /* ── Ajustes de tablas ─────────────────────────────────────────────────── */
@@ -74,59 +276,67 @@ h1, h2, h3 {
 
 /* ── Sección de Dashboards ─────────────────────────────────────────────── */
 .dashboards-section {
-    margin: 2rem 0;
+    margin: var(--space-xl) 0;
 }
 
 .dashboards-section h2 {
-    color: #2d3748;
+    color: var(--text-primary);
     font-size: 1.75rem;
-    margin-bottom: 0.5rem;
+    margin-bottom: var(--space-sm);
+}
+
+.dashboards-section p {
+    color: var(--text-secondary);
 }
 
 /* ── Dashboard cards ───────────────────────────────────────────────────── */
 .dashboard-card {
-    background-color: #ffffff;
+    background-color: var(--surface-card);
     border-radius: 12px;
-    padding: 1.5rem;
-    margin-bottom: 1rem;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-    border: 1px solid #e2e8f0;
-    min-height: 220px;
+    padding: var(--space-lg);
+    margin-bottom: var(--space-md);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-subtle);
+    display: flex;
+    flex-direction: column;
+    min-height: 280px;
+    height: 100%;
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .dashboard-card:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    box-shadow: var(--shadow-md);
 }
 
 .dashboard-card h3 {
     margin-top: 0;
-    margin-bottom: 0.5rem;
-    color: #2d3748;
+    margin-bottom: var(--space-sm);
+    color: var(--text-primary);
     font-size: 1.25rem;
     font-weight: 600;
 }
 
 .dashboard-card h4 {
     margin-top: 0;
-    margin-bottom: 1rem;
-    color: #4a5568;
+    margin-bottom: var(--space-md);
+    color: var(--text-secondary);
     font-size: 1rem;
     font-weight: 600;
 }
 
 .dashboard-card p {
-    color: #4a5568;
+    color: var(--text-secondary);
     font-size: 0.95rem;
     line-height: 1.6;
     margin: 0;
+    flex-grow: 1;
 }
 
 /* ── Botones de dashboard ──────────────────────────────────────────────── */
 .stButton > button {
     width: 100%;
-    background-color: #4299e1;
+    background-color: var(--accent);
     color: white;
     border: none;
     border-radius: 8px;
@@ -134,25 +344,20 @@ h1, h2, h3 {
     font-weight: 600;
     font-size: 0.95rem;
     transition: all 0.2s ease;
-    margin-top: 0.5rem;
+    margin-top: auto;
 }
 
 .stButton > button:hover {
-    background-color: #3182ce;
+    background-color: var(--accent-hover);
     box-shadow: 0 4px 12px rgba(66, 153, 225, 0.3);
     transform: translateY(-1px);
-}
-
-/* Alinear botones al mismo nivel */
-.stButton {
-    margin-top: 0;
 }
 
 /* ── Footer simple ─────────────────────────────────────────────────────── */
 .simple-footer {
     text-align: center;
-    padding: 2rem;
-    color: #718096;
+    padding: var(--space-xl);
+    color: var(--text-muted);
     font-size: 0.875rem;
     margin-top: 3rem;
 }
@@ -166,30 +371,12 @@ h1, h2, h3 {
     .page-header h1 {
         font-size: 1.75rem;
     }
-    
+
     .dashboard-card {
         min-height: auto;
         margin-bottom: 1.5rem;
     }
 }
-
-/* Alinear tarjetas de dashboards */
-.dashboard-card {
-    display: flex;
-    flex-direction: column;
-    min-height: 280px;
-    height: 100%;
-}
-
-.dashboard-card p {
-    flex-grow: 1;
-}
-
-/* Alinear botones al fondo de las tarjetas */
-.stButton {
-    margin-top: auto;
-}
-
 
 /* ── Navbar superior ─────────────────────────────────────────────────────── */
 .top-navbar {
@@ -198,23 +385,23 @@ h1, h2, h3 {
     left: 0;
     right: 0;
     height: 60px;
-    background: linear-gradient(135deg, #2d3748 0%, #1a202c 100%);
+    background: linear-gradient(135deg, var(--navbar-bg-start) 0%, var(--navbar-bg-end) 100%);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 0 2rem;
+    padding: 0 var(--space-xl);
     z-index: 1000;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-md);
 }
 
 .navbar-brand {
     display: flex;
     align-items: center;
-    gap: 0.75rem;
+    gap: var(--space-sm);
 }
 
 .navbar-title {
-    color: #ffffff;
+    color: var(--navbar-text-hover);
     font-size: 1.15rem;
     font-weight: 700;
     margin: 0;
@@ -223,38 +410,42 @@ h1, h2, h3 {
 
 .navbar-links {
     display: flex;
-    gap: 0.75rem;
+    gap: var(--space-sm);
     align-items: center;
 }
 
-.nav-link {
-    color: #e2e8f0;
+/* `a.nav-link` (no solo `.nav-link`) + !important en color: Streamlit inyecta
+   su propio estilo de link (azul de tema) con especificidad suficiente para
+   ganarle a una clase sola, dejando texto casi ilegible sobre el navbar
+   oscuro. Es la única regla del sistema con !important, y es deliberada:
+   pelea contra el stylesheet del framework, no contra CSS propio. */
+a.nav-link {
+    color: var(--navbar-text) !important;
     text-decoration: none;
     padding: 0.6rem 1.25rem;
     border-radius: 8px;
     font-size: 0.9rem;
     font-weight: 600;
     transition: all 0.3s ease;
-    background-color: rgba(255, 255, 255, 0.08);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    background-color: var(--navbar-pill-bg);
+    border: 1px solid var(--navbar-pill-border);
     display: flex;
     align-items: center;
-    gap: 0.5rem;
+    gap: var(--space-sm);
 }
 
-.nav-link:hover {
-    background-color: rgba(255, 255, 255, 0.15);
-    color: #ffffff;
+a.nav-link:hover {
+    background-color: var(--navbar-pill-bg-hover);
+    color: var(--navbar-text-hover) !important;
     transform: translateY(-2px);
     box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
-    border-color: rgba(255, 255, 255, 0.2);
 }
 
-.nav-link.active {
-    background: linear-gradient(135deg, #4299e1 0%, #3182ce 100%);
-    color: #ffffff;
+a.nav-link.active {
+    background: linear-gradient(135deg, var(--navbar-active-bg-start) 0%, var(--navbar-active-bg-end) 100%);
+    color: var(--navbar-text-hover) !important;
     font-weight: 700;
-    box-shadow: 0 4px 12px rgba(66, 153, 225, 0.4);
+    box-shadow: 0 4px 12px rgba(27, 79, 114, 0.4);
     border-color: transparent;
 }
 
@@ -263,18 +454,13 @@ h1, h2, h3 {
     padding-top: 80px !important;
 }
 
-/* Ocultar el header default de Streamlit si aparece */
-header[data-testid="stHeader"] {
-    display: none;
-}
-
 /* ── Cards de Análisis LLM ──────────────────────────────────────────────── */
 .llm-card {
-    background-color: #ffffff;
+    background-color: var(--surface-card);
     border-radius: 8px;
     padding: 1.25rem;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
-    border: 1px solid #e2e8f0;
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--border-subtle);
     transition: transform 0.2s ease, box-shadow 0.2s ease;
     height: 100%;
     display: flex;
@@ -283,23 +469,23 @@ header[data-testid="stHeader"] {
 
 .llm-card:hover {
     transform: translateY(-3px);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+    box-shadow: var(--shadow-md);
 }
 
 .llm-icon {
     font-size: 2rem;
-    margin-bottom: 0.75rem;
+    margin-bottom: var(--space-sm);
 }
 
 .llm-card h4 {
-    margin: 0 0 0.75rem 0;
-    color: #2d3748;
+    margin: 0 0 var(--space-sm) 0;
+    color: var(--text-primary);
     font-size: 0.95rem;
     font-weight: 600;
 }
 
 .llm-text {
-    color: #4a5568;
+    color: var(--text-secondary);
     font-size: 0.85rem;
     line-height: 1.5;
     margin: 0;
@@ -320,7 +506,7 @@ header[data-testid="stHeader"] {
 /* Responsive para cards LLM */
 @media (max-width: 1200px) {
     .llm-card {
-        margin-bottom: 1rem;
+        margin-bottom: var(--space-md);
     }
 }
 
@@ -330,15 +516,15 @@ header[data-testid="stHeader"] {
 }
 
 .llm-text::-webkit-scrollbar-track {
-    background: #f1f1f1;
+    background: var(--surface-elevated);
     border-radius: 3px;
 }
 
 .llm-text::-webkit-scrollbar-thumb {
-    background: #888;
+    background: var(--text-muted);
     border-radius: 3px;
 }
 
 .llm-text::-webkit-scrollbar-thumb:hover {
-    background: #555;
+    background: var(--text-secondary);
 }
