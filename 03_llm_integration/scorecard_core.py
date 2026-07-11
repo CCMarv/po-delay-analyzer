@@ -22,7 +22,7 @@ from sklearn.preprocessing import StandardScaler
 # ─────────────────────────────────────────────────────────────────────────
 # RESOLUCIÓN DE RUTAS (RAÍZ DEL REPO)
 # ─────────────────────────────────────────────────────────────────────────
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent  # 03_llm_integration → repo_root
+REPO_ROOT = Path(__file__).resolve().parent.parent  # 03_llm_integration → repo_root
 DATA_PROCESSED = REPO_ROOT / "data" / "processed"
 CSV_DEFAULT_PATH = DATA_PROCESSED / "df_classified.csv"
 
@@ -461,6 +461,24 @@ def load_po_data(csv_path: str | Path = None) -> pd.DataFrame:
 
 
 # ─────────────────────────────────────────────────────────────────────────
+# ─── FUNCIÓN AUXILIAR 
+def _simplificar_scorecard(scorecard_completo: dict) -> dict:
+    """Filtra el diccionario eliminando métricas estadísticas secundarias."""
+    return {
+        entidad: {
+            "nivel_riesgo": metricas.get("Nivel_Riesgo"),
+            "score_riesgo": metricas.get("Score_Riesgo_Normalizado"),
+            "delay_promedio": metricas.get("Delay_Prom"),
+            "excess_por_po": metricas.get("Excess_por_PO"),
+            "tasa_reschedule": metricas.get("Tasa_Reschedule"),
+            "tasa_responsabilidad": metricas.get("Tasa_Responsabilidad"),
+            "pos_totales": metricas.get("n_POs_total"),
+            "pos_causa_raiz": metricas.get("n_POs_causa_raiz")
+        }
+        for entidad, metricas in scorecard_completo.items()
+    }
+
+
 def build_all_scorecards(
     csv_path: str | Path = None,
     output_dir: str | Path = ".",
@@ -482,7 +500,10 @@ def build_all_scorecards(
         scorecard = _build_actor_scorecard(df, actor_key, po_delay_percentiles,
                                           cut_low_global, cut_high_global,
                                           delay_col)
-        payload = {"report_date": report_date, actor_key: scorecard}
+        # scorecard simplificado para JSON final
+        scorecard_limpio = _simplificar_scorecard(scorecard)
+        payload = {"report_date": report_date, actor_key: scorecard_limpio}
+
         all_reports[actor_key] = payload
         out_path = out_dir / f"reporte_{actor_key}.json"
         with open(out_path, "w", encoding="utf-8") as f:
