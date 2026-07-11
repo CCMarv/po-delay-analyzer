@@ -5,12 +5,19 @@ Consulta individual de un PO tardío con timeline, diagnóstico LLM y validació
 from pathlib import Path
 import streamlit as st
 import pandas as pd
-from config import COLORS, COL_PO, COL_STAGE, COL_SEVERITY, COL_EXPLANATION, COL_ACTION
-from config import COL_PO_DT, COL_STA_DT, COL_APPROVED_DT, COL_TRAILER_ARRIVE_DT
-from config import COL_CHECKIN_DT, COL_CHECKOUT_DT, COL_RECPT_DT
-from config import COL_HOT_PO_FLAG, COL_IS_SHORT_SHIP, COL_REASON_DSC, COL_LLM_COINCIDE
+from config import (
+    COL_STAGE, COL_SEVERITY, COL_EXPLANATION, COL_ACTION,
+    COL_PO_DT, COL_STA_DT, COL_APPROVED_DT, COL_TRAILER_ARRIVE_DT,
+    COL_CHECKIN_DT, COL_CHECKOUT_DT, COL_RECPT_DT,
+    COL_HOT_PO_FLAG, COL_IS_SHORT_SHIP, COL_REASON_DSC, COL_LLM_COINCIDE,
+    COL_LLM_CONFIANZA, COL_VENDOR_NAME, COL_CARRIER_NAME, COL_DC_NAME,
+    COL_DELAY_DAYS, STAGE_SEGMENT_COLUMNS,
+)
 from services.data_service import load_po_output, get_po_by_number, get_unique_po_list
 from components.navbar import render_navbar
+from components.badges import stage_badge_html, severity_badge_html, confidence_badge_html
+from components.timeline import timeline_segment_html
+from components.metrics_cards import metric_card
 
 # ── Configuración de página ─────────────────────────────────────────────────
 st.set_page_config(
@@ -37,9 +44,7 @@ st.markdown(
     """
     <div class="page-header">
         <h1>🔍 Exception Workbench</h1>
-        <p style="color: #718096; font-size: 1.1rem;">
-            Consulta individual de POs tardíos — Timeline + Diagnóstico + Validación
-        </p>
+        <p>Consulta individual de POs tardíos — Timeline + Diagnóstico + Validación</p>
     </div>
     """,
     unsafe_allow_html=True,
@@ -59,23 +64,40 @@ selected_po = st.selectbox(
 # Obtener datos del PO seleccionado
 po_data = get_po_by_number(df, selected_po)
 
-# ── Panel de diagnóstico (arriba) ───────────────────────────────────────────
+stage = po_data[COL_STAGE]
+severity = po_data[COL_SEVERITY]
+explanation = po_data.get(COL_EXPLANATION)
+action = po_data.get(COL_ACTION)
+tiene_analisis_llm = pd.notna(severity)
+
+stage_key = stage.lower() if pd.notna(stage) else "indeterminado"
+highlighted_cols = STAGE_SEGMENT_COLUMNS.get(stage_key, ())
+
+# ── Contexto rápido del PO ──────────────────────────────────────────────────
+col_ctx1, col_ctx2, col_ctx3, col_ctx4 = st.columns(4)
+with col_ctx1:
+    delay_days = po_data.get(COL_DELAY_DAYS)
+    metric_card("Retraso", f"{delay_days:.1f} d" if pd.notna(delay_days) else "N/A", icon="⏱️")
+with col_ctx2:
+    metric_card("Vendor", po_data.get(COL_VENDOR_NAME, "N/A"), icon="🏭")
+with col_ctx3:
+    metric_card("Carrier", po_data.get(COL_CARRIER_NAME, "N/A"), icon="🚚")
+with col_ctx4:
+    metric_card("DC", po_data.get(COL_DC_NAME, "N/A"), icon="🏬")
+
+# ── Panel de diagnóstico ─────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown("### 🎯 Diagnóstico del PO")
 
-col_diag1, col_diag2, col_diag3, col_diag4 = st.columns(4)
+col_diag1, col_diag2, col_diag3, col_diag4, col_diag5 = st.columns(5)
 
-# Stage
+# Etapa
 with col_diag1:
-    stage = po_data[COL_STAGE]
-    color_stage = COLORS.get(stage.lower() if pd.notna(stage) else "indeterminado", "#718096")
     st.markdown(
         f"""
-        <div class="custom-card" style="border-left: 4px solid {color_stage};">
-            <h4 style="margin: 0 0 0.5rem 0; color: #718096;">Etapa</h4>
-            <p style="margin: 0; font-size: 1.25rem; font-weight: 700; color: {color_stage};">
-                {stage if pd.notna(stage) else "N/A"}
-            </p>
+        <div class="custom-card">
+            <h4 style="margin: 0 0 0.5rem 0; color: var(--text-muted);">Etapa</h4>
+            {stage_badge_html(stage if pd.notna(stage) else None)}
         </div>
         """,
         unsafe_allow_html=True,
@@ -83,59 +105,70 @@ with col_diag1:
 
 # Severidad
 with col_diag2:
-    severity = po_data[COL_SEVERITY]
-    color_sev = COLORS.get(severity.lower() if pd.notna(severity) else "medium", "#718096")
+    if tiene_analisis_llm:
+        cuerpo_severidad = severity_badge_html(severity)
+    else:
+        cuerpo_severidad = '<p style="margin: 0; color: var(--text-muted); font-size: 0.9rem;">Pendiente de análisis LLM</p>'
     st.markdown(
         f"""
-        <div class="custom-card" style="border-left: 4px solid {color_sev};">
-            <h4 style="margin: 0 0 0.5rem 0; color: #718096;">Severidad</h4>
-            <p style="margin: 0; font-size: 1.25rem; font-weight: 700; color: {color_sev};">
-                {severity if pd.notna(severity) else "N/A"}
-            </p>
+        <div class="custom-card">
+            <h4 style="margin: 0 0 0.5rem 0; color: var(--text-muted);">Severidad</h4>
+            {cuerpo_severidad}
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-# Flag de desacuerdo (PROMINENTE)
+# Confianza
 with col_diag3:
-    coincide = po_data.get(COL_LLM_COINCIDE, None)
-    if pd.notna(coincide):
-        if coincide:
-            icon = "✅"
-            text = "Consistente"
-            color = "#48bb78"
-        else:
-            icon = "⚠️"
-            text = "Desacuerdo"
-            color = "#f56565"
+    if tiene_analisis_llm:
+        cuerpo_confianza = confidence_badge_html(po_data[COL_LLM_CONFIANZA])
     else:
-        icon = "❓"
-        text = "N/A"
-        color = "#718096"
-    
+        cuerpo_confianza = '<p style="margin: 0; color: var(--text-muted); font-size: 0.9rem;">Pendiente de análisis LLM</p>'
     st.markdown(
         f"""
-        <div class="custom-card" style="border-left: 4px solid {color}; min-height: 120px; display: flex; flex-direction: column; justify-content: center;">
-            <h4 style="margin: 0 0 0.75rem 0; color: #718096; font-size: 1rem; font-weight: 600;">
+        <div class="custom-card">
+            <h4 style="margin: 0 0 0.5rem 0; color: var(--text-muted);">Confianza LLM</h4>
+            {cuerpo_confianza}
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+# Flag de concordancia (PROMINENTE)
+with col_diag4:
+    if tiene_analisis_llm:
+        coincide = po_data[COL_LLM_COINCIDE]
+        if coincide:
+            icon, text, color_var = "✅", "Consistente", "var(--ordinal-high)"
+        else:
+            icon, text, color_var = "⚠️", "Desacuerdo", "var(--ordinal-low)"
+        cuerpo_concordancia = (
+            f'<p style="margin: 0; font-size: 1.5rem; font-weight: 700; color: {color_var};">'
+            f"{icon} {text}</p>"
+        )
+    else:
+        cuerpo_concordancia = '<p style="margin: 0; color: var(--text-muted); font-size: 0.9rem;">Pendiente de análisis LLM</p>'
+    st.markdown(
+        f"""
+        <div class="custom-card" style="min-height: 120px; display: flex; flex-direction: column; justify-content: center;">
+            <h4 style="margin: 0 0 0.75rem 0; color: var(--text-muted); font-size: 1rem; font-weight: 600;">
                 Validación AI vs Humano
             </h4>
-            <p style="margin: 0; font-size: 1.5rem; font-weight: 700; color: {color};">
-                {icon} {text}
-            </p>
+            {cuerpo_concordancia}
         </div>
         """,
         unsafe_allow_html=True,
     )
 
 # Reason humano
-with col_diag4:
+with col_diag5:
     reason = po_data.get(COL_REASON_DSC, "N/A")
     st.markdown(
         f"""
         <div class="custom-card">
-            <h4 style="margin: 0 0 0.5rem 0; color: #718096;">Reason Humano</h4>
-            <p style="margin: 0; font-size: 0.9rem; color: #4a5568;">
+            <h4 style="margin: 0 0 0.5rem 0; color: var(--text-muted);">Reason Humano</h4>
+            <p style="margin: 0; font-size: 0.9rem; color: var(--text-secondary);">
                 {reason if pd.notna(reason) else "N/A"}
             </p>
         </div>
@@ -158,7 +191,7 @@ with col_flags1:
 with col_flags2:
     short_ship = po_data.get(COL_IS_SHORT_SHIP, False)
     if short_ship:
-        st.warning(" **Short Shipment** — Envío incompleto")
+        st.warning("📦 **Short Shipment** — Envío incompleto")
     else:
         st.info("✅ Envío completo")
 
@@ -166,67 +199,66 @@ with col_flags2:
 st.markdown("---")
 st.markdown("### 📅 Timeline del Lifecycle")
 
-# Lista de eventos del timeline
 timeline_events = [
-    ("PO_DT", "📝", "PO Creada"),
-    ("STA_DT", "📦", "STA"),
-    ("APPROVED_DT", "✅", "Cita Aprobada"),
-    ("TRAILER_ARRIVE_DT", "🚛", "Tráiler Llega"),
-    ("CHECKIN_DT", "📥", "Check-in"),
-    ("CHECKOUT_DT", "📤", "Check-out"),
-    ("RECPT_DT", "📦", "Recepción"),
+    (COL_PO_DT, "📝", "PO Creada"),
+    (COL_STA_DT, "📦", "STA"),
+    (COL_APPROVED_DT, "✅", "Cita Aprobada"),
+    (COL_TRAILER_ARRIVE_DT, "🚛", "Tráiler Llega"),
+    (COL_CHECKIN_DT, "📥", "Check-in"),
+    (COL_CHECKOUT_DT, "📤", "Check-out"),
+    (COL_RECPT_DT, "📦", "Recepción"),
 ]
 
-# Crear columnas horizontales (una por evento)
-cols = st.columns(len(timeline_events))
+segments_html = []
+for col_name, icon, label in timeline_events:
+    timestamp = po_data.get(col_name)
+    time_str = timestamp.strftime("%Y-%m-%d %H:%M") if pd.notna(timestamp) else "N/A"
+    segments_html.append(
+        timeline_segment_html(
+            label=f"{icon} {label}",
+            timestamp=time_str,
+            stage=stage_key,
+            highlighted=col_name in highlighted_cols,
+        )
+    )
 
-for i, (col_name, icon, label) in enumerate(timeline_events):
-    with cols[i]:
-        timestamp = po_data.get(col_name, None)
-        
-        if pd.notna(timestamp):
-            time_str = timestamp.strftime("%Y-%m-%d %H:%M")
-            st.success(f"{icon}")
-            st.caption(f"**{label}**")
-            st.caption(time_str)
-        else:
-            st.write(f"⚪")
-            st.caption(f"**{label}**")
-            st.caption("N/A")
-        
-        # Línea conectora (excepto en el último)
-        if i < len(timeline_events) - 1:
-            st.markdown("→")
+st.markdown("".join(segments_html), unsafe_allow_html=True)
 
 # ── Diagnóstico LLM ─────────────────────────────────────────────────────────
 st.markdown("---")
 st.markdown("### 🤖 Diagnóstico de Inteligencia Artificial")
 
-col_llm1, col_llm2 = st.columns(2)
-
-with col_llm1:
-    explanation = po_data.get(COL_EXPLANATION, "N/A")
+if tiene_analisis_llm:
+    col_llm1, col_llm2 = st.columns(2)
+    with col_llm1:
+        st.markdown(
+            f"""
+            <div class="llm-card">
+                <div class="llm-icon">🔍</div>
+                <h4>Causa Raíz</h4>
+                <p class="llm-text">{explanation if pd.notna(explanation) else "N/A"}</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    with col_llm2:
+        st.markdown(
+            f"""
+            <div class="llm-card">
+                <div class="llm-icon">🛠️</div>
+                <h4>Acción Recomendada</h4>
+                <p class="llm-text">{action if pd.notna(action) else "N/A"}</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+else:
     st.markdown(
-        f"""
-        <div class="custom-card" style="border-left: 4px solid #4299e1;">
-            <h4 style="margin: 0 0 0.75rem 0; color: #2d3748;">🔍 Causa Raíz</h4>
-            <p style="margin: 0; color: #4a5568; line-height: 1.6;">
-                {explanation if pd.notna(explanation) else "N/A"}
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-with col_llm2:
-    action = po_data.get(COL_ACTION, "N/A")
-    st.markdown(
-        f"""
-        <div class="custom-card" style="border-left: 4px solid #48bb78;">
-            <h4 style="margin: 0 0 0.75rem 0; color: #2d3748;">🛠️ Acción Recomendada</h4>
-            <p style="margin: 0; color: #4a5568; line-height: 1.6;">
-                {action if pd.notna(action) else "N/A"}
-            </p>
+        """
+        <div class="llm-card">
+            <div class="llm-icon">⏳</div>
+            <h4>Pendiente de análisis LLM</h4>
+            <p class="llm-text">Este PO todavía no tiene causa raíz ni acción recomendada generadas por el análisis de Fase 3.</p>
         </div>
         """,
         unsafe_allow_html=True,
