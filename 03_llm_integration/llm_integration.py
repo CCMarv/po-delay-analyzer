@@ -2211,9 +2211,18 @@ _TIMELINE_COLUMNS = [
 _AGGRAVANT_COLUMNS = ["HOT_PO_FLAG", "is_short_ship"]
 _AGREEMENT_COLUMNS = ["REASON_DSC", "llm_coincide_con_reason"]
 
+# Columnas tier-1 (#158): confianza del LLM, nombres de entidad y magnitud/exceso del
+# delay por etapa. Ya calculadas upstream (F1/F2/F3); desbloquean las vistas de Fase 4
+# (scorecards por entidad, magnitud del delay) sin que la app recompute nada.
+_ENRICHMENT_COLUMNS = [
+    "llm_confianza", "VENDOR_NAME", "CARRIER_PARTY_NAME", "DC_LOC_NAME",
+    "delay_days_calc", "excess_vendor_hrs", "excess_carrier_hrs", "excess_dc_hrs",
+]
+
 # Orden final del artefacto: las 5 del mentor primero, luego el bloque de soporte.
 _DELIVERABLE_COLUMNS = (
     _MENTOR_COLUMNS + _TIMELINE_COLUMNS + _AGGRAVANT_COLUMNS + _AGREEMENT_COLUMNS
+    + _ENRICHMENT_COLUMNS
 )
 
 
@@ -2259,8 +2268,9 @@ def export_deliverable_csv(
         "explanation": tardios["llm_causa_raiz"].values,
         "action":      tardios["llm_accion_recomendada"].values,
     }
-    # 2. Soporte de la app: timeline + agravantes + concordancia (nombre de origen).
-    for col in _TIMELINE_COLUMNS + _AGGRAVANT_COLUMNS + _AGREEMENT_COLUMNS:
+    # 2. Soporte de la app: timeline + agravantes + concordancia + enriquecimiento
+    # tier-1 (nombre de origen).
+    for col in _TIMELINE_COLUMNS + _AGGRAVANT_COLUMNS + _AGREEMENT_COLUMNS + _ENRICHMENT_COLUMNS:
         datos[col] = tardios[col].values
 
     out = pd.DataFrame(datos, columns=_DELIVERABLE_COLUMNS)
