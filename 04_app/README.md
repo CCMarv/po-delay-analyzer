@@ -9,15 +9,19 @@ la lógica de limpieza (F1), clasificación (F2) y explicación (F3) ya ocurrió
 
 ## 1. Entrada: el contrato F3→F4 (#100)
 
-La única fuente de datos de la app es:
+El input primario de la app es el contrato F3→F4:
 
 ```
 data/processed/po_output.csv
 ```
 
 Lo genera la Fase 3 (`03_llm_integration/llm_integration.py`, `export_deliverable_csv`).
-La app **no recomputa** Fase 1/2 ni vuelve a llamar al LLM: solo lee este CSV. El contrato
-está blindado por `tests/test_handoff_f3.py`.
+La app **no recomputa** Fase 1/2 ni vuelve a llamar al LLM: solo lee artefactos ya
+producidos aguas arriba. El contrato del CSV está blindado por `tests/test_handoff_f3.py`.
+
+La vista agregada (§2) consume además scorecards por entidad: indicadores derivados que se
+generan offline (§3), no forman parte del contrato del mentor, son regenerables y quedan
+fuera del control de versiones.
 
 Estructura del CSV (las cinco del mentor primero, en orden; luego soporte para la app):
 
@@ -52,19 +56,28 @@ Detalle de las personas en `../documentation/user_personas.md`.
 #    produce data/processed/po_output.csv
 python 03_llm_integration/llm_integration.py --backend openai   # u otro backend
 
-# 2. Lanzar la app:
+# 2. Generar los scorecards por entidad (offline, sin API):
+#    produce data/processed/scorecards/reporte_{vendors,carriers,dcs}.json
+python 03_llm_integration/scorecard_core.py \
+    data/processed/df_classified.csv data/processed/scorecards
+#    En Windows, si la consola falla con emojis, anteponer PYTHONUTF8=1
+
+# 3. Lanzar la app:
 streamlit run 04_app/app.py
 ```
 
-## 4. Estado y trabajo pendiente
+## 4. Estado
 
-La app actual es un placeholder anterior al cierre del contrato: hoy recomputa Fase 1/2 en
-vivo y apunta a un `llm_out.csv` que la Fase 3 no genera. La alineación al contrato está en
-los issues **#124** (migrar `data_service.py` a leer `po_output.csv` sin recomputar) y
-**#125** (unificar nombre/ruta del CSV y eliminar la carga duplicada, #119).
+La app lee dos artefactos, ambos regenerables y fuera del control de versiones:
 
-El plan ordenado de cierre de Fases 3 y 4 vive en la Discussion del repo
-(*Roadmap de cierre: Fase 3 + Fase 4*).
+- `data/processed/po_output.csv` — contrato tier 1 (§1), input primario de ambas vistas.
+- `data/processed/scorecards/reporte_{vendors,carriers,dcs}.json` — indicadores por
+  entidad que alimentan la vista agregada. Los produce offline
+  `03_llm_integration/scorecard_core.py` sobre `df_classified.csv`; la app los lee, no
+  recomputa la capa estadística ni llama a ninguna API.
+
+Las dos vistas, individual (#163) y agregada (#164), están reconstruidas sobre el sistema
+de diseño de la fase.
 
 ## Referencias
 
