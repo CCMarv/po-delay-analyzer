@@ -1,17 +1,25 @@
 """Network Intelligence — Vista de Ravi (Supply-Chain Analyst).
 
-Reporte agregado de la población de POs tardíos con distribución por etapa,
-severidad, y tasa de desacuerdo AI vs humano.
-Ticket #103: Panel de métricas agregadas
+Reporte agregado de la población de POs tardíos: distribución por etapa y
+severidad, tasa de desacuerdo como métrica de primera clase, tendencia temporal
+y scorecards por entidad (Vendor/Carrier/DC). Drill-down master-detail Ravi→Diego
+por PO_NBR. Reconstruida sobre el sistema de diseño (ARD-17); reemplaza la versión
+con px.pie del ticket #103. Cierra #164.
 """
+import json
 from pathlib import Path
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
-from config import COLORS, COL_STAGE, COL_SEVERITY, COL_REASON_DSC, COL_LLM_COINCIDE
+
+from config import (
+    STAGE_COLORS, SEVERITY, SCORECARDS_DIR,
+    COL_PO, COL_STAGE, COL_SEVERITY, COL_PO_DT, COL_LLM_COINCIDE,
+)
 from services.data_service import load_po_output
 from components.navbar import render_navbar
+from components.metrics_cards import metric_card
 
 # ── Configuración de página ─────────────────────────────────────────────────
 st.set_page_config(
@@ -21,194 +29,281 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# ── Navbar superior ─────────────────────────────────────────────────────────
 render_navbar(active_page="ravi")
 
-# ── Cargar CSS personalizado ────────────────────────────────────────────────
+# ── Cargar CSS del sistema de diseño ────────────────────────────────────────
 css_file = Path(__file__).parent.parent / "assets" / "styles.css"
 if css_file.exists():
     with open(css_file, encoding="utf-8") as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
-# ─ Carga de datos ──────────────────────────────────────────────────────────
+
+# ── Helpers de presentación ─────────────────────────────────────────────────
+# El scorecard usa las clases ordinales del sistema (.badge-severity--*), que son
+# la rampa acromática de luminancia. El riesgo es ordinal y NO compite por hue con
+# los colores de etapa (regla del sistema de diseño), por eso reusa esa rampa.
+_RISK_ORDINAL = {"Alto": ("high", "■"), "Medio": ("medium", "◆"), "Bajo": ("low", "●")}
+
+
+def risk_badge_html(nivel: str) -> str:
+    """Badge acromático para el Nivel de Riesgo (Alto/Medio/Bajo)."""
+    key, icon = _RISK_ORDINAL.get(nivel, ("medium", "◆"))
+    label = nivel if nivel else "Sin datos"
+    return (
+        f'<span class="badge-severity badge-severity--{key}">'
+        f'<span class="badge-severity__icon">{icon}</span>{label}</span>'
+    )
+
+
+def _mini(label: str, value: str) -> str:
+    """Indicador compacto (label + valor) con tokens del sistema (theme-aware)."""
+    return (
+        '<div style="min-width:96px;">'
+        f'<div style="color:var(--text-muted); font-size:0.72rem; text-transform:uppercase;'
+        f' letter-spacing:0.02em; font-weight:600; margin-bottom:2px;">{label}</div>'
+        f'<div style="color:var(--text-primary); font-size:1.15rem; font-weight:700;">{value}</div>'
+        "</div>"
+    )
+
+
+def _scorecard_html(name: str, rec: dict, hue: str) -> str:
+    """Tarjeta de una entidad: nombre + badge de riesgo + indicadores descriptivos."""
+    minis = "".join([
+        _mini("POs (total)", f"{rec.get('n_POs_total', 0)}"),
+        _mini("Retraso prom. (d)", f"{rec.get('Delay_Prom_sin_shrink', 0.0):.1f}"),
+        _mini("Exceso/PO (h)", f"{rec.get('Excess_por_PO_sin_shrink', 0.0):.1f}"),
+        _mini("Tasa reschedule", f"{rec.get('Tasa_Reschedule', 0.0):.1f}%"),
+        _mini("Score riesgo", f"{rec.get('Score_Riesgo_Normalizado', 0.0):.0f} / 100"),
+    ])
+    return (
+        f'<div class="custom-card" style="border-left:4px solid {hue};">'
+        '<div style="display:flex; align-items:center; justify-content:space-between;'
+        ' gap:0.5rem; flex-wrap:wrap;">'
+        f'<span class="identifier" style="font-size:1.05rem;">{name}</span>'
+        f'{risk_badge_html(rec.get("Nivel_Riesgo", "Sin datos"))}'
+        "</div>"
+        f'<div style="display:flex; gap:1.5rem; flex-wrap:wrap; margin-top:0.75rem;">{minis}</div>'
+        "</div>"
+    )
+
+
+def load_scorecards() -> dict | None:
+    """Lee los 3 JSON del motor offline. None si falta alguno (no crash)."""
+    actors = ("vendors", "carriers", "dcs")
+    result = {}
+    for actor_key in actors:
+        path = SCORECARDS_DIR / f"reporte_{actor_key}.json"
+        if not path.exists():
+            return None
+        with open(path, encoding="utf-8") as f:
+            result[actor_key] = json.load(f).get(actor_key, {})
+    return result
+
+
+def h_bar(data, value_col, cat_col, color_map, text_col, category_order=None):
+    """Barra horizontal del sistema: color categórico + etiquetado directo, sin leyenda."""
+    fig = px.bar(
+        data, x=value_col, y=cat_col, orientation="h",
+        color=cat_col, color_discrete_map=color_map, text=text_col,
+    )
+    fig.update_traces(textposition="outside", cliponaxis=False)
+    fig.update_layout(
+        showlegend=False, height=max(180, 60 * len(data) + 80),
+        margin=dict(l=10, r=48, t=10, b=10),
+        xaxis_title=None, yaxis_title=None,
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+    )
+    fig.update_xaxes(showgrid=False, showticklabels=False)
+    if category_order:
+        fig.update_yaxes(categoryorder="array", categoryarray=category_order)
+    else:
+        fig.update_yaxes(categoryorder="total ascending")
+    return fig
+
+
+# ── Carga de datos ──────────────────────────────────────────────────────────
 df = load_po_output()
+
+# Mapa de color por etapa: los valores del CSV vienen en Title case
+# ('Vendor'/'Carrier'/'DC'/'Indeterminado'); las claves de STAGE_COLORS son
+# minúsculas. Se resuelve por .lower() con fallback a Indeterminado.
+STAGE_COLOR_MAP = {
+    s: STAGE_COLORS.get(str(s).lower(), STAGE_COLORS["indeterminado"])
+    for s in df[COL_STAGE].dropna().unique()
+}
+SEV_COLOR_MAP = {k: v["color"] for k, v in SEVERITY.items()}
+SEV_ORDER_BOTTOM_UP = ["LOW", "MEDIUM", "HIGH"]  # HIGH arriba en barra horizontal
 
 # ── Header ──────────────────────────────────────────────────────────────────
 st.markdown(
     """
     <div class="page-header">
         <h1>📊 Network Intelligence</h1>
-        <p style="color: #718096; font-size: 1.1rem;">
-            Inteligencia agregada de red — Patrones sistémicos en POs tardíos
-        </p>
+        <p>Reporte agregado — Patrones sistémicos en la población de POs tardíos (Vista de Ravi)</p>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
-# ── KPIs globales ───────────────────────────────────────────────────────────
-st.markdown("### 📈 Resumen de la Red")
-
+# ── Sección 1: KPIs ─────────────────────────────────────────────────────────
 total_pos = len(df)
 stage_counts = df[COL_STAGE].value_counts()
 severity_counts = df[COL_SEVERITY].value_counts()
 
-# Calcular tasa de desacuerdo
-coincide_col = COL_LLM_COINCIDE
-if coincide_col in df.columns:
-    coincide_values = df[coincide_col].dropna()
-    total_with_validation = len(coincide_values)
-    disagreements = (coincide_values == False).sum()
-    agreement_rate = ((coincide_values == True).sum() / total_with_validation * 100) if total_with_validation > 0 else 0
-else:
-    total_with_validation = 0
-    disagreements = 0
-    agreement_rate = 0
+n_high = int(severity_counts.get("HIGH", 0))
+n_disagree = int((df[COL_LLM_COINCIDE] == False).sum())  # noqa: E712 (bool col)
+disagree_rate = (n_disagree / total_pos * 100) if total_pos else 0.0
+top_stage = stage_counts.index[0]
+top_stage_pct = stage_counts.iloc[0] / total_pos * 100 if total_pos else 0.0
 
 col1, col2, col3, col4 = st.columns(4)
 with col1:
-    st.metric(label="Total POs Tardíos", value=total_pos)
+    metric_card("POs Tardíos", f"{total_pos}", icon="📦")
 with col2:
-    st.metric(label="Etapa #1", value=f"{stage_counts.index[0]} ({stage_counts.iloc[0]})")
+    metric_card("Etapa Dominante", f"{top_stage} ({top_stage_pct:.0f}%)", icon="🎯")
 with col3:
-    st.metric(label="Severidad Alta", value=f"{severity_counts.get('HIGH', 0)} ({severity_counts.get('HIGH', 0)/total_pos*100:.1f}%)")
+    metric_card("Severidad Alta", f"{n_high} ({n_high / total_pos * 100:.0f}%)", icon="🚨")
 with col4:
-    st.metric(label="Tasa de Acuerdo AI", value=f"{agreement_rate:.1f}%")
+    metric_card("Tasa de Desacuerdo", f"{disagree_rate:.1f}%", icon="⚠️")
 
+# ── Sección 2: Distribución por etapa y por severidad ───────────────────────
 st.markdown("---")
+st.markdown("### 📊 Distribución por Etapa y Severidad")
 
-# ── Gráfico 1: Distribución por Etapa ──────────────────────────────────────
-st.markdown("###  Distribución por Etapa")
+col_stage, col_sev = st.columns(2)
 
-col_chart1, col_chart2 = st.columns(2)
-
-with col_chart1:
-    # Pie chart
-    fig_pie = px.pie(
-        stage_counts.reset_index(),
-        names='stage',
-        values='count',
-        title="Reparto de Etapas (Vendor/Carrier/DC/Indeterminado)",
-        color='stage',
-        color_discrete_map=COLORS
+with col_stage:
+    st.markdown("**Por etapa** (color = etapa responsable)")
+    stage_df = stage_counts.reset_index()
+    stage_df.columns = [COL_STAGE, "count"]
+    stage_df["label"] = stage_df["count"].astype(str)
+    st.plotly_chart(
+        h_bar(stage_df, "count", COL_STAGE, STAGE_COLOR_MAP, "label"),
+        use_container_width=True,
     )
-    fig_pie.update_layout(height=400)
-    st.plotly_chart(fig_pie, use_container_width=True)
 
-with col_chart2:
-    # Bar chart
-    fig_bar = px.bar(
-        stage_counts.reset_index(),
-        x='stage',
-        y='count',
-        title="Conteo por Etapa",
-        color='stage',
-        color_discrete_map=COLORS
+with col_sev:
+    st.markdown("**Por severidad** (rampa ordinal, HIGH → LOW)")
+    sev_df = severity_counts.reset_index()
+    sev_df.columns = [COL_SEVERITY, "count"]
+    sev_df["label"] = sev_df["count"].astype(str)
+    st.plotly_chart(
+        h_bar(sev_df, "count", COL_SEVERITY, SEV_COLOR_MAP, "label",
+              category_order=SEV_ORDER_BOTTOM_UP),
+        use_container_width=True,
     )
-    fig_bar.update_layout(height=400)
-    st.plotly_chart(fig_bar, use_container_width=True)
 
+# ── Sección 3: Tasa de desacuerdo (métrica de primera clase) ────────────────
 st.markdown("---")
+st.markdown("### ⚠️ Tasa de Desacuerdo AI vs Humano")
+st.caption(
+    "Comparación del diagnóstico del LLM contra el REASON_DSC humano. Mapea al "
+    "umbral *Reason Code Agreement* del mentor: un desacuerdo alto en una etapa "
+    "señala dónde el reason humano es menos confiable, no un error del modelo."
+)
 
-# ── Gráfico 2: Distribución por Severidad ─────────────────────────────────
-st.markdown("### 🚨 Distribución por Severidad")
+dis_df = (
+    df.assign(_disagree=(df[COL_LLM_COINCIDE] == False))  # noqa: E712
+    .groupby(COL_STAGE)["_disagree"].mean().mul(100).reset_index()
+)
+dis_df.columns = [COL_STAGE, "rate"]
+dis_df["label"] = dis_df["rate"].map(lambda v: f"{v:.0f}%")
 
-col_sev1, col_sev2 = st.columns(2)
-
-# Preparar datos de severidad
-severity_counts = df['severity'].value_counts().reset_index()
-severity_counts.columns = ['severity', 'count']  # Asegurar nombres correctos
-
-with col_sev1:
-    # Pie chart - CORREGIDO
-    fig_sev_pie = px.pie(
-        severity_counts,
-        names='severity',     # ← Columna de categorías
-        values='count',       # ← Columna de valores
-        title="Distribución de Severidad",
-        color='severity',
-        color_discrete_map={
-            'HIGH': COLORS['high'],
-            'MEDIUM': COLORS['medium'],
-            'LOW': COLORS['low']
-        }
+col_dis1, col_dis2 = st.columns([2, 1])
+with col_dis1:
+    st.markdown("**% de desacuerdo por etapa**")
+    st.plotly_chart(
+        h_bar(dis_df, "rate", COL_STAGE, STAGE_COLOR_MAP, "label"),
+        use_container_width=True,
     )
-    fig_sev_pie.update_layout(height=400)
-    st.plotly_chart(fig_sev_pie, use_container_width=True)
+with col_dis2:
+    st.markdown("**Global**")
+    metric_card("Desacuerdos", f"{n_disagree} de {total_pos}", icon="⚠️")
+    metric_card("Tasa", f"{disagree_rate:.1f}%")
 
-with col_sev2:
-    # Tabla de severidad - CORREGIDO
-    st.markdown("#### Detalle de Severidad")
-    sev_df = severity_counts.copy()
-    sev_df.columns = ['Severidad', 'Cantidad']
-    sev_df['Porcentaje'] = (sev_df['Cantidad'] / total_pos * 100).round(1)
-    st.dataframe(sev_df, use_container_width=True)
-
-# ── Métricas de Validación ──────────────────────────────────────────────────
-st.markdown("### ✅ Métricas de Validación")
-
-col_val1, col_val2, col_val3 = st.columns(3)
-
-with col_val1:
-    st.markdown(
-        f"""
-        <div class="custom-card" style="border-left: 4px solid #48bb78;">
-            <h4 style="margin: 0 0 0.5rem 0; color: #718096;">Tasa de Acuerdo</h4>
-            <p style="margin: 0; font-size: 2rem; font-weight: 700; color: #48bb78;">
-                {agreement_rate:.1f}%
-            </p>
-            <p style="margin: 0.5rem 0 0 0; font-size: 0.85rem; color: #718096;">
-                AI vs Reason Humano
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-with col_val2:
-    st.markdown(
-        f"""
-        <div class="custom-card" style="border-left: 4px solid #4299e1;">
-            <h4 style="margin: 0 0 0.5rem 0; color: #718096;">POs con Validación</h4>
-            <p style="margin: 0; font-size: 2rem; font-weight: 700; color: #4299e1;">
-                {total_with_validation}
-            </p>
-            <p style="margin: 0.5rem 0 0 0; font-size: 0.85rem; color: #718096;">
-                de {total_pos} totales
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-with col_val3:
-    st.markdown(
-        f"""
-        <div class="custom-card" style="border-left: 4px solid #f56565;">
-            <h4 style="margin: 0 0 0.5rem 0; color: #718096;">Desacuerdos</h4>
-            <p style="margin: 0; font-size: 2rem; font-weight: 700; color: #f56565;">
-                {disagreements}
-            </p>
-            <p style="margin: 0.5rem 0 0 0; font-size: 0.85rem; color: #718096;">
-                Casos para revisar
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
+# ── Sección 4: Tendencia temporal ───────────────────────────────────────────
 st.markdown("---")
+st.markdown("### 📈 Tendencia Temporal (POs tardíos por semana)")
 
-# ── Tabla de POs con Desacuerdo ─────────────────────────────────────────────
-if disagreements > 0:
-    st.markdown("### ⚠️ POs con Desacuerdo AI vs Humano")
-    
-    df_disagreement = df[df[COL_LLM_COINCIDE] == False].copy()
-    
-    st.dataframe(
-        df_disagreement[[COL_STAGE, COL_SEVERITY, COL_REASON_DSC, COL_LLM_COINCIDE]],
-        use_container_width=True
+trend = df.dropna(subset=[COL_PO_DT]).copy()
+if trend.empty:
+    st.info("Sin fechas de PO válidas para construir la tendencia.")
+else:
+    trend["week"] = trend[COL_PO_DT].dt.to_period("W").dt.start_time
+    weekly = trend.groupby("week").size().reset_index(name="count").sort_values("week")
+    fig_trend = px.line(weekly, x="week", y="count", markers=True)
+    fig_trend.update_layout(
+        height=320, margin=dict(l=10, r=40, t=10, b=10),
+        xaxis_title=None, yaxis_title="POs tardíos",
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
     )
+    last = weekly.iloc[-1]
+    fig_trend.add_annotation(
+        x=last["week"], y=last["count"], text=str(int(last["count"])),
+        showarrow=False, yshift=14, font=dict(size=13, weight="bold"),
+    )
+    st.plotly_chart(fig_trend, use_container_width=True)
+
+# ── Sección 5: Scorecards por entidad ───────────────────────────────────────
+st.markdown("---")
+st.markdown("### 🏷️ Scorecards por Entidad")
+
+scorecards = load_scorecards()
+if scorecards is None:
+    st.info(
+        "Scorecards no encontrados. Genéralos (offline, sin API) desde la raíz del "
+        "repo:\n\n"
+        "```\npython 03_llm_integration/scorecard_core.py "
+        "data/processed/df_classified.csv data/processed/scorecards\n```"
+    )
+else:
+    _NOTE = (
+        "El Nivel de Riesgo y el Score (0–100) son un compuesto estadístico "
+        "(shrinkage empírico-Bayes + regresión Ridge + cortes GMM): expresan un "
+        "ranking relativo dentro del grupo, no una probabilidad. Los demás "
+        "indicadores son descriptivos directos. POs (total) cuenta toda la "
+        "población de la entidad, no solo los tardíos."
+    )
+    tabs = st.tabs(["Vendors", "Carriers", "DCs"])
+    for tab, actor_key, stage_key in zip(tabs, ("vendors", "carriers", "dcs"),
+                                         ("vendor", "carrier", "dc")):
+        with tab:
+            entities = scorecards.get(actor_key, {})
+            if not entities:
+                st.info("Sin entidades en este scorecard.")
+                continue
+            st.caption(_NOTE)
+            hue = STAGE_COLORS[stage_key]
+            ordered = sorted(
+                entities.items(),
+                key=lambda kv: kv[1].get("Score_Riesgo_Normalizado", 0),
+                reverse=True,
+            )
+            for name, rec in ordered:
+                st.markdown(_scorecard_html(name, rec, hue), unsafe_allow_html=True)
+
+# ── Drill-down Ravi → Diego ─────────────────────────────────────────────────
+st.markdown("---")
+st.markdown("### 🔗 Ver detalle de un PO (Exception Workbench)")
+
+only_disagree = st.checkbox("Solo POs con desacuerdo AI vs humano", value=False)
+pool = df[df[COL_LLM_COINCIDE] == False] if only_disagree else df  # noqa: E712
+po_options = sorted(pool[COL_PO].unique().tolist())
+
+if not po_options:
+    st.info("No hay POs que cumplan el filtro seleccionado.")
+else:
+    col_dd1, col_dd2 = st.columns([3, 1])
+    with col_dd1:
+        dd_po = st.selectbox(
+            "PO_NBR", options=po_options,
+            format_func=lambda x: f"PO #{x}", key="ravi_drill_select",
+        )
+    with col_dd2:
+        st.markdown("<div style='height:1.75rem;'></div>", unsafe_allow_html=True)
+        if st.button("Ver en Exception Workbench →", use_container_width=True):
+            st.session_state["drilldown_po"] = dd_po
+            st.switch_page("pages/1_🔍_Exception_Workbench.py")
 
 # ── Footer ──────────────────────────────────────────────────────────────────
 st.markdown("---")

@@ -22,7 +22,7 @@ from sklearn.preprocessing import StandardScaler
 # ─────────────────────────────────────────────────────────────────────────
 # RESOLUCIÓN DE RUTAS (RAÍZ DEL REPO)
 # ─────────────────────────────────────────────────────────────────────────
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent  # 03_llm_integration → repo_root
+REPO_ROOT = Path(__file__).resolve().parent.parent  # 03_llm_integration → repo_root
 DATA_PROCESSED = REPO_ROOT / "data" / "processed"
 CSV_DEFAULT_PATH = DATA_PROCESSED / "df_classified.csv"
 
@@ -445,18 +445,17 @@ def load_po_data(csv_path: str | Path = None) -> pd.DataFrame:
         else:
             df["total_dc_hrs"] = df["excess_dc_hrs"].fillna(0)
     
-    # ── 4. Asegurar columnas requeridas ──
-    for col in REQUIRED_COLUMNS:
-        if col not in df.columns:
-            if col in ["excess_vendor_hrs", "excess_carrier_hrs", "excess_dc_hrs", "excess_yard_hrs"]:
-                df[col] = 0.0
-            elif col == "YARD_DROP_FL":
-                df[col] = 0
-            elif col == "stage_primary":
-                df[col] = "Indeterminado"
-            else:
-                df[col] = 0
-        
+    # ── 4. Verificar columnas requeridas ──
+    # Rellenar en silencio enmascararía datos ausentes (ceros que se propagan a
+    # las métricas del scorecard). Si falta alguna columna requerida, fallar
+    # nombrándolas para que el problema sea visible y trazable a la fuente.
+    missing = [col for col in REQUIRED_COLUMNS if col not in df.columns]
+    if missing:
+        raise ValueError(
+            "df_classified.csv no contiene columnas requeridas por el scorecard: "
+            f"{missing}. Revisa el pipeline de Fase 2 que genera este archivo."
+        )
+
     return df
 
 

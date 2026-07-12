@@ -54,11 +54,18 @@ st.markdown(
 st.markdown("### 📋 Seleccionar PO")
 
 po_list = get_unique_po_list(df)
+
+# Drill-down desde la vista de Ravi: si llega un PO por session_state, se
+# preselecciona. Se consume con .pop para no fijar la selección en recargas
+# posteriores (una navegación manual vuelve a mandar).
+drilldown_po = st.session_state.pop("drilldown_po", None)
+default_index = po_list.index(drilldown_po) if drilldown_po in po_list else 0
+
 selected_po = st.selectbox(
     "Número de PO:",
     options=po_list,
     format_func=lambda x: f"PO #{x}",
-    index=0,
+    index=default_index,
 )
 
 # Obtener datos del PO seleccionado

@@ -9,6 +9,10 @@ DATA_PROCESSED_DIR = REPO_ROOT / "data" / "processed"
 # ── Artefacto de handoff F3→F4 (único input de la app) ─────────────────────
 PO_OUTPUT_CSV = DATA_PROCESSED_DIR / "po_output.csv"
 
+# ── Scorecards por entidad (JSON del motor offline scorecard_core.py) ──────
+# Regenerables y gitignored; la app los lee, no recomputa la capa estadística.
+SCORECARDS_DIR = DATA_PROCESSED_DIR / "scorecards"
+
 # ── Columnas canónicas del contrato F3→F4 ─────────────────────────────────
 COL_PO = "PO_NBR"
 COL_STAGE = "stage"
