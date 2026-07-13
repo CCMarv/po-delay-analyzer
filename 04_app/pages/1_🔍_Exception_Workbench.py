@@ -6,12 +6,15 @@ from pathlib import Path
 import streamlit as st
 import pandas as pd
 from config import (
-    COL_STAGE, COL_SEVERITY, COL_EXPLANATION, COL_ACTION,
+    COL_STAGE, COL_SEVERITY,
     COL_PO_DT, COL_STA_DT, COL_APPROVED_DT, COL_TRAILER_ARRIVE_DT,
     COL_CHECKIN_DT, COL_CHECKOUT_DT, COL_RECPT_DT,
     COL_HOT_PO_FLAG, COL_IS_SHORT_SHIP, COL_REASON_DSC, COL_LLM_COINCIDE,
     COL_LLM_CONFIANZA, COL_VENDOR_NAME, COL_CARRIER_NAME, COL_DC_NAME,
     COL_DELAY_DAYS, STAGE_SEGMENT_COLUMNS,
+    COL_LLM_RAZONAMIENTO, COL_LLM_HIPOTESIS, COL_LLM_HIPOTESIS_EVIDENCIA,
+    COL_LLM_ACCION_INMEDIATA, COL_LLM_ACCION_CORRECTIVA, COL_LLM_ACCION_PREVENTIVA,
+    COL_LLM_HIPOTESIS_ALT, COL_LLM_PASO_DISCRIMINANTE, COL_LLM_CONFIANZA_HIPOTESIS,
 )
 from services.data_service import load_po_output, get_po_by_number, get_unique_po_list
 from components.navbar import render_navbar
@@ -73,8 +76,6 @@ po_data = get_po_by_number(df, selected_po)
 
 stage = po_data[COL_STAGE]
 severity = po_data[COL_SEVERITY]
-explanation = po_data.get(COL_EXPLANATION)
-action = po_data.get(COL_ACTION)
 tiene_analisis_llm = pd.notna(severity)
 
 stage_key = stage.lower() if pd.notna(stage) else "indeterminado"
@@ -231,41 +232,117 @@ for col_name, icon, label in timeline_events:
 
 st.markdown("".join(segments_html), unsafe_allow_html=True)
 
-# ── Diagnóstico LLM ─────────────────────────────────────────────────────────
+# ── Diagnóstico diferencial (tier 2) ─────────────────────────────────────────
+# Consume la salida híbrida de ARD-16 persistida en el contrato F3→F4 (#161): la
+# hipótesis principal y su evidencia, una alternativa con el paso que las
+# discrimina, un plan escalonado y una 2ª confianza específica de la hipótesis.
+# El HTML se compone por concatenación (sin sangría inicial) al estilo de la vista
+# de Ravi; reusa los tokens del sistema de diseño (ARD-17), nunca hex suelto.
 st.markdown("---")
-st.markdown("### 🤖 Diagnóstico de Inteligencia Artificial")
+st.markdown("### 🔬 Diagnóstico Diferencial")
 
-if tiene_analisis_llm:
-    col_llm1, col_llm2 = st.columns(2)
-    with col_llm1:
-        st.markdown(
-            f"""
-            <div class="llm-card">
-                <div class="llm-icon">🔍</div>
-                <h4>Causa Raíz</h4>
-                <p class="llm-text">{explanation if pd.notna(explanation) else "N/A"}</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-    with col_llm2:
-        st.markdown(
-            f"""
-            <div class="llm-card">
-                <div class="llm-icon">🛠️</div>
-                <h4>Acción Recomendada</h4>
-                <p class="llm-text">{action if pd.notna(action) else "N/A"}</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+
+def _t2(col: str) -> str:
+    """Texto tier-2 seguro: valor limpio, o guion largo si viene vacío/NaN."""
+    valor = po_data.get(col)
+    return str(valor).strip() if pd.notna(valor) else "—"
+
+
+def _microlabel(texto: str) -> str:
+    """Etiqueta compacta en mayúsculas (mismo estilo que los mini de Ravi)."""
+    return (
+        '<div style="color:var(--text-muted); font-size:0.72rem; text-transform:uppercase;'
+        f' letter-spacing:0.02em; font-weight:600; margin-bottom:2px;">{texto}</div>'
+    )
+
+
+hipotesis_val = po_data.get(COL_LLM_HIPOTESIS)
+tiene_tier2 = (
+    tiene_analisis_llm
+    and pd.notna(hipotesis_val)
+    and str(hipotesis_val).strip() not in ("", "—")
+)
+
+if tiene_tier2:
+    stage_hue = f"var(--stage-{stage_key})"
+
+    # 1) Hipótesis principal + 2ª confianza (bucket) + evidencia + razonamiento
+    conf_hip = po_data.get(COL_LLM_CONFIANZA_HIPOTESIS)
+    badge_conf = confidence_badge_html(float(conf_hip)) if pd.notna(conf_hip) else ""
+    st.markdown(
+        '<div class="custom-card">'
+        '<div style="display:flex; align-items:center; justify-content:space-between;'
+        ' gap:0.5rem; flex-wrap:wrap; margin-bottom:0.75rem;">'
+        '<h4 style="margin:0; color:var(--text-primary); font-size:1.05rem;">'
+        "Hipótesis principal</h4>"
+        '<div style="display:flex; align-items:center; gap:0.4rem;">'
+        + _microlabel("Confianza en la hipótesis").replace("margin-bottom:2px;", "")
+        + badge_conf + "</div></div>"
+        '<p style="margin:0 0 1rem 0; color:var(--text-primary); font-size:1.05rem;'
+        f' font-weight:600; line-height:1.5;">{_t2(COL_LLM_HIPOTESIS)}</p>'
+        + _microlabel("Evidencia")
+        + '<p style="margin:0 0 1rem 0; color:var(--text-secondary); font-size:0.9rem;'
+        f' line-height:1.6;">{_t2(COL_LLM_HIPOTESIS_EVIDENCIA)}</p>'
+        + _microlabel("Razonamiento")
+        + '<p style="margin:0 0 0.5rem 0; color:var(--text-secondary); font-size:0.9rem;'
+        f' line-height:1.6;">{_t2(COL_LLM_RAZONAMIENTO)}</p>'
+        '<p style="margin:0; color:var(--text-muted); font-size:0.78rem; line-height:1.5;'
+        ' font-style:italic;">El razonamiento combina lectura de los datos de este PO con'
+        ' generalizaciones de dominio del modelo (frases como &laquo;por regla de'
+        ' industria&raquo; o &laquo;típicamente&raquo;). Estas últimas son conocimiento'
+        " general del modelo, no evidencia de este caso concreto.</p>"
+        "</div>",
+        unsafe_allow_html=True,
+    )
+
+    # 2) Hipótesis alternativa + paso discriminante (callout elevado: el pivote
+    #    accionable del diagnóstico diferencial, el dato a verificar).
+    st.markdown(
+        '<div class="custom-card">'
+        + _microlabel("Hipótesis alternativa")
+        + '<p style="margin:0 0 1rem 0; color:var(--text-secondary); font-size:0.95rem;'
+        f' line-height:1.6;">{_t2(COL_LLM_HIPOTESIS_ALT)}</p>'
+        '<div style="background:var(--surface-elevated); border-left:4px solid var(--accent);'
+        ' border-radius:8px; padding:0.75rem 1rem;">'
+        + _microlabel("Paso discriminante — el dato que decide entre ambas")
+        + '<p style="margin:0; color:var(--text-primary); font-size:0.95rem;'
+        f' line-height:1.6;">{_t2(COL_LLM_PASO_DISCRIMINANTE)}</p>'
+        "</div></div>",
+        unsafe_allow_html=True,
+    )
+
+    # 3) Plan escalonado: secuencia ordinal por horizonte temporal (ahora →
+    #    corregir → prevenir). Acento de etapa = actor responsable (único uso de
+    #    hue en el panel, mismo idiom que los segmentos del timeline).
+    pasos = (
+        ("1", "Inmediata", COL_LLM_ACCION_INMEDIATA),
+        ("2", "Correctiva", COL_LLM_ACCION_CORRECTIVA),
+        ("3", "Preventiva", COL_LLM_ACCION_PREVENTIVA),
+    )
+    pasos_html = "".join(
+        '<div style="display:flex; align-items:flex-start; gap:0.75rem; padding:0.75rem 1rem;'
+        f' border-left:4px solid {stage_hue}; background:var(--surface-card); border-radius:8px;'
+        ' margin-bottom:0.5rem;">'
+        '<span style="flex-shrink:0; color:var(--text-muted); font-family:var(--font-mono);'
+        f' font-weight:700; font-size:1.1rem;">{num}</span><div style="flex:1;">'
+        + _microlabel(f"Acción {label}")
+        + '<p style="margin:0; color:var(--text-secondary); font-size:0.92rem;'
+        f' line-height:1.6;">{_t2(col)}</p></div></div>'
+        for num, label, col in pasos
+    )
+    st.markdown(
+        '<div class="custom-card">'
+        '<h4 style="margin:0 0 0.75rem 0; color:var(--text-primary); font-size:1.05rem;">'
+        "Plan escalonado</h4>" + pasos_html + "</div>",
+        unsafe_allow_html=True,
+    )
 else:
     st.markdown(
         """
         <div class="llm-card">
             <div class="llm-icon">⏳</div>
             <h4>Pendiente de análisis LLM</h4>
-            <p class="llm-text">Este PO todavía no tiene causa raíz ni acción recomendada generadas por el análisis de Fase 3.</p>
+            <p class="llm-text">Este PO todavía no tiene diagnóstico diferencial (hipótesis, evidencia, plan escalonado) generado por el análisis de Fase 3.</p>
         </div>
         """,
         unsafe_allow_html=True,

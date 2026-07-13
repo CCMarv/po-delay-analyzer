@@ -45,6 +45,20 @@ COL_EXCESS_VENDOR_HRS = "excess_vendor_hrs"
 COL_EXCESS_CARRIER_HRS = "excess_carrier_hrs"
 COL_EXCESS_DC_HRS = "excess_dc_hrs"
 
+# ── Columnas del diagnóstico diferencial tier 2 (contrato F3→F4, #161/#175) ──
+# Salida híbrida de ARD-16: razonamiento + hipótesis principal/alternativa + el
+# paso que las discrimina + plan escalonado + una 2ª confianza específica de la
+# hipótesis (distinta de COL_LLM_CONFIANZA, que es la del diagnóstico tier 1).
+COL_LLM_RAZONAMIENTO = "llm_razonamiento"
+COL_LLM_HIPOTESIS = "llm_hipotesis"
+COL_LLM_HIPOTESIS_EVIDENCIA = "llm_hipotesis_evidencia"
+COL_LLM_ACCION_INMEDIATA = "llm_accion_inmediata"
+COL_LLM_ACCION_CORRECTIVA = "llm_accion_correctiva"
+COL_LLM_ACCION_PREVENTIVA = "llm_accion_preventiva"
+COL_LLM_HIPOTESIS_ALT = "llm_hipotesis_alt"
+COL_LLM_PASO_DISCRIMINANTE = "llm_paso_discriminante"
+COL_LLM_CONFIANZA_HIPOTESIS = "llm_confianza_hipotesis"
+
 # Etapa → timestamps que delimitan su tramo de responsabilidad en el lifecycle
 # (ver 02_clasif_reglas_negocio/classifier_core.py — Vendor: STA push; Carrier:
 # tránsito; DC: yard+dock consolidados). Indeterminado no tiene tramo propio.
