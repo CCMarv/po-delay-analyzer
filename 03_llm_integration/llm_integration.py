@@ -2241,10 +2241,20 @@ _ENRICHMENT_COLUMNS = [
     "delay_days_calc", "excess_vendor_hrs", "excess_carrier_hrs", "excess_dc_hrs",
 ]
 
+# Columnas tier-2 (#161): la salida híbrida del diagnóstico diferencial de ARD-16 (la
+# llamada de acción, opt-in vía --action-call). Son las 8 del contrato de acción
+# (_ACTION_COLUMN_MAP) + la 2ª confianza (confianza en la hipótesis principal). El
+# marcado datos-vs-dominio de ARD-16 NO es columna: viaja embebido en la prosa de estos
+# campos (ver build_action_prompt). llm_qa_flags queda FUERA a propósito: es metadato de
+# auditoría del ciclo de QA, no contenido del entregable; vive en df_with_llm_*.csv.
+# Con una corrida sin --action-call estas columnas no existen; el export las emite vacías
+# (ver export_deliverable_csv) para que el contrato tenga forma estable.
+_TIER2_COLUMNS = list(_ACTION_COLUMN_MAP) + ["llm_confianza_hipotesis"]
+
 # Orden final del artefacto: las 5 del mentor primero, luego el bloque de soporte.
 _DELIVERABLE_COLUMNS = (
     _MENTOR_COLUMNS + _TIMELINE_COLUMNS + _AGGRAVANT_COLUMNS + _AGREEMENT_COLUMNS
-    + _ENRICHMENT_COLUMNS
+    + _ENRICHMENT_COLUMNS + _TIER2_COLUMNS
 )
 
 
@@ -2259,7 +2269,12 @@ def export_deliverable_csv(
       1. Contrato del mentor (kickoff §09 / README §9): PO_NBR, stage, severity,
          explanation, action.
       2. Soporte de Fase 4 para que la app NO recompute: el timeline del PO, los
-         agravantes (hot PO, short ship) y la concordancia con REASON_DSC.
+         agravantes (hot PO, short ship), la concordancia con REASON_DSC y el
+         enriquecimiento tier-1 (confianza, entidades, exceso por etapa).
+      3. Diagnóstico diferencial tier-2 (#161, ARD-16): la salida híbrida de la llamada
+         de acción (razonamiento, hipótesis principal/alternativa, plan de acción,
+         paso discriminante, 2ª confianza). Opt-in por --action-call; si la corrida no
+         lo activó, estas columnas se emiten vacías. llm_qa_flags NO entra (auditoría).
 
     Alcance de filas: solo los POs tardíos (`delay_days_calc > 0`) — los que el LLM
     explica y los que la app ofrece en el selector (#102).
@@ -2294,6 +2309,11 @@ def export_deliverable_csv(
     # tier-1 (nombre de origen).
     for col in _TIMELINE_COLUMNS + _AGGRAVANT_COLUMNS + _AGREEMENT_COLUMNS + _ENRICHMENT_COLUMNS:
         datos[col] = tardios[col].values
+    # 3. Diagnóstico diferencial tier-2 (#161, ARD-16): opt-in por --action-call. Si la
+    # corrida no lo activó, la columna no existe en el df → se emite vacía para que el
+    # contrato conserve su forma (siempre las mismas columnas, pobladas o no).
+    for col in _TIER2_COLUMNS:
+        datos[col] = tardios[col].values if col in tardios.columns else [""] * len(tardios)
 
     out = pd.DataFrame(datos, columns=_DELIVERABLE_COLUMNS)
     out.to_csv(output_path, index=False)
