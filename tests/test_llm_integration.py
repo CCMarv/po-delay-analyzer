@@ -144,6 +144,36 @@ def test_build_prompt_pide_estructura_de_explicacion():
     assert "responsable" in out
 
 
+# ── umbral de severidad desde la fuente única (#121) ───────────────────────────
+def _rules_ejemplo(thr_high=5.0, thr_low=2.0) -> dict:
+    """rules dict sintético con la forma mínima que build_prompt lee (mismo esquema
+    que rules_config.json), con umbrales distintos a los reales para probar que se
+    interpolan de verdad y no que el texto coincide con el default por casualidad."""
+    return {
+        "thresholds": {
+            "severity_delay_days": {"value": thr_high},
+            "severity_low_days": {"value": thr_low},
+        }
+    }
+
+
+def test_build_prompt_interpola_umbral_de_rules_pasado_explicito():
+    out = build_prompt(_row_ejemplo(), rules=_rules_ejemplo(thr_high=5.0, thr_low=2.0))
+    assert "> 5 días" in out
+    assert "< 2 día" in out
+    assert "> 3 días" not in out
+    assert "< 1 día" not in out
+
+
+def test_build_prompt_sin_rules_carga_la_fuente_unica_por_defecto():
+    # rules=None (default): carga perezosa desde rules_config.json real. Con los
+    # valores vigentes del mentor (3.0/1.0) el texto queda igual que el histórico
+    # (sin regresión), pero ahora viene de la fuente, no de un literal.
+    out = build_prompt(_row_ejemplo())
+    assert "> 3 días" in out
+    assert "< 1 día" in out
+
+
 # ── few-shot (#99): el parámetro examples y la curación del ejemplo ───────────
 def _ejemplo_dc() -> dict:
     """Ejemplo few-shot mínimo de etapa DC (mismatch: reason culpa al vendor)."""
