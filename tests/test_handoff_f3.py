@@ -27,6 +27,7 @@ from llm_integration import (
     _DELIVERABLE_COLUMNS,
     _MENTOR_COLUMNS,
     _ENRICHMENT_COLUMNS,
+    _TIER2_COLUMNS,
 )
 
 _SEVERITY_DOMAIN = {"HIGH", "MEDIUM", "LOW"}
@@ -53,6 +54,17 @@ def _df_clasificado_con_llm() -> pd.DataFrame:
         "excess_vendor_hrs": [12.0, 0.0, 0.0],
         "excess_carrier_hrs": [0.0, 8.0, 0.0],
         "excess_dc_hrs": [0.0, 0.0, 0.0],
+        # Diagnóstico diferencial tier-2 (#161, ARD-16): salida híbrida de la llamada de
+        # acción. Poblada en los tardíos, vacía en el on-time (que no entra al artefacto).
+        "llm_razonamiento": ["cita aprobada > tránsito", "tránsito domina", ""],
+        "llm_hipotesis": ["appointment tardío", "carrier congestionado", ""],
+        "llm_hipotesis_evidencia": ["APPROVED_DT 24h tarde", "checkin 8h sobre plan", ""],
+        "llm_accion_inmediata": ["obtener cita real del vendor", "confirmar ETA carrier", ""],
+        "llm_accion_correctiva": ["renegociar SLA de cita", "reasignar lane", ""],
+        "llm_accion_preventiva": ["alerta de cita tardía", "buffer de tránsito", ""],
+        "llm_hipotesis_alt": ["error de captura de cita", "clima en ruta", ""],
+        "llm_paso_discriminante": ["comparar cita vs APPROVED_DT", "revisar tracking GPS", ""],
+        "llm_confianza_hipotesis": [0.78, 0.6, 0.0],
     }
     for col in ("PO_DT", "STA_DT", "APPROVED_DT", "TRAILER_ARRIVE_DT",
                 "CHECKIN_DT", "CHECKOUT_DT", "RECPT_DT"):
@@ -107,6 +119,36 @@ def test_contrato_f3_enriquecimiento_tier1_presente(tmp_path):
     releido = pd.read_csv(out_path)
     for col in _ENRICHMENT_COLUMNS:
         assert col in releido.columns
+
+
+def test_contrato_f3_diagnostico_tier2_presente(tmp_path):
+    # Tier 2 (#161): la salida híbrida de ARD-16 (razonamiento, hipótesis principal/alt,
+    # plan, paso discriminante, 2ª confianza) está en el artefacto → Fase 4 muestra el
+    # panel de diagnóstico diferencial SIN recomputar ni llamar al LLM.
+    out_path = tmp_path / "po_output.csv"
+    export_deliverable_csv(_df_clasificado_con_llm(), out_path)
+    releido = pd.read_csv(out_path)
+    for col in _TIER2_COLUMNS:
+        assert col in releido.columns
+
+
+def test_contrato_f3_qa_flags_fuera_del_contrato():
+    # llm_qa_flags es metadato de auditoría del ciclo de QA, no contenido del entregable:
+    # queda fuera del contrato F3→F4 (vive en df_with_llm_*.csv). Fijar la decisión.
+    assert "llm_qa_flags" not in _DELIVERABLE_COLUMNS
+    assert "llm_qa_flags" not in _TIER2_COLUMNS
+
+
+def test_contrato_f3_export_sin_action_call_emite_tier2_vacio(tmp_path):
+    # Robustez de forma: una corrida sin --action-call no tiene las columnas tier-2; el
+    # export las emite vacías para que el contrato conserve columnas estables.
+    df = _df_clasificado_con_llm().drop(columns=_TIER2_COLUMNS)
+    out_path = tmp_path / "po_output.csv"
+    export_deliverable_csv(df, out_path)
+    releido = pd.read_csv(out_path)
+    assert list(releido.columns) == _DELIVERABLE_COLUMNS
+    for col in _TIER2_COLUMNS:
+        assert releido[col].isna().all() or (releido[col].astype(str) == "").all()
 
 
 def test_contrato_f3_releido_reconstruye_lo_exportado(tmp_path):
