@@ -389,6 +389,7 @@ def build_prompt(
     row: pd.Series,
     examples: Optional[List[Dict[str, Any]]] = None,
     kb: Optional[dict] = None,
+    rules: Optional[dict] = None,
 ) -> str:
     """
     Construye el prompt para el LLM a partir de una fila del DataFrame.
@@ -424,10 +425,24 @@ def build_prompt(
             pasa, `select_domain_context` inyecta un bloque CONTEXTO DE DOMINIO con el
             primer del actor (stage_primary) y las acciones de referencia cuyas condiciones
             cumple la PO. None (default) → sin bloque, prompt byte-idéntico al zero-shot.
+        rules: dict opcional de umbrales (rules_config.json, tal cual lo devuelve
+            `classifier_core.load_rules_config`). Interpola severity_delay_days/
+            severity_low_days en la sección "Reglas de severidad" del prompt, en vez de
+            hardcodearlos (#121: fuente única con F2, que ya usa el mismo umbral para
+            calcular la severidad determinística). None (default) → carga perezosa desde
+            rules_config.json; quien procese muchas POs en lote (add_llm_explanations)
+            debe cargarlo una vez y pasarlo aquí para no releer el JSON por cada fila.
 
     Returns:
         Prompt formateado listo para enviar al LLM.
     """
+    if rules is None:
+        _ensure_pipeline_on_path()
+        from classifier_core import load_rules_config
+        rules = load_rules_config()
+    thr_high = float(rules["thresholds"]["severity_delay_days"]["value"])
+    thr_low = float(rules["thresholds"]["severity_low_days"]["value"])
+
     hot_flag = "Sí" if row.get('HOT_PO_FLAG', 0) == 1 else "No"
     short_ship = "Sí" if row.get('_short_ship', False) else "No"
     # Contexto neutro (#67): la reprogramación de cita es un evento, NO una causa de
@@ -559,9 +574,9 @@ def build_prompt(
         '  "confianza": 0.0 a 1.0',
         "}\n",
         "Reglas de severidad (umbral del mentor):",
-        "- HIGH: Hot PO con retraso > 3 días, O short ship con retraso",
+        f"- HIGH: Hot PO con retraso > {thr_high:g} días, O short ship con retraso",
         "- MEDIUM: Retraso > 0 días sin agravantes",
-        "- LOW: Borderline (casi a tiempo, retraso < 1 día)\n",
+        f"- LOW: Borderline (casi a tiempo, retraso < {thr_low:g} día)\n",
         "Regla para coincide_con_reason_code:",
         "- true si tu causa_raiz coincide con el REASON_DSC del DC",
         "- false si discrepas"
@@ -2011,6 +2026,13 @@ def add_llm_explanations(
     """
     df_result = df.copy()
 
+    # Umbral de severidad (#121): se carga UNA vez aquí, no por cada build_prompt del
+    # loop de abajo — mismo espíritu que kb/examples, evita releer rules_config.json
+    # por cada PO procesado.
+    _ensure_pipeline_on_path()
+    from classifier_core import load_rules_config
+    rules = load_rules_config()
+
     # Inicializar columnas
     for col in ('llm_causa_raiz', 'llm_accion_recomendada', 'llm_severidad'):
         if col not in df_result.columns:
@@ -2054,7 +2076,7 @@ def add_llm_explanations(
         po_nbr = row.get('PO_NBR', 'N/A')
         pbar.set_description(f"PO {po_nbr}")
 
-        prompt = build_prompt(row, kb=kb)
+        prompt = build_prompt(row, kb=kb, rules=rules)
         response = backend.call(prompt)
 
         if response:
