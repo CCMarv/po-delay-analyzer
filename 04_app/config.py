@@ -100,12 +100,13 @@ CONFIDENCE_BUCKETS = [
 ]
 
 
-def confidence_bucket(score: float) -> dict:
-    """Mapea un score de confianza escalar (0-1) a su bucket ordinal."""
-    for bucket in CONFIDENCE_BUCKETS:
+def confidence_bucket(score: float, theme: str | None = None) -> dict:
+    """Mapea un score de confianza escalar (0-1) a su bucket ordinal (tema activo)."""
+    buckets = CONFIDENCE_BUCKETS_DARK if (theme or current_theme()) == "dark" else CONFIDENCE_BUCKETS
+    for bucket in buckets:
         if bucket["min"] <= score <= bucket["max"]:
             return bucket
-    return CONFIDENCE_BUCKETS[-1]
+    return buckets[-1]
 
 
 # Vista plana (retrocompat): las páginas actuales resuelven color por etapa o
@@ -117,3 +118,81 @@ COLORS = {
     "medium": SEVERITY["MEDIUM"]["color"],
     "low": SEVERITY["LOW"]["color"],
 }
+
+# ── Sistema de diseño — variantes de tema oscuro (ARD-17) ───────────────────
+# Mismos hues (etapa) / misma rampa (severidad-confianza) que las variantes
+# claras de arriba, con la luminancia ajustada que fija la tabla de ARD-17
+# para mantener contraste ≥3:1 sobre fondo oscuro. `STAGE_COLORS`/`SEVERITY`/
+# `CONFIDENCE_BUCKETS`/`COLORS` no cambian de significado: siguen siendo la
+# variante clara, consumida sin cambios por `badges.py`/`timeline.py` (que
+# solo usan la key para elegir clase CSS, nunca el hex).
+STAGE_COLORS_DARK = {
+    "vendor": "#4DA8DB",
+    "carrier": "#F0B840",
+    "dc": "#3FC79A",
+    "indeterminado": "#9B9B9B",
+}
+
+_SEVERITY_DARK_COLOR = {"HIGH": "#E8E8E8", "MEDIUM": "#A8A8A8", "LOW": "#6B6B6B"}
+SEVERITY_DARK = {
+    key: {**entry, "color": _SEVERITY_DARK_COLOR[key]}
+    for key, entry in SEVERITY.items()
+}
+
+_CONFIDENCE_DARK_COLOR = {"alta": "#E8E8E8", "media": "#A8A8A8", "baja": "#6B6B6B"}
+CONFIDENCE_BUCKETS_DARK = [
+    {**bucket, "color": _CONFIDENCE_DARK_COLOR[bucket["key"]]}
+    for bucket in CONFIDENCE_BUCKETS
+]
+
+COLORS_DARK = {
+    **STAGE_COLORS_DARK,
+    "high": SEVERITY_DARK["HIGH"]["color"],
+    "medium": SEVERITY_DARK["MEDIUM"]["color"],
+    "low": SEVERITY_DARK["LOW"]["color"],
+}
+
+# Mirror de --text-primary / --border-subtle / --accent (styles.css): Plotly
+# no puede leer variables CSS, así que el tema activo necesita el hex resuelto
+# en Python. line_color reusa --accent (no un hue nuevo) para la tendencia
+# temporal, que no tiene serie categórica y por tanto no está en la tabla de
+# ARD-17.
+PLOT_THEME = {
+    "light": {"font_color": "#1a202c", "gridcolor": "#e2e8f0", "line_color": "#4299e1"},
+    "dark": {"font_color": "#e8eaed", "gridcolor": "#333c48", "line_color": "#5aa9e6"},
+}
+
+
+def current_theme() -> str:
+    """Tema activo ('light'/'dark') vía `st.context.theme`.
+
+    Cae a 'light' fuera de una sesión de Streamlit en curso (script/tests) o
+    si la API no existe en la versión instalada (`requirements.txt` solo fija
+    `streamlit>=1.30.0`, más vieja que la que introdujo `st.context.theme`).
+    """
+    try:
+        import streamlit as st
+        theme_type = st.context.theme.type
+        return theme_type if theme_type in ("light", "dark") else "light"
+    except Exception:
+        return "light"
+
+
+def stage_colors(theme: str | None = None) -> dict:
+    """STAGE_COLORS resuelto al tema activo (o al `theme` dado)."""
+    return STAGE_COLORS_DARK if (theme or current_theme()) == "dark" else STAGE_COLORS
+
+
+def severity_colors(theme: str | None = None) -> dict:
+    """SEVERITY resuelto al tema activo (o al `theme` dado)."""
+    return SEVERITY_DARK if (theme or current_theme()) == "dark" else SEVERITY
+
+
+def colors_flat(theme: str | None = None) -> dict:
+    """COLORS (vista plana) resuelto al tema activo (o al `theme` dado)."""
+    return COLORS_DARK if (theme or current_theme()) == "dark" else COLORS
+
+
+def plot_theme(theme: str | None = None) -> dict:
+    """Tokens de texto/grid/línea para gráficas Plotly, resueltos al tema activo."""
+    return PLOT_THEME["dark" if (theme or current_theme()) == "dark" else "light"]

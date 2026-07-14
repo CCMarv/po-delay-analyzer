@@ -1,0 +1,23 @@
+# Tema base de la app — transcripción de los tokens claro/oscuro de
+# styles.css (ARD-17: --accent / --surface-bg / --surface-elevated /
+# --text-primary / --border-subtle). Habilita el selector nativo de tema de
+# Streamlit (requiere [theme.light] y [theme.dark] ambos definidos) para que
+# `st.context.theme.type` sea comprobable en vivo sin depender del SO.
+#
+# El chrome nativo de Streamlit (sidebar, widgets estándar) queda fuera del
+# alcance de ARD-17 §Consecuencias — este archivo solo fija los colores base,
+# no reconstruye ese chrome.
+
+[theme.light]
+primaryColor = "#4299e1"
+backgroundColor = "#f8f9fa"
+secondaryBackgroundColor = "#f3f4f6"
+textColor = "#1a202c"
+borderColor = "#e2e8f0"
+
+[theme.dark]
+primaryColor = "#5aa9e6"
+backgroundColor = "#12161c"
+secondaryBackgroundColor = "#262d38"
+textColor = "#e8eaed"
+borderColor = "#333c48"

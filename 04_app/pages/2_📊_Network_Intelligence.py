@@ -14,8 +14,9 @@ import pandas as pd
 import plotly.express as px
 
 from config import (
-    STAGE_COLORS, SEVERITY, SCORECARDS_DIR,
+    SCORECARDS_DIR,
     COL_PO, COL_STAGE, COL_SEVERITY, COL_PO_DT, COL_LLM_COINCIDE,
+    stage_colors, severity_colors, plot_theme,
 )
 from services.data_service import load_po_output
 from components.navbar import render_navbar
@@ -106,12 +107,16 @@ def h_bar(data, value_col, cat_col, color_map, text_col, category_order=None):
         data, x=value_col, y=cat_col, orientation="h",
         color=cat_col, color_discrete_map=color_map, text=text_col,
     )
-    fig.update_traces(textposition="outside", cliponaxis=False)
+    fig.update_traces(
+        textposition="outside", cliponaxis=False,
+        textfont_color=_PLOT_THEME["font_color"],
+    )
     fig.update_layout(
         showlegend=False, height=max(180, 60 * len(data) + 80),
         margin=dict(l=10, r=48, t=10, b=10),
         xaxis_title=None, yaxis_title=None,
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font_color=_PLOT_THEME["font_color"],
     )
     fig.update_xaxes(showgrid=False, showticklabels=False)
     if category_order:
@@ -124,14 +129,23 @@ def h_bar(data, value_col, cat_col, color_map, text_col, category_order=None):
 # ── Carga de datos ──────────────────────────────────────────────────────────
 df = load_po_output()
 
+# Paleta y tokens de Plotly resueltos una sola vez al tema activo (ARD-17):
+# Plotly no puede leer variables CSS, así que el hex se resuelve aquí en vez
+# de en styles.css. _STAGE_COLORS/_SEVERITY reemplazan a STAGE_COLORS/SEVERITY
+# solo dentro de esta página (las claras siguen siendo la fuente para
+# badges.py/timeline.py, que resuelven color vía CSS var).
+_STAGE_COLORS = stage_colors()
+_SEVERITY = severity_colors()
+_PLOT_THEME = plot_theme()
+
 # Mapa de color por etapa: los valores del CSV vienen en Title case
 # ('Vendor'/'Carrier'/'DC'/'Indeterminado'); las claves de STAGE_COLORS son
 # minúsculas. Se resuelve por .lower() con fallback a Indeterminado.
 STAGE_COLOR_MAP = {
-    s: STAGE_COLORS.get(str(s).lower(), STAGE_COLORS["indeterminado"])
+    s: _STAGE_COLORS.get(str(s).lower(), _STAGE_COLORS["indeterminado"])
     for s in df[COL_STAGE].dropna().unique()
 }
-SEV_COLOR_MAP = {k: v["color"] for k, v in SEVERITY.items()}
+SEV_COLOR_MAP = {k: v["color"] for k, v in _SEVERITY.items()}
 SEV_ORDER_BOTTOM_UP = ["LOW", "MEDIUM", "HIGH"]  # HIGH arriba en barra horizontal
 
 # ── Header ──────────────────────────────────────────────────────────────────
@@ -179,7 +193,7 @@ with col_stage:
     stage_df["label"] = stage_df["count"].astype(str)
     st.plotly_chart(
         h_bar(stage_df, "count", COL_STAGE, STAGE_COLOR_MAP, "label"),
-        use_container_width=True,
+        width="stretch",
     )
 
 with col_sev:
@@ -190,7 +204,7 @@ with col_sev:
     st.plotly_chart(
         h_bar(sev_df, "count", COL_SEVERITY, SEV_COLOR_MAP, "label",
               category_order=SEV_ORDER_BOTTOM_UP),
-        use_container_width=True,
+        width="stretch",
     )
 
 # ── Sección 3: Tasa de desacuerdo (métrica de primera clase) ────────────────
@@ -214,7 +228,7 @@ with col_dis1:
     st.markdown("**% de desacuerdo por etapa**")
     st.plotly_chart(
         h_bar(dis_df, "rate", COL_STAGE, STAGE_COLOR_MAP, "label"),
-        use_container_width=True,
+        width="stretch",
     )
 with col_dis2:
     st.markdown("**Global**")
@@ -232,17 +246,24 @@ else:
     trend["week"] = trend[COL_PO_DT].dt.to_period("W").dt.start_time
     weekly = trend.groupby("week").size().reset_index(name="count").sort_values("week")
     fig_trend = px.line(weekly, x="week", y="count", markers=True)
+    fig_trend.update_traces(
+        line_color=_PLOT_THEME["line_color"], marker_color=_PLOT_THEME["line_color"],
+    )
     fig_trend.update_layout(
         height=320, margin=dict(l=10, r=40, t=10, b=10),
         xaxis_title=None, yaxis_title="POs tardíos",
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        font_color=_PLOT_THEME["font_color"],
     )
+    fig_trend.update_xaxes(gridcolor=_PLOT_THEME["gridcolor"])
+    fig_trend.update_yaxes(gridcolor=_PLOT_THEME["gridcolor"])
     last = weekly.iloc[-1]
     fig_trend.add_annotation(
         x=last["week"], y=last["count"], text=str(int(last["count"])),
-        showarrow=False, yshift=14, font=dict(size=13, weight="bold"),
+        showarrow=False, yshift=14,
+        font=dict(size=13, weight="bold", color=_PLOT_THEME["font_color"]),
     )
-    st.plotly_chart(fig_trend, use_container_width=True)
+    st.plotly_chart(fig_trend, width="stretch")
 
 # ── Sección 5: Scorecards por entidad ───────────────────────────────────────
 st.markdown("---")
@@ -273,7 +294,7 @@ else:
                 st.info("Sin entidades en este scorecard.")
                 continue
             st.caption(_NOTE)
-            hue = STAGE_COLORS[stage_key]
+            hue = _STAGE_COLORS[stage_key]
             ordered = sorted(
                 entities.items(),
                 key=lambda kv: kv[1].get("Score_Riesgo_Normalizado", 0),
@@ -301,7 +322,7 @@ else:
         )
     with col_dd2:
         st.markdown("<div style='height:1.75rem;'></div>", unsafe_allow_html=True)
-        if st.button("Ver en Exception Workbench →", use_container_width=True):
+        if st.button("Ver en Exception Workbench →", width="stretch"):
             st.session_state["drilldown_po"] = dd_po
             st.switch_page("pages/1_🔍_Exception_Workbench.py")
 
