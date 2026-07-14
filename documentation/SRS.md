@@ -3,6 +3,19 @@
 
 ---
 
+### Índice
+1. [Introducción](#1-introducción)
+2. [Descripción General](#2-descripción-general)
+3. [Requisitos Específicos](#3-requisitos-específicos)
+   - 3.1 [Requisitos funcionales](#31-requisitos-funcionales)
+   - 3.2 [Requisitos no funcionales](#32-requisitos-no-funcionales)
+   - 3.3 [Requisitos de interfaz](#33-requisitos-de-interfaz)
+   - 3.4 [Requisitos de base de datos](#34-requisitos-de-base-de-datos)
+   - 3.5 [Diagrama UML de Entidad-Relación (ERD)](#35-diagrama-uml-de-entidad-relación-erd)
+4. [Apéndices](#4-apéndices)
+
+---
+
 ### 1. Introducción
 
 #### 1.1 Propósito del documento
@@ -77,6 +90,8 @@ El sistema **PO Delay Root Cause Analyzer** actúa como un módulo auditor autó
 
 El sistema no se conecta directamente a un ERP o WMS en tiempo real; en su lugar, consume un extracto analítico de 39 columnas de datos transaccionales, realiza cálculos determinísticos en Python, enriquece las transacciones tardías mediante APIs de LLM externas, ejecuta análisis estadísticos de riesgo para los actores de la red, y sirve los resultados mediante una app web local interactiva.
 
+El reparto de atribución vigente en producción, tras aplicar los umbrales de los ADRs (`documentation/decisiones/`), sobre 247 POs tardías es: **Vendor** 53.0% (131), **Carrier** 16.2% (40), **DC** 15.0% (37), **Indeterminado** 15.8% (39 — dividido en 15 `sin_datos` + 24 `sin_causa_dominante`, ver [ADR-07](decisiones/ARD-07.md)).
+
 #### 2.2 Funciones principales del producto
 Las macro-funcionalidades implementadas en el código son:
 1.  **Limpieza e Ingestión Confiable:** Conversión y normalización de 13 timestamps transaccionales. Detección de problemas de secuencia temporal (inversión de tiempos) y exclusión analítica de campos no operativos (salida física del patio post-recepción).
@@ -103,9 +118,52 @@ Según las especificaciones de diseño implementadas en `documentation/user_pers
     *   **Consumo en App:** `pages/2_📊_Network_Intelligence.py`.
 
 #### 2.4 Diagrama UML de Casos de Uso
-El siguiente diagrama detalla cómo interactúan Diego, Ravi y el actor del sistema LLM con las funciones principales de la aplicación:
+El siguiente diagrama detalla cómo interactúan Diego, Ravi y el LLM (actor del sistema, en su rol de generador batch de los diagnósticos que ambos consumen) con las funciones principales de la aplicación, construidas a partir de las personas (§2.3) y los requisitos funcionales RF-14 a RF-16 (§3.1):
 
-(diagrama pendiente de incluir)
+```mermaid
+flowchart LR
+    Diego(["Diego\nInbound Exception Coordinator"])
+    Ravi(["Ravi\nSupply-Chain Analyst"])
+    LLM(["LLM\n(actor batch, Fase 3)"])
+
+    subgraph Landing["Landing Page (RF-14)"]
+        UC0(["Ver KPIs globales y acceder a los workbenches"])
+    end
+
+    subgraph Workbench["Exception Workbench (RF-15)"]
+        UC1(["Buscar PO por número"])
+        UC2(["Ver timeline del lifecycle"])
+        UC3(["Ver KPIs de la PO (etapa, severidad, AI vs. humano)"])
+        UC4(["Ver panel de agravantes (Hot PO, Short Shipment)"])
+        UC5(["Ver diagnóstico LLM (causa raíz + acción)"])
+    end
+
+    subgraph Network["Network Intelligence (RF-16)"]
+        UC6(["Ver KPIs y distribución de red (etapa/severidad)"])
+        UC7(["Ver tendencia temporal de tardíos"])
+        UC8(["Ver scorecards por Vendor/Carrier/DC"])
+        UC9(["Ver listado de desacuerdos AI vs. humano"])
+        UC10(["Drill-down a un PO específico"])
+    end
+
+    Diego --> UC0
+    Diego --> UC1
+    Diego --> UC2
+    Diego --> UC3
+    Diego --> UC4
+    Diego --> UC5
+
+    Ravi --> UC0
+    Ravi --> UC6
+    Ravi --> UC7
+    Ravi --> UC8
+    Ravi --> UC9
+    Ravi --> UC10
+    UC10 -.-> Workbench
+
+    LLM -.->|genera batch, F3| UC5
+    LLM -.->|genera batch, F3| UC9
+```
 
 #### 2.5 Restricciones generales
 *   **Lenguaje de Desarrollo:** Escrito en Python 3.x (compatible con entornos virtuales `.venv`).
@@ -114,6 +172,7 @@ El siguiente diagrama detalla cómo interactúan Diego, Ravi y el actor del sist
 *   **Seguridad y Claves:** Restricción de Secrets mediante el estándar `.env` excluido del control de versiones. Las API keys de proveedores externos de LLM no deben integrarse en código duro.
 
 #### 2.6 Supuestos y dependencias
+*   **Calidad de datos del origen:** El sistema asume que el CSV crudo puede llegar con nulos e inconsistencias temporales, y las diseña como parte del contrato (RF-02): `TRAILER_ARRIVE_DT` con 6.8% de nulos, `REASON_CD` con 32.8% de nulos, `PREVIOUS_REQUEST_DT` con 84.2% de nulos, y 12 POs con inversión de timestamps (`_ts_issue`). De 400 POs de origen, 361 quedan marcadas como `_data_reliable`. El sistema no asume datos limpios; asume la necesidad de auditarlos y flaggearlos.
 *   **Formato de entrada:** El CSV crudo en `data/raw/` debe poseer las 39 columnas y los nombres exactos detallados en el diccionario de datos. De lo contrario, la validación del contrato de entrada fallará arrojando un error controlado.
 *   **Conexión de red:** Se asume conexión activa a internet para llamadas a backends Cloud (Claude de Anthropic, GPT de OpenAI, DeepSeek). En modo sin conexión, se depende de una instancia local de Ollama escuchando en `http://localhost:11434` con el modelo `qwen2.5:7b` instalado.
 *   **Handoff de datos:** Se asume que el proceso batch de Fase 3 genera el archivo `po_output.csv` y los archivos `reporte_vendors.json`, `reporte_carriers.json` y `reporte_dcs.json` en `data/processed/` antes de iniciar la aplicación Streamlit.
@@ -124,7 +183,7 @@ El siguiente diagrama detalla cómo interactúan Diego, Ravi y el actor del sist
 
 #### 3.1 Requisitos funcionales
 
-##### **Fase 1: Ingestión, Limpieza y Validación**
+##### Fase 1: Ingestión, Limpieza y Validación
 *   **RF-01 (Limpieza de Fechas):** El sistema debe parsear automáticamente los 13 timestamps especificados en la constante `_DATE_INPUT_COLUMNS` del archivo `01_data_pipeline_and_eda/pipeline_core.py` utilizando `pd.to_datetime` con la opción `errors='coerce'`. Los valores erróneos o nulos deben convertirse a `NaT`.
 *   **RF-02 (Flags de Calidad):** El sistema debe identificar inconsistencias de calidad de datos mediante flags booleanas:
     *   `_trailer_arrive_null`: True si `TRAILER_ARRIVE_DT` es nulo (`NaT`).
@@ -138,7 +197,7 @@ El siguiente diagrama detalla cómo interactúan Diego, Ravi y el actor del sist
     *   `delay_days_calc` = `RECPT_DT - STA_DT` (en días, recortado a $\ge 0$).
 *   **RF-04 (Cross-Validation de Deltas):** El sistema debe realizar un contraste cruzado entre los deltas calculados a partir de los timestamps reales y los campos precalculados de origen (`YARD_WAIT_HRS`, `DOCK_HRS`, `DELAY_DAYS`), reportando cualquier discrepancia mayor a 1.0 hora mediante las flags `_yard_discrepancy` y `_dock_discrepancy`.
 
-##### **Fase 2: Clasificación Operativa por Reglas de Negocio**
+##### Fase 2: Clasificación Operativa por Reglas de Negocio
 *   **RF-05 (Máscaras de Medibilidad):** Antes de clasificar las etapas, el sistema debe establecer si los tramos son evaluables en base a la completitud de la información:
     *   `_carrier_medible`: True si `_trailer_arrive_null` es False.
     *   `_dc_medible`: True si el camión llegó y no hay inversión temporal (`~_trailer_arrive_null & ~_ts_issue`).
@@ -162,13 +221,17 @@ El siguiente diagrama detalla cómo interactúan Diego, Ravi y el actor del sist
     *   **Agravante:** Si `is_short_ship` o `is_short_lead` son verdaderos, el sistema debe aumentar la severidad un nivel (LOW $\rightarrow$ MEDIUM, MEDIUM $\rightarrow$ HIGH, HIGH se mantiene en HIGH).
 
 
-##### **Fase 3: Integración LLM y Auditoría Cognitiva**
+##### Fase 3: Integración LLM y Auditoría Cognitiva
 *   **RF-10 (Construcción del Prompt Dinámico):** El sistema debe construir un prompt estructurado inyectando los datos de la PO, el timeline, las métricas calculadas y la clasificación determinística. Debe incluir un bloque de ejemplos few-shot curados a partir del pool de discrepancias si se configuran, y directrices para evitar el overfitting y forzar el uso exacto de cifras numéricas provistas.
 *   **RF-11 (Llamadas Multi-Backend):** El sistema debe soportar llamadas concurrentes o serializadas a cuatro backends de procesamiento de lenguaje: Claude API, OpenAI API, DeepSeek API y Ollama local.
-*   **RF-12 (Parseo Robusto de JSON):** El sistema debe extraer de la respuesta del LLM un esquema JSON que incluya: `causa_raiz`, `accion_recomendada`, `severidad`, `coincide_con_reason_code` y `confianza`. En caso de fallo de formato en la respuesta, debe aplicar un mecanismo de fallback estructurado.
+*   **RF-12 (Parseo Robusto de JSON en dos llamadas):** El sistema realiza el diagnóstico en dos llamadas encadenadas al LLM:
+    *   **Llamada 1 (diagnóstico base):** Extrae un JSON con `causa_raiz`, `accion_recomendada`, `severidad`, `coincide_con_reason_code` y `confianza`.
+    *   **Llamada 2 (diagnóstico diferencial, Tier 2 — [ADR-16](decisiones/ARD-16.md)):** Condicionada al resultado de la llamada 1, extrae `razonamiento`, `hipotesis_principal` (con `hipotesis`, `evidencia` y un plan de `accion_inmediata`/`accion_correctiva`/`accion_preventiva`), `hipotesis_alternativa` (con `hipotesis` y `paso_discriminante`) y `confianza_hipotesis`.
+
+    En caso de fallo de formato en cualquiera de las dos respuestas, el sistema debe aplicar un mecanismo de fallback estructurado por llamada.
 *   **RF-13 (Exportación de Entregable F3$\rightarrow$F4):** El sistema debe filtrar únicamente las POs tardías y exportar el CSV entregable consolidando el contrato del mentor (las 5 columnas principales) con las columnas de soporte requeridas por el dashboard Streamlit.
 
-##### **Fase 4: Visualización Streamlit**
+##### Fase 4: Visualización Streamlit
 *   **RF-14 (Landing Page y Navegación):** El sistema debe presentar una página principal con KPIs agregados globales (total de tardíos, porcentaje de severidad alta) y tarjetas de acceso directo a los espacios de trabajo Diego y Ravi.
 *   **RF-15 (Exception Workbench - Diego):** El sistema debe permitir buscar y seleccionar una PO por número (`PO_NBR`) y renderizar de forma gráfica:
     *   KPIs del PO (Etapa, Severidad, Validación AI vs Humano, Motivo Humano).
@@ -177,9 +240,24 @@ El siguiente diagrama detalla cómo interactúan Diego, Ravi y el actor del sist
     *   Causa Raíz narrativa y Acción Recomendada detalladas por el LLM.
 *   **RF-16 (Network Intelligence - Ravi):** El sistema debe mostrar el comportamiento macro:
     *   KPIs de red (Total de tardíos, Etapa principal, Porcentaje de severidad alta, Tasa agregada de acuerdo AI vs Humano).
-    *   Gráficos interactivos de Plotly (Distribución de Etapas en pie/barras y Distribución de Severidad).
+    *   Gráficos interactivos de Plotly de Distribución de Etapas y Distribución de Severidad, en **barra horizontal/ordenada** ([ADR-17](decisiones/ARD-17.md) prohíbe pastel, dona, treemap y 3D).
     *   Tabla de detalle de severidades con conteo y cálculo de porcentajes.
+    *   Tendencia temporal de POs tardíos por semana (línea con etiquetado directo sobre `PO_DT`).
     *   Listado tabular interactivo de las POs que presentan desacuerdo entre el veredicto del clasificador temporal y la anotación humana para auditoría.
+    *   Scorecards por entidad (Vendor/Carrier/DC), leídos de `data/processed/scorecards/reporte_*.json` (generados offline por `scorecard_core.py`, sin costo de API).
+    *   Drill-down master-detail: desde un scorecard o registro, navegar directamente al Exception Workbench de esa PO específica (`st.switch_page`).
+
+##### Trazabilidad de Requisitos Funcionales a Pruebas
+Cada bloque de RF se valida mediante un archivo de pruebas dedicado en `tests/` (suite pytest, ejecutada en CI en cada push/PR):
+
+| Requisitos | Archivo de prueba |
+| :--- | :--- |
+| RF-01 – RF-04 (Ingestión y limpieza) | `tests/test_pipeline_core.py` |
+| RF-05 – RF-09 (Clasificación por reglas) | `tests/test_classifier_core.py`, `tests/test_metrics_core.py` |
+| RF-10 (Construcción del prompt, ejemplos few-shot) | `tests/test_fewshot.py` |
+| RF-11 – RF-12 (Backends, parseo y calidad de la respuesta LLM) | `tests/test_llm_integration.py`, `tests/test_eval_quality.py`, `tests/test_eval_diversity.py` |
+| RF-13 (Exportación y contrato F3→F4) | `tests/test_handoff_contract.py`, `tests/test_handoff_f3.py` |
+| RF-14 – RF-16 (Interfaz Streamlit) | Sin suite de pruebas automatizada dedicada; validación manual (ver §4.1 para los comandos de ejecución). |
 
 #### 3.2 Requisitos no funcionales
 
@@ -196,6 +274,15 @@ El siguiente diagrama detalla cómo interactúan Diego, Ravi y el actor del sist
 *   **RNF-04 (Mantenibilidad y Modularidad):**
     *   El diseño debe mantener la separación de responsabilidades (Decoupled Pipeline): el Pipeline (F1), el Clasificador (F2), la Integración LLM / Análisis Estadístico (F3) y la UI Streamlit (F4) se comunican exclusivamente por contratos de datos CSV e informes JSON validados en disco.
     *   Los umbrales de negocio logísticos deben estar externalizados en el JSON `rules_config.json`, de forma que un cambio en los criterios del negocio no exija modificaciones en el código fuente de clasificación.
+*   **RNF-05 (Reproducibilidad y control de costo de inferencia):**
+    *   Los parámetros de inferencia deben estar externalizados en `03_llm_integration/llm_config.json` (no en código duro): `temperature`, `seed` (reproducibilidad best-effort de la API), `max_tokens` (512, diagnóstico base) y `max_tokens_action` (1536, diagnóstico diferencial Tier 2).
+    *   El intervalo de guardado parcial durante el procesamiento batch debe ser configurable (`LLM_SAVE_EVERY`) para acotar la pérdida de trabajo ante una interrupción, sin exigir reprocesar el lote completo.
+    *   Toda corrida que dispare llamadas reales a una API de LLM de pago debe declarar el conteo de llamadas esperadas y obtener autorización explícita antes de ejecutarse, independientemente del modo (`test`/`custom`/`full`).
+*   **RNF-06 (Criterios de calidad validados):** Métricas medidas y publicadas como evidencia de aceptación (ver `README.md`, sección de estado de fases):
+    *   Stage accuracy: 100% (208/208) — meta del mentor > 80%.
+    *   Reason agreement (AI vs. humano): 88.8% (174/196) — referencia, sin umbral de aceptación.
+    *   LLM Explanation Quality: 4.75/5 (configuración few-shot C3) — meta del mentor > 4/5.
+    *   Severity Ranking: 100% (14/14) — meta del mentor > 95%.
 
 #### 3.3 Requisitos de interfaz
 
@@ -210,7 +297,10 @@ El siguiente diagrama detalla cómo interactúan Diego, Ravi y el actor del sist
 #### 3.4 Requisitos de base de datos
 El sistema opera sobre una base de datos conceptual basada en archivos planos estructurados. La persistencia en disco se realiza en formato CSV y JSON. Los modelos lógicos representados en el dataset se definen a continuación:
 
-##### **Esquema de Campos e Integridad Lógica (Contrato F3$\rightarrow$F4)**
+##### Esquema de Campos e Integridad Lógica (Contrato F3$\rightarrow$F4)
+El contrato real, definido de forma centralizada en `04_app/config.py` (columnas canónicas `COL_*`), se organiza en un núcleo base más dos niveles de enriquecimiento agregados en distintos momentos del proyecto.
+
+**Núcleo base:**
 1.  **PO_NBR:** Entero de 64 bits. Identificador clave único (Primary Key lógica). No admite nulos.
 2.  **stage:** Texto. Clasificación primaria del retraso (`stage_primary` remapeado). Restringido a: `Vendor`, `Carrier`, `DC` o `Indeterminado`.
 3.  **severity:** Texto. Nivel de prioridad evaluado por el LLM. Restringido a: `HIGH`, `MEDIUM`, `LOW`.
@@ -222,7 +312,23 @@ El sistema opera sobre una base de datos conceptual basada en archivos planos es
 9.  **REASON_DSC:** Texto. Anotación manual de causa raíz escrita por el DC origen (admite nulos).
 10. **llm_coincide_con_reason:** Booleano. Flag de validación de acuerdo de la AI.
 
-##### **Esquema de Scorecards de Entidades (reporte_*.json)**
+**Enriquecimiento Tier 1 (issues #158/#167):**
+11. **llm_confianza:** Real (0.0–1.0). Certidumbre del LLM sobre el diagnóstico base (núcleo).
+12. **VENDOR_NAME, CARRIER_PARTY_NAME, DC_LOC_NAME:** Texto. Identificadores de las entidades de la red asociadas a la PO (proveedor, transportista, centro de distribución).
+13. **delay_days_calc:** Real. Días de retraso calculados en Fase 1 (`RECPT_DT - STA_DT`, recortado a $\ge 0$).
+14. **excess_vendor_hrs, excess_carrier_hrs, excess_dc_hrs:** Reales. Exceso en horas por tramo sobre su umbral respectivo, calculado en Fase 2.
+
+**Enriquecimiento Tier 2 — diagnóstico diferencial (issues #161/#175, [ADR-16](decisiones/ARD-16.md)):**
+Salida híbrida definida por ADR-16 (estado: 🔵 Borrador en el log de decisiones, aunque ya implementada en `main`). Añade un segundo nivel de razonamiento explícito sobre el diagnóstico base:
+15. **llm_razonamiento:** Texto. Razonamiento que sustenta el diagnóstico.
+16. **llm_hipotesis:** Texto. Hipótesis principal de causa raíz.
+17. **llm_hipotesis_evidencia:** Texto. Evidencia (datos, tramos, magnitudes) que sustenta la hipótesis principal.
+18. **llm_hipotesis_alt:** Texto. Hipótesis alternativa considerada por el LLM.
+19. **llm_paso_discriminante:** Texto. Dato o verificación que permitiría discriminar entre la hipótesis principal y la alternativa.
+20. **llm_accion_inmediata, llm_accion_correctiva, llm_accion_preventiva:** Texto. Plan de acción escalonado por horizonte temporal (a diferencia del campo único `action` del núcleo base).
+21. **llm_confianza_hipotesis:** Real (0.0–1.0). Confianza específica de la hipótesis del diagnóstico tier 2 — distinta y complementaria de `llm_confianza` (tier 1).
+
+##### Esquema de Scorecards de Entidades (reporte_*.json)
 1.  **report_date:** Texto. Fecha de generación del reporte.
 2.  **entity_name:** Identificador de la entidad evaluada (Llave primaria lógica del sub-objeto).
 3.  **Delay_Prom:** Real. Promedio de días de retraso.
@@ -335,11 +441,20 @@ erDiagram
 
     LLM_ANALYSIS {
         int PO_NBR PK, FK "Número de PO asociada (1:1)"
-        string causa_raiz "Narrativa de causa raíz generada"
-        string accion_recomendada "Recomendación correctiva generada"
-        string severidad "Nivel de severidad asignado por el LLM"
-        boolean coincide_con_reason_code "Consistencia vs código manual"
-        float confianza "Certidumbre del LLM"
+        string explanation "Narrativa de causa raíz generada (núcleo base)"
+        string action "Recomendación correctiva generada (núcleo base)"
+        string severity "Nivel de severidad asignado por el LLM (núcleo base)"
+        boolean llm_coincide_con_reason "Consistencia vs código manual (núcleo base)"
+        float llm_confianza "Certidumbre del diagnóstico base (Tier 1, #158/#167)"
+        string llm_razonamiento "Razonamiento del diagnóstico (Tier 2, ADR-16)"
+        string llm_hipotesis "Hipótesis principal de causa raíz (Tier 2)"
+        string llm_hipotesis_evidencia "Evidencia de la hipótesis principal (Tier 2)"
+        string llm_hipotesis_alt "Hipótesis alternativa considerada (Tier 2)"
+        string llm_paso_discriminante "Paso que discrimina entre hipótesis (Tier 2)"
+        string llm_accion_inmediata "Acción de horizonte inmediato (Tier 2)"
+        string llm_accion_correctiva "Acción de horizonte correctivo (Tier 2)"
+        string llm_accion_preventiva "Acción de horizonte preventivo (Tier 2)"
+        float llm_confianza_hipotesis "Confianza de la hipótesis, distinta de llm_confianza (Tier 2)"
     }
 
     VENDOR_SCORECARD {

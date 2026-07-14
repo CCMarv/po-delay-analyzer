@@ -3,6 +3,16 @@
 
 ---
 
+### Índice
+1. [Introducción y Objetivos](#1-introducción-y-objetivos)
+2. [Representación Arquitectónica](#2-representación-arquitectónica)
+3. [Vistas Arquitectónicas (Modelo 4+1)](#3-vistas-arquitectónicas-modelo-41)
+4. [Decisiones Arquitectónicas](#4-decisiones-arquitectónicas)
+5. [Tácticas y Patrones de Calidad](#5-tácticas-y-patrones-de-calidad)
+6. [Interfaces y Dependencias Externas](#6-interfaces-y-dependencias-externas)
+
+---
+
 ### 1. Introducción y Objetivos
 
 #### 1.1 Propósito y alcance arquitectónico
@@ -201,19 +211,91 @@ sequenceDiagram
     App-->>Diego: Muestra Workbench interactivo actualizado
 ```
 
+El flujo crítico de **generación batch en Fase 3**, incluyendo el camino de reintento y degradación ante fallos del LLM (RNF-03), se detalla en el siguiente diagrama de secuencia:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant CLI as Operador (CLI)
+    participant LLMInt as llm_integration.py
+    participant Backend as Backend LLM (Claude/OpenAI/DeepSeek/Ollama)
+    participant Parser as _parse_llm_json
+    participant Disk as po_output.csv
+
+    CLI->>LLMInt: python llm_integration.py --mode full --backend openai
+    loop Por cada PO tardía
+        LLMInt->>LLMInt: build_prompt(row, few-shot examples)
+        LLMInt->>Backend: call(prompt) [Llamada 1: diagnóstico base]
+        alt Error de red / HTTP 5xx
+            Backend-->>LLMInt: Excepción
+            LLMInt->>LLMInt: Reintento (max_retries=3, espera incremental)
+        else Respuesta recibida
+            Backend-->>LLMInt: raw_response
+            LLMInt->>Parser: _parse_llm_json(raw_response)
+            alt JSON válido
+                Parser-->>LLMInt: dict estructurado
+            else JSON corrupto o texto libre
+                Parser->>Parser: Extracción por regex + fallback (severity=MEDIUM, confianza=0.3)
+                Parser-->>LLMInt: dict de degradación
+            end
+            LLMInt->>Backend: call(prompt_accion) [Llamada 2: diagnóstico diferencial, Tier 2]
+            Backend-->>LLMInt: raw_response_accion
+            LLMInt->>Parser: parseo + checks de control de calidad generativo
+            Parser-->>LLMInt: dict Tier 2 (o vacío si la llamada 1 falló)
+        end
+        LLMInt->>LLMInt: delay de seguridad (LLM_DELAY_SECONDS)
+    end
+    LLMInt->>Disk: export_deliverable_csv(df)
+```
+
 #### 3.3 Vista de desarrollo
 La organización física del código fuente sigue un orden estructurado por fases del ciclo de vida del proyecto:
 
 *   `01_data_pipeline_and_eda/`: Capa de extracción, tipado y limpieza de timestamps. Contiene el script core de Fase 1.
 *   `02_clasif_reglas_negocio/`: Capa lógica de reglas determinísticas y métricas de validación analítica. Contiene las reglas vigentes en JSON y los cálculos de precisión.
-*   `03_llm_integration/`: Capa de auditoría semántica y modelado estadístico. Contiene las fábricas de backends de LLM, el pool de ejemplos few-shot de discrepancias, y el **motor de scorecards de desempeño y riesgo (`scorecard_core.py`)**.
+*   `03_llm_integration/`: Capa de auditoría semántica y modelado estadístico. Contiene las fábricas de backends de LLM, el pool de ejemplos few-shot de discrepancias, y el **motor de scorecards de desempeño y riesgo (`scorecard_core.py`)**. Incluye además `llm_integration_network_intelligence_view.py`, un **componente experimental/POC** que usa un SDK distinto (`openai-agents`, multi-agente) para generar reportes ejecutivos por Vendor/Carrier/DC; no tiene referencias desde el resto del código ni del README y no forma parte del flujo de producción F1→F4.
 *   `04_app/`: Interfaz interactiva de usuario. Dividida en assets (CSS), componentes reutilizables (Navbar), la Landing Page (`app.py`), servicios de datos y páginas de usuario.
 *   `tests/`: Suite global de pytest para validación unitaria y de contratos de datos.
 *   `requirements.txt`: Declaración explícita y fijada de las librerías dependientes, incluyendo pandas, numpy, streamlit, plotly, requests, tqdm, pytest y las dependencias de scorecards implicitamente vinculadas (`scikit-learn` y `scipy`).
 *   `pyproject.toml`: Configuración de ejecución de pytest y de directorios raíces a incluir en el Python path.
 
 #### 3.4 Vista física / despliegue
-El sistema se ejecuta en un entorno físico de servidor web ligero local o contenedorizado. 
+El repositorio no contiene artefactos de containerización (`Dockerfile`, `docker-compose`) ni configuración de despliegue en la nube — la ejecución actual es un proceso único local:
+
+*   **Entorno de ejecución:** Un entorno virtual de Python (`.venv`) sobre un solo equipo (estación de trabajo o laptop del analista). No hay separación de procesos por fase: el pipeline batch (F1-F3) y la app (F4) corren como scripts/procesos independientes lanzados manualmente en secuencia, no como servicios persistentes.
+*   **Componente batch (F1-F3):** Se ejecuta bajo demanda vía CLI (`python 01_data_pipeline_and_eda/pipeline_core.py`, etc.), con dependencia de las bibliotecas científicas `pandas`, `numpy`, `scikit-learn` y `scipy` instaladas en el mismo entorno.
+*   **Componente interactivo (F4):** Servido localmente por el servidor de desarrollo de Streamlit (`streamlit run 04_app/app.py`), expuesto por defecto en `localhost` a un único usuario a la vez; no está diseñado para concurrencia multi-usuario ni balanceo de carga.
+*   **Persistencia:** Archivos planos en `data/processed/` (CSV y JSON), compartidos por lectura/escritura directa entre los procesos batch y la app — no hay una capa de servicio de datos independiente.
+*   **Estado conocido:** Elevar esta configuración a un despliegue de calidad de producción (empaquetado, hosting, multi-usuario) es trabajo identificado como pendiente, no implementado a la fecha de este documento.
+
+```mermaid
+flowchart TB
+    subgraph Local["Estación de trabajo local (.venv)"]
+        subgraph Batch["Proceso batch (CLI, bajo demanda)"]
+            F1["Fase 1: pipeline_core.py"]
+            F2["Fase 2: classifier_core.py"]
+            F3a["Fase 3: llm_integration.py"]
+            F3b["Fase 3: scorecard_core.py"]
+        end
+        Disk[("data/processed/*.csv, *.json")]
+        subgraph App["Proceso interactivo"]
+            St["Streamlit dev server\n(streamlit run 04_app/app.py)"]
+        end
+        Browser["Navegador local\n(un usuario)"]
+    end
+    Cloud["APIs LLM externas\n(Anthropic / OpenAI / DeepSeek, HTTPS)"]
+    Ollama["Ollama local\n(localhost:11434, opcional)"]
+
+    F1 --> Disk
+    F2 --> Disk
+    F3a -->|HTTPS saliente| Cloud
+    F3a -.->|opcional| Ollama
+    F3a --> Disk
+    F3b --> Disk
+    Disk --> St
+    St --> Browser
+```
+
 #### 3.5 Vista de escenarios
 1.  **Escenario 1: Diego enruta una excepción (Caso de discrepancia):** Diego abre el Exception Workbench. Selecciona una orden marcada en "Desacuerdo" (ej: el humano culpó a "Yard congestion" pero el clasificador temporal marca "Carrier" por exceso de tránsito de 30h). Diego lee la explicación del LLM ("El exceso se concentra en el transportista, contradiciendo el motivo registrado..."). Diego abre un ticket con transporte y marca la excepción como resuelta.
 2.  **Escenario 2: Ravi audita el reliability trimestral de la red:** Ravi accede a Network Intelligence. Visualiza el gráfico de distribución y nota que el 53% de los retrasos provienen de Vendor. Analiza la tasa agregada de acuerdo de la AI (del 80%) y extrae el listado de las POs en desacuerdo. Esto le da evidencia reproducible para negociar penalizaciones con los proveedores en la próxima junta.
@@ -223,7 +305,7 @@ El sistema se ejecuta en un entorno físico de servidor web ligero local o conte
 
 ### 4. Decisiones Arquitectónicas
 
-A continuación se detallan tres decisiones de arquitectura críticas bajo el estándar MADR (Markdown Architecture Decision Records):
+A continuación se detallan las decisiones de arquitectura con mayor peso sobre las vistas y tácticas de este documento, bajo el estándar MADR (Markdown Architecture Decision Records). Las secciones 4.1, 4.2 y 4.4-4.8 tienen ADR propio en `documentation/decisiones/`; la 4.3 se documenta aquí por no contar con uno.
 
 #### 4.1 [ADR-01] Timestamps del lifecycle como única fuente de verdad operativa
 *   **Estado:** Aceptado / Vigente.
@@ -231,17 +313,50 @@ A continuación se detallan tres decisiones de arquitectura críticas bajo el es
 *   **Decisión:** Utilizar los timestamps nativos como la única fuente de verdad. Todo delta de tiempo y métrica clave se re-calcula desde cero en la Fase 1 del pipeline para asegurar consistencia e integridad analítica.
 *   **Consecuencias:** Mayor precisión en las métricas. Necesidad de gestionar anomalías en timestamps (inversión de tiempos). Los precalculados se restringen únicamente a tareas de auditoría cruzada (Cross-Validation).
 
-#### 4.2 [ADR-02] Atribución determinística de etapa primaria por reglas sobre modelos de Machine Learning probabilisticos
+#### 4.2 [ADR-02] Atribución de etapa primaria por el mayor exceso (`argmax`) con vector multicausa complementario
 *   **Estado:** Aceptado / Vigente.
-*   **Contexto:** Se requiere clasificar el responsable del retraso (Vendor, Carrier, DC) de forma clara y defendible ante reclamos y disputas comerciales.
-*   **Decisión:** Implementar un clasificador determinístico basado en reglas de negocio duras (excesos de tiempo sobre umbrales fijos) en lugar de modelos probabilísticos de caja negra (ej: Random Forest o Redes Neuronales).
-*   **Consecuencias:** Atribuciones 100% reproducibles y explicables matemáticas que cumplen con las auditorías logísticas. Mayor facilidad para calibrar umbrales y robustez ante datos limitados.
+*   **Contexto:** Un mismo PO puede acumular exceso de tiempo en más de un tramo (Vendor, Carrier, DC) simultáneamente. Forzar una causa única mediante prioridades fijas ocultaría la fricción real de los tramos secundarios.
+*   **Decisión:** La etapa primaria se asigna dinámicamente mediante `argmax` sobre el exceso en horas de cada tramo frente a su propio umbral. Se anexa además un vector multicausa (`stage_multi`) que preserva el registro de todas las flags de exceso activadas, en vez de descartarlas al quedarse solo con el ganador.
+*   **Consecuencias:** El modelo refleja con precisión la severidad relativa del impacto de cada actor. La agregación en reportes debe considerar el vector multicausa para análisis avanzados, lo que añade complejidad a las consultas.
+*   **Nota:** Esta decisión asume el criterio de diseño más amplio, ya establecido desde el brief del proyecto, de usar reglas de negocio deterministas (umbrales fijos y auditables) en lugar de modelos probabilísticos de caja negra (p. ej. Random Forest o redes neuronales) — ese criterio general no está documentado como un ADR aparte.
 
-#### 4.3 [ADR-03] Persistencia y handoff mediante archivos CSV y reportes JSON en disco (Decoupled Batch Pipeline)
-*   **Estado:** Aceptado / Vigente.
+#### 4.3 Persistencia y handoff mediante archivos CSV y reportes JSON en disco (Decoupled Batch Pipeline)
+*   **Estado:** Decisión de arquitectura documentada en este SAD. No cuenta con un ADR propio en `documentation/decisiones/`: el log actual no registra la elección de CSV/JSON frente a un motor de base de datos como una decisión discutida aparte.
 *   **Contexto:** El sistema se ejecuta en entornos de desarrollo e interfaces interactivas donde la carga y los recursos son locales, y el pipeline se ejecuta en batch.
 *   **Decisión:** Utilizar archivos CSV planos y reportes JSON estructurados en directorios convencionales (`data/processed/`) con contratos de handoff validados, en lugar de un motor de bases de datos relacional activo (PostgreSQL/MySQL) o un pipeline monolítico en memoria.
 *   **Consecuencias:** Simplicidad en el despliegue, facilidad para auditar los datos intermedios de cada fase y desacoplamiento absoluto de las fases (el pipeline y el clasificador no requieren llamadas activas al LLM para ejecutarse). Limita el procesamiento en tiempo real continuo, lo cual es aceptable para la naturaleza retrospectiva del negocio.
+
+A continuación, otras decisiones del log (`documentation/decisiones/`) con peso arquitectónico directo sobre las vistas y tácticas descritas en este documento:
+
+#### 4.4 [ADR-07] Taxonomía de Indeterminado
+*   **Estado:** Aceptado / Vigente.
+*   **Contexto:** Pedidos tardíos sin causa imputable a Vendor, Carrier o DC no pueden forzarse a una de esas tres categorías sin reintroducir sesgo.
+*   **Decisión:** Se agrega la columna `indeterminado_substage` con dos subcategorías mutuamente excluyentes: `sin_datos` (retraso medible pero faltan timestamps de auditoría, p. ej. sin registro de tráiler) y `sin_causa_dominante` (datos completos, pero ningún tramo supera su umbral).
+*   **Consecuencias:** El clasificador evalúa el 100% del dataset sin descartes ciegos; la Fase 3 recibe una distinción explícita entre "falta de información" y "operación dentro de tolerancia".
+
+#### 4.5 [ADR-09] User personas como criterio de diseño de la Fase 4
+*   **Estado:** Aceptado / Vigente (cerrado 2026-06-27).
+*   **Contexto:** La Fase 4 necesitaba un eje de diseño defendible más allá de organizar la app por entidad de la cadena (Vendor/Carrier/DC).
+*   **Decisión:** Definir dos personas por modo de consumo — Diego (consulta individual de un PO) y Ravi (reporte agregado por lote) — y derivar de ellas las dos vistas de la app (`Exception Workbench`, `Network Intelligence`), en vez de organizar por entidad medida.
+*   **Consecuencias:** Trazabilidad persona → vista → columnas del contrato F3→F4. El placeholder previo organizado por entidad quedó descartado como criterio de diseño.
+
+#### 4.6 [ADR-10] Severidad híbrida: el LLM la emite, la regla de Fase 2 la audita
+*   **Estado:** Aceptado / Vigente (cerrado 2026-06-27).
+*   **Contexto:** Existían dos fuentes de severidad en conflicto: el LLM (kickoff del mentor) y una regla determinística de Fase 2 (`_severidad`), con un umbral de prompt que además no coincidía con ninguna de las dos.
+*   **Decisión:** La columna oficial de severidad del entregable (`severity` en `po_output.csv`) es la que emite el LLM. La regla determinística de Fase 2 se conserva como columna de auditoría (no se expone en el entregable) y alimenta la métrica Severity Ranking. El umbral del prompt se corrige a `hot PO + delay > 3 días ⇒ HIGH`.
+*   **Consecuencias:** El entregable cumple el lineamiento del mentor sin perder auditabilidad; la discrepancia LLM-vs-regla se convierte en un hallazgo reportable en vez de quedar oculta.
+
+#### 4.7 [ADR-16] El LLM como capa analítica sobre la base determinista validada
+*   **Estado:** 🔵 Borrador (decisión activa, aún no cerrada por el equipo; ya implementada en `main`).
+*   **Contexto:** Tras validar la lógica determinista de Fases 1-2, el pedido del mentor fue enriquecer la explicación del LLM más allá de redactar lo ya decidido por las reglas, aplicando conocimiento de dominio, razonamiento y síntesis.
+*   **Decisión:** El LLM opera en dos llamadas encadenadas: la primera emite el diagnóstico base (`causa_raiz`, `severidad`, `coincide_con_reason_code`, `confianza`); la segunda, condicionada a la primera, emite un diagnóstico diferencial (`razonamiento`, hipótesis principal con evidencia y plan de acción escalonado, hipótesis alternativa con su paso discriminante, y una segunda confianza específica de la hipótesis). Las premisas factuales siguen ancladas a los datos (ADR-14); las generalizaciones de dominio quedan habilitadas y marcadas como tales.
+*   **Consecuencias:** Las acciones recomendadas pasan de meta-acciones genéricas a planes ejecutables con decisión de negocio, a costa de mayor variancia entre corridas y de duplicar el esquema de salida consumido por la Fase 4 (ver contrato Tier 1/Tier 2 en el SRS, §3.4).
+
+#### 4.8 [ADR-17] Lenguaje visual y codificación de color de la taxonomía
+*   **Estado:** Aceptado / Vigente (cerrado 2026-07-14).
+*   **Contexto:** La app expone etapa (nominal), severidad (ordinal) y confianza del LLM (escalar agrupado) en ambas vistas, con una paleta previa arbitraria y no seguro para daltonismo.
+*   **Decisión:** Etapa se codifica con la paleta categórica Okabe-Ito (segura para los tres tipos de daltonismo); severidad y confianza se codifican con una rampa de luminancia acromática reforzada con forma/ícono y etiqueta de texto, sin competir por el canal de color de la etapa. Se definen variantes de tema claro/oscuro con el mismo hue y contraste WCAG verificado (`04_app/config.py`, `04_app/assets/styles.css`).
+*   **Consecuencias:** Codificación única y accesible por construcción en toda la app, defendible por un marco publicado (Munzner, Cleveland-McGill, Okabe-Ito, WCAG 2.1) en vez de la estética. El *chrome* nativo de Streamlit (sidebar, algunos widgets) queda fuera de este alcance y no responde al tema.
 
 ---
 
@@ -259,6 +374,12 @@ A continuación se detallan tres decisiones de arquitectura críticas bajo el es
     *   **Visual-Inference Separation:** La interfaz de Streamlit no realiza llamadas en caliente a APIs de LLM. Lee los textos ya calculados en el proceso batch de Fase 3, reduciendo la latencia de carga del dashboard a milisegundos.
     *   **Streamlit Caching:** Aplicación de `@st.cache_data` en `04_app/services/data_service.py` para almacenar en caché de memoria el dataset de salida, evitando el parsing repetitivo de strings a datetime en cada renderización de la página.
 
+*   **Observabilidad (estado actual, no aspiracional):**
+    *   **Logging:** El proceso batch de Fase 3 (`llm_integration.py`) reporta su progreso mediante sentencias `print()` a stdout; no hay un módulo `logging` con niveles, formato estructurado o persistencia a archivo. No existe una estrategia de logging estandarizada entre fases.
+
+*   **Usabilidad y Accesibilidad:**
+    *   **Codificación visual consistente ([ADR-17](decisiones/ARD-17.md)):** Etapa, severidad y confianza del LLM comparten un único lenguaje visual (paleta Okabe-Ito para etapa, rampa de luminancia + ícono + texto para severidad/confianza) definido una sola vez en `04_app/config.py`/`04_app/assets/styles.css`, con contraste verificado contra WCAG 2.1 y variantes de tema claro/oscuro.
+
 ---
 
 ### 6. Interfaces y Dependencias Externas
@@ -270,6 +391,8 @@ El sistema integra y depende de las siguientes APIs e interfaces de terceros:
 3.  **DeepSeek API:** Endpoint `https://api.deepseek.com/v1/chat/completions`. Requiere `DEEPSEEK_API_KEY` y consume el modelo `deepseek-chat`.
 4.  **Ollama Local Engine:** Servicio HTTP local en `http://localhost:11434/api/generate`. Consume por defecto el modelo local `qwen2.5:7b`.
 5.  **Bibliotecas Científicas locales:** Dependencia del runtime local de Python de las librerías `scikit-learn` y `scipy` para realizar la calibración de pesos (Ridge), agrupaciones gaussianas (GMM) y normalizaciones.
+
+De los 4 backends soportados, la **configuración de producción vigente** (`03_llm_integration/llm_config.json`) fija: backend **OpenAI**, modelo `gpt-4o-mini`, `temperature=0.9`, `seed=42` (reproducibilidad best-effort), `max_tokens=512` (diagnóstico base) / `max_tokens_action=1536` (diagnóstico diferencial Tier 2), `timeout_seconds=60`, `max_retries=3`, con selección de ejemplos few-shot en la variante "C3" del pool curado (`fewshot_pool.json`).
 
 #### Variables de Entorno y Control Operativo (leídas desde `.env`):
 *   `PO_CSV_PATH`: Ruta al CSV crudo original.
