@@ -131,6 +131,5 @@ prompt puede degradar la calidad de las explicaciones sin que nadie lo note.
 - Tabla de métricas y fuentes: `documentation/metricas-proyecto.md` (#104).
 - Registro de decisiones: `documentation/decisiones/` — en particular `ARD-10.md` (severidad
   = LLM), referenciado en la sección 3.
-- Documento de validación de cierre (#85): pendiente, aún no existe en el repo. Enlazar aquí
-  cuando se publique.
+- Método de validación y QA del cierre (#85): `documentation/validacion-y-qa.md`.
 - Consume este documento: presentación final (#106).
