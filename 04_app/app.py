@@ -29,8 +29,8 @@ df = load_po_output()
 st.markdown(
     """
     <div class="page-header">
-        <h1> PO Delay Root Cause Analyzer</h1>
-        <p style="color: #718096; font-size: 1.1rem;">
+        <h1>PO Delay Root Cause Analyzer</h1>
+        <p style="color: var(--text-muted); font-size: 1.1rem;">
             Herramienta de análisis de causas raíz para POs tardíos
         </p>
     </div>
@@ -39,7 +39,7 @@ st.markdown(
 )
 
 # ── KPIs globales ───────────────────────────────────────────────────────────
-st.markdown("### 📊 Resumen del Dataset")
+st.markdown("### Resumen del Dataset")
 col1, col2 = st.columns(2)
 with col1:
     st.metric(label="POs tardíos procesados", value=len(df))
@@ -55,8 +55,8 @@ st.markdown("---")
 st.markdown(
     """
     <div class="dashboards-section">
-        <h2>▤ Vistas de Análisis</h2>
-        <p style="color: #4a5568; font-size: 1rem;">
+        <h2>Vistas de Análisis</h2>
+        <p style="color: var(--text-secondary); font-size: 1rem;">
             La herramienta ofrece dos superficies de análisis según el modo de consumo:
             consulta individual de excepciones o inteligencia agregada de red.
         </p>
@@ -76,12 +76,11 @@ with col_diego:
             <h3>🔍 Exception Workbench</h3>
             <h4>Consulta Individual de POs</h4>
             <p style="flex-grow: 1;">
-                <strong>Para:</strong> Coordinadores de excepciones inbound<br><br>
-                Analiza un PO tardío a la vez: timeline reconstruido, diagnóstico LLM, 
-                validación de causa raíz y acciones recomendadas. Ideal para cerrar 
-                excepciones caso por caso con evidencia completa.
+                Dirigida a coordinadores de excepciones inbound. Analiza un PO tardío a la
+                vez: timeline reconstruido, diagnóstico del LLM, validación de causa raíz y
+                acciones recomendadas. Cierra excepciones caso por caso con evidencia completa.
             </p>
-            <ul style="color: #4a5568; font-size: 0.9rem; margin: 1rem 0; padding-left: 1.5rem;">
+            <ul style="color: var(--text-secondary); font-size: 0.9rem; margin: 1rem 0; padding-left: 1.5rem;">
                 <li>Timeline del lifecycle del PO</li>
                 <li>Explicación y acción del LLM</li>
                 <li>Flag de desacuerdo con reason humano</li>
@@ -91,7 +90,7 @@ with col_diego:
         """,
         unsafe_allow_html=True,
     )
-    if st.button("Abrir Exception Workbench →", key="btn_diego", use_container_width=True):
+    if st.button("Abrir Exception Workbench →", key="btn_diego", width="stretch"):
         st.switch_page("pages/1_🔍_Exception_Workbench.py")
 
 # ── Vista Ravi: Network Intelligence ────────────────────────────────────────
@@ -102,12 +101,12 @@ with col_ravi:
             <h3>📊 Network Intelligence</h3>
             <h4>Inteligencia Agregada de Red</h4>
             <p style="flex-grow: 1;">
-                <strong>Para:</strong> Analistas de supply chain y reporting<br><br>
-                Visualiza patrones sistémicos en la población de POs tardíos: 
-                distribución por etapa, severidad, tasa de desacuerdo y tendencias. 
-                Genera inteligencia accionable para decisiones estructurales.
+                Dirigida a analistas de supply chain y reporting. Visualiza patrones
+                sistémicos en la población de POs tardíos: distribución por etapa, severidad,
+                tasa de desacuerdo y tendencias. Produce inteligencia accionable para
+                decisiones estructurales.
             </p>
-            <ul style="color: #4a5568; font-size: 0.9rem; margin: 1rem 0; padding-left: 1.5rem;">
+            <ul style="color: var(--text-secondary); font-size: 0.9rem; margin: 1rem 0; padding-left: 1.5rem;">
                 <li>Distribución Vendor/Carrier/DC/Indeterminado</li>
                 <li>Scorecards por entidad</li>
                 <li>Tasa de desacuerdo AI vs humano</li>
@@ -117,8 +116,8 @@ with col_ravi:
         """,
         unsafe_allow_html=True,
     )
-    if st.button("Abrir Network Intelligence →", key="btn_ravi", use_container_width=True):
-        st.switch_page("pages/2__Network_Intelligence.py")
+    if st.button("Abrir Network Intelligence →", key="btn_ravi", width="stretch"):
+        st.switch_page("pages/2_📊_Network_Intelligence.py")
 
 # ── Footer ──────────────────────────────────────────────────────────────────
 st.markdown("---")
