@@ -2227,6 +2227,8 @@ def save_llm_output(df: pd.DataFrame, output_path: Union[str, Path]) -> None:
 # Las cinco columnas canónicas del mentor (kickoff §09 / README §9), en orden.
 # Son el contrato exacto del entregable y van SIEMPRE primero en el artefacto.
 _MENTOR_COLUMNS = ["PO_NBR", "stage", "severity", "explanation", "action"]
+"""Contrato canónico del mentor (kickoff §09 / README §9): las 5 columnas obligatorias
+del entregable, en orden fijo y siempre primero en el artefacto."""
 
 # Columnas de soporte para la app de Fase 4 (contrato F3→F4, #100): el timeline del
 # PO, los agravantes y la concordancia con la anotación humana. Permiten que la app
@@ -2236,8 +2238,13 @@ _TIMELINE_COLUMNS = [
     "PO_DT", "STA_DT", "APPROVED_DT", "TRAILER_ARRIVE_DT",
     "CHECKIN_DT", "CHECKOUT_DT", "RECPT_DT",
 ]
+"""Timeline del PO para la app de Fase 4 (contrato F3→F4, #100): las fechas clave del
+lifecycle, para que la app lea el artefacto sin recomputar el pipeline."""
 _AGGRAVANT_COLUMNS = ["HOT_PO_FLAG", "is_short_ship"]
+"""Agravantes del PO (hot PO, short ship) que la app muestra junto al diagnóstico."""
 _AGREEMENT_COLUMNS = ["REASON_DSC", "llm_coincide_con_reason"]
+"""Concordancia con la anotación humana: el motivo registrado por el DC y si la causa
+del LLM coincide con él."""
 
 # Columnas tier-1 (#158): confianza del LLM, nombres de entidad y magnitud/exceso del
 # delay por etapa. Ya calculadas upstream (F1/F2/F3); desbloquean las vistas de Fase 4
@@ -2246,6 +2253,9 @@ _ENRICHMENT_COLUMNS = [
     "llm_confianza", "VENDOR_NAME", "CARRIER_PARTY_NAME", "DC_LOC_NAME",
     "delay_days_calc", "excess_vendor_hrs", "excess_carrier_hrs", "excess_dc_hrs",
 ]
+"""Enriquecimiento tier-1 (#158): confianza del LLM, nombres de entidad y magnitud/exceso
+del delay por etapa, ya calculados upstream; desbloquean las vistas de Fase 4 sin que la
+app recompute nada."""
 
 # Columnas tier-2 (#161): la salida híbrida del diagnóstico diferencial de ARD-16 (la
 # llamada de acción, opt-in vía --action-call). Son las 8 del contrato de acción
@@ -2256,12 +2266,18 @@ _ENRICHMENT_COLUMNS = [
 # Con una corrida sin --action-call estas columnas no existen; el export las emite vacías
 # (ver export_deliverable_csv) para que el contrato tenga forma estable.
 _TIER2_COLUMNS = list(_ACTION_COLUMN_MAP) + ["llm_confianza_hipotesis"]
+"""Diagnóstico diferencial tier-2 (#161, ARD-16): la salida híbrida de la llamada de
+acción (las 8 del contrato + la 2ª confianza). Opt-in vía --action-call; sin él, el export
+las emite vacías para que el contrato tenga forma estable."""
 
 # Orden final del artefacto: las 5 del mentor primero, luego el bloque de soporte.
 _DELIVERABLE_COLUMNS = (
     _MENTOR_COLUMNS + _TIMELINE_COLUMNS + _AGGRAVANT_COLUMNS + _AGREEMENT_COLUMNS
     + _ENRICHMENT_COLUMNS + _TIER2_COLUMNS
 )
+"""Contrato completo del artefacto po_output.csv, en su orden final: las 5 del mentor
+primero, luego soporte (timeline, agravantes, concordancia), enriquecimiento tier-1 y
+diagnóstico diferencial tier-2."""
 
 
 def export_deliverable_csv(
