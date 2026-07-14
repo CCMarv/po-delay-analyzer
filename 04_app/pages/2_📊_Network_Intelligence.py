@@ -180,9 +180,14 @@ with col3:
 with col4:
     metric_card("Tasa de Desacuerdo", f"{disagree_rate:.1f}%", icon="⚠️")
 
+st.caption(
+    f"Denominador: los {total_pos} POs tardíos del contrato F3→F4 "
+    "(delay_days_calc > 0). Las cifras describen la población tardía, no la red completa."
+)
+
 # ── Sección 2: Distribución por etapa y por severidad ───────────────────────
 st.markdown("---")
-st.markdown("### 📊 Distribución por Etapa y Severidad")
+st.markdown("### Distribución por Etapa y Severidad")
 
 col_stage, col_sev = st.columns(2)
 
@@ -209,7 +214,7 @@ with col_sev:
 
 # ── Sección 3: Tasa de desacuerdo (métrica de primera clase) ────────────────
 st.markdown("---")
-st.markdown("### ⚠️ Tasa de Desacuerdo AI vs Humano")
+st.markdown("### Tasa de Desacuerdo AI vs Humano")
 st.caption(
     "Comparación del diagnóstico del LLM contra el REASON_DSC humano. Mapea al "
     "umbral *Reason Code Agreement* del mentor: un desacuerdo alto en una etapa "
@@ -237,7 +242,7 @@ with col_dis2:
 
 # ── Sección 4: Tendencia temporal ───────────────────────────────────────────
 st.markdown("---")
-st.markdown("### 📈 Tendencia Temporal (POs tardíos por semana)")
+st.markdown("### Tendencia Temporal (POs tardíos por semana)")
 
 trend = df.dropna(subset=[COL_PO_DT]).copy()
 if trend.empty:
@@ -267,7 +272,7 @@ else:
 
 # ── Sección 5: Scorecards por entidad ───────────────────────────────────────
 st.markdown("---")
-st.markdown("### 🏷️ Scorecards por Entidad")
+st.markdown("### Scorecards por Entidad")
 
 scorecards = load_scorecards()
 if scorecards is None:
@@ -305,7 +310,7 @@ else:
 
 # ── Drill-down Ravi → Diego ─────────────────────────────────────────────────
 st.markdown("---")
-st.markdown("### 🔗 Ver detalle de un PO (Exception Workbench)")
+st.markdown("### Ver detalle de un PO (Exception Workbench)")
 
 only_disagree = st.checkbox("Solo POs con desacuerdo AI vs humano", value=False)
 pool = df[df[COL_LLM_COINCIDE] == False] if only_disagree else df  # noqa: E712

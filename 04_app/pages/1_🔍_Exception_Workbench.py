@@ -54,7 +54,7 @@ st.markdown(
 )
 
 # ── Selector de PO ──────────────────────────────────────────────────────────
-st.markdown("### 📋 Seleccionar PO")
+st.markdown("### Seleccionar PO")
 
 po_list = get_unique_po_list(df)
 
@@ -95,7 +95,7 @@ with col_ctx4:
 
 # ── Panel de diagnóstico ─────────────────────────────────────────────────────
 st.markdown("---")
-st.markdown("### 🎯 Diagnóstico del PO")
+st.markdown("### Diagnóstico del PO")
 
 col_diag1, col_diag2, col_diag3, col_diag4, col_diag5 = st.columns(5)
 
@@ -185,7 +185,7 @@ with col_diag5:
     )
 
 # ── Flags de agravantes ─────────────────────────────────────────────────────
-st.markdown("### 🚨 Flags de Agravantes")
+st.markdown("### Flags de Agravantes")
 
 col_flags1, col_flags2 = st.columns(2)
 
@@ -205,7 +205,7 @@ with col_flags2:
 
 # ── Timeline del lifecycle ──────────────────────────────────────────────────
 st.markdown("---")
-st.markdown("### 📅 Timeline del Lifecycle")
+st.markdown("### Timeline del Lifecycle")
 
 timeline_events = [
     (COL_PO_DT, "📝", "PO Creada"),
@@ -239,7 +239,7 @@ st.markdown("".join(segments_html), unsafe_allow_html=True)
 # El HTML se compone por concatenación (sin sangría inicial) al estilo de la vista
 # de Ravi; reusa los tokens del sistema de diseño (ARD-17), nunca hex suelto.
 st.markdown("---")
-st.markdown("### 🔬 Diagnóstico Diferencial")
+st.markdown("### Diagnóstico Diferencial")
 
 
 def _t2(col: str) -> str:
