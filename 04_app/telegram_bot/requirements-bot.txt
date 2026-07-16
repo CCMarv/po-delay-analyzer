@@ -1,0 +1,4 @@
+# Dependencias extra para el bot de Telegram (instalar además de requirements.txt)
+python-telegram-bot>=22.0
+plotly>=5.18.0       # Para generar PNG de gráficos (kaleido o orca)
+# Opcional (para PNG sin kaleido): pip install kaleido
