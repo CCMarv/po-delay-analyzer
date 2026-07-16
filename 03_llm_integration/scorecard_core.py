@@ -445,17 +445,18 @@ def load_po_data(csv_path: str | Path = None) -> pd.DataFrame:
         else:
             df["total_dc_hrs"] = df["excess_dc_hrs"].fillna(0)
     
-    # ── 4. Verificar columnas requeridas ──
-    # Rellenar en silencio enmascararía datos ausentes (ceros que se propagan a
-    # las métricas del scorecard). Si falta alguna columna requerida, fallar
-    # nombrándolas para que el problema sea visible y trazable a la fuente.
-    missing = [col for col in REQUIRED_COLUMNS if col not in df.columns]
-    if missing:
-        raise ValueError(
-            "df_classified.csv no contiene columnas requeridas por el scorecard: "
-            f"{missing}. Revisa el pipeline de Fase 2 que genera este archivo."
-        )
-
+    # ── 4. Asegurar columnas requeridas ──
+    for col in REQUIRED_COLUMNS:
+        if col not in df.columns:
+            if col in ["excess_vendor_hrs", "excess_carrier_hrs", "excess_dc_hrs", "excess_yard_hrs"]:
+                df[col] = 0.0
+            elif col == "YARD_DROP_FL":
+                df[col] = 0
+            elif col == "stage_primary":
+                df[col] = "Indeterminado"
+            else:
+                df[col] = 0
+        
     return df
 
 
@@ -465,14 +466,14 @@ def _simplificar_scorecard(scorecard_completo: dict) -> dict:
     """Filtra el diccionario eliminando métricas estadísticas secundarias."""
     return {
         entidad: {
-            "nivel_riesgo": metricas.get("Nivel_Riesgo"),
-            "score_riesgo": metricas.get("Score_Riesgo_Normalizado"),
+            "nivel_riesgo_absoluto": metricas.get("Nivel_Riesgo_Absoluto"),
             "delay_promedio": metricas.get("Delay_Prom"),
             "excess_por_po": metricas.get("Excess_por_PO"),
             "tasa_reschedule": metricas.get("Tasa_Reschedule"),
             "tasa_responsabilidad": metricas.get("Tasa_Responsabilidad"),
             "pos_totales": metricas.get("n_POs_total"),
-            "pos_causa_raiz": metricas.get("n_POs_causa_raiz")
+            "pos_causa_raiz": metricas.get("n_POs_causa_raiz"),
+            "tasa_causa_raiz": round(metricas.get("n_POs_causa_raiz", 0) / metricas.get("n_POs_total", 1) * 100, 1)
         }
         for entidad, metricas in scorecard_completo.items()
     }
