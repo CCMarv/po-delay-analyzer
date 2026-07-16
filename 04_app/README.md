@@ -31,6 +31,8 @@ Estructura del CSV (las cinco del mentor primero, en orden; luego soporte para l
 | Timeline | `PO_DT, STA_DT, APPROVED_DT, TRAILER_ARRIVE_DT, CHECKIN_DT, CHECKOUT_DT, RECPT_DT` | Dibujar el recorrido del PO |
 | Agravantes | `HOT_PO_FLAG, is_short_ship` | Marcar urgencia / envío incompleto |
 | Concordancia | `REASON_DSC, llm_coincide_con_reason` | Mostrar si el diagnóstico coincide con la anotación humana |
+| Enriquecimiento tier 1 | `llm_confianza, VENDOR_NAME, CARRIER_PARTY_NAME, DC_LOC_NAME, delay_days_calc, excess_vendor_hrs, excess_carrier_hrs, excess_dc_hrs` | Confianza del diagnóstico, entidades responsables y exceso de horas por etapa (contexto de la vista individual) |
+| Diagnóstico diferencial tier 2 | `llm_razonamiento, llm_hipotesis, llm_hipotesis_evidencia, llm_accion_inmediata, llm_accion_correctiva, llm_accion_preventiva, llm_hipotesis_alt, llm_paso_discriminante, llm_confianza_hipotesis` | Salida híbrida de ARD-16: hipótesis principal/alternativa, evidencia, paso discriminante, plan escalonado y 2ª confianza |
 
 Alcance de filas: solo POs tardíos (`delay_days_calc > 0`).
 
@@ -54,7 +56,9 @@ Detalle de las personas en `../documentation/user_personas.md`.
 ```bash
 # 1. Generar el artefacto de entrada (Fase 3), si no existe:
 #    produce data/processed/po_output.csv
-python 03_llm_integration/llm_integration.py --backend openai   # u otro backend
+#    --action-call (opt-in) puebla las columnas del diagnóstico diferencial tier 2
+#    (#161/#174); sin ese flag esas columnas salen vacías.
+python 03_llm_integration/llm_integration.py --backend openai --action-call   # u otro backend
 
 # 2. Generar los scorecards por entidad (offline, sin API):
 #    produce data/processed/scorecards/reporte_{vendors,carriers,dcs}.json
@@ -77,7 +81,12 @@ La app lee dos artefactos, ambos regenerables y fuera del control de versiones:
   recomputa la capa estadística ni llama a ninguna API.
 
 Las dos vistas, individual (#163) y agregada (#164), están reconstruidas sobre el sistema
-de diseño de la fase.
+de diseño de la fase. Incorporado en el lote de elevación a calidad de deployment:
+
+- Panel de diagnóstico diferencial tier 2 en la vista individual (#175/#176): hipótesis
+  principal/alternativa, paso discriminante y plan escalonado.
+- Tema claro/oscuro adaptado a las gráficas Plotly (#186, ARD-17).
+- Corrección de la navegación del landing hacia las vistas (#187).
 
 ## Referencias
 

@@ -18,6 +18,7 @@
     --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.12);
     --accent: #4299e1;
     --accent-hover: #3182ce;
+    --accent-shadow: rgba(66, 153, 225, 0.3);
 
     /* Etapa — hue Okabe-Ito (CUD), idéntico en toda la app (ARD-17) */
     --stage-vendor: #0072B2;
@@ -69,6 +70,7 @@
         --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
         --accent: #5aa9e6;
         --accent-hover: #4d94cc;
+        --accent-shadow: rgba(90, 169, 230, 0.3);
 
         /* Etapa: aclarada para mantener contraste ≥3:1 (objeto gráfico) sobre
            fondo oscuro; mismo hue, luminancia ajustada por tema. */
@@ -349,7 +351,7 @@ h1, h2, h3 {
 
 .stButton > button:hover {
     background-color: var(--accent-hover);
-    box-shadow: 0 4px 12px rgba(66, 153, 225, 0.3);
+    box-shadow: 0 4px 12px var(--accent-shadow);
     transform: translateY(-1px);
 }
 

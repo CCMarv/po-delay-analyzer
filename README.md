@@ -1,103 +1,205 @@
-# PO Delay Root Cause Analyzer 
+# PO Delay Root Cause Analyzer
 
-El **PO Delay Root Cause Analyzer** es una herramienta de Inteligencia Artificial diseñada para analizar Órdenes de Compra (PO) retrasadas dentro de la cadena de suministro. El sistema procesa datos logísticos, identifica la etapa exacta donde ocurrió el desvío mediante reglas de negocio avanzadas y genera explicaciones automatizadas junto con acciones recomendadas utilizando un Modelo de Lenguaje de Gran Escala (LLM).
+[![CI](https://github.com/CCMarv/po-delay-analyzer/actions/workflows/ci.yml/badge.svg)](https://github.com/CCMarv/po-delay-analyzer/actions/workflows/ci.yml)
 
-##  Objetivo Final del Proyecto
-Construir una plataforma integral que reciba datos transaccionales de órdenes de compra, detecte inconsistencias operativas y actúe como un auditor inteligente que identifique la causa raíz de los retrasos, contrastando los registros manuales del personal con la realidad de los timestamps logísticos.
+Herramienta de análisis de causa raíz para Órdenes de Compra (PO) retrasadas de la cadena de
+suministro: clasifica la etapa responsable del retraso con reglas deterministas sobre los
+timestamps del lifecycle y genera, con un LLM, una explicación y una acción recomendada por PO.
 
----
+Esta portada orienta y enlaza; el detalle vive en cada documento (ver el
+[índice de documentación](#índice-de-documentación)).
 
-## 📄 Registro de Decisiones de Arquitectura (ADR)
-Para conocer el rastro histórico, la justificación de las reglas de negocio avanzadas, la evolución de los umbrales y los debates del equipo técnicos validados por la mentoría, consulta el **[Log Índice de ADRs](documentation/decisiones/README.md)**.
+## Contenido
 
----
+- [Objetivo](#objetivo)
+- [Arquitectura](#arquitectura)
+- [Quickstart](#quickstart)
+- [Estado de fases](#estado-de-fases)
+- [Estructura del repositorio](#estructura-del-repositorio)
+- [Índice de documentación](#índice-de-documentación)
+- [Tecnologías](#tecnologías)
+- [Contribución](#contribución)
+- [Licencia](#licencia)
 
-##  Estructura del Proyecto
+## Objetivo
 
-El repositorio está organizado siguiendo el orden cronológico de las cuatro etapas del ciclo de vida del proyecto, facilitando el seguimiento del progreso desde la investigación hasta el despliegue:
+El sistema recibe datos transaccionales de órdenes de compra, detecta inconsistencias
+operativas y actúa como un auditor que identifica la causa raíz de cada retraso, contrastando
+la anotación manual del personal (`REASON_DSC`) con la realidad de los timestamps logísticos.
+La anotación humana es aproximadamente 20% incorrecta; el cómputo temporal la corrige, y esas
+discrepancias son hallazgos del proyecto, no errores a esconder. La atribución es determinista
+(no probabilística): la etapa primaria es el tramo con mayor exceso sobre su umbral.
 
-> **Nota:** este árbol refleja el **estado real del repo hoy**. Fases 1 y 2 implementadas
-> y cerradas; Fase 3 (integración LLM) implementada y en curso; Fase 4 (demo/app) pendiente.
+## Arquitectura
 
-```text
-├── documentation/                      # Textos, PDFs, convenciones del equipo
-│   ├── decisiones/                     # Historial de decisiones de arquitectura (ADR)
-│   │   ├── README.md                   # Log índice de decisiones tomadas (ADR Log)
-│   │   ├── ADR-01.md                   # ADRs individuales (versiones vigentes y superadas)
-│   │   └── ...
-│   ├── kickoff_po_root_cause.html      # Especificaciones del proyecto (mentor)
-│   ├── data_dictionary.md              # Diccionario de las 39 columnas + data card
-│   ├── user_personas.md                # Perfiles de usuario que guían el diseño de Fase 4
-│   ├── convenciones-issues.md          # Acuerdos de gestión del equipo
-│   └── plantillas-cli/                 # Borradores de issues para `gh`
-├── data/                               # raw/ y processed/ (gitignored; solo .gitkeep)
-├── 01_data_pipeline_and_eda/           # Fase 1: pipeline + EDA
-│   ├── data_pipeline_and_EDA.ipynb     # Notebook combinado (pipeline + EDA)
-│   └── pipeline_core.py                # clean_po_data() + cross_validate + save_clean_output
-├── 02_clasif_reglas_negocio/           # Fase 2: clasificación por etapa (implementada)
-│   ├── clasif_etapa.ipynb              # Notebook de presentación de la fase
-│   ├── classifier_core.py              # classify_po_stages() + severidad + persistencia
-│   ├── metrics_core.py                 # Validación: stage accuracy + reason agreement
-│   └── rules_config.json               # Umbrales externalizados (leídos por nombre)
-├── 03_llm_integration/                 # Fase 3: integración LLM (implementada, en curso)
-│   ├── llm_integration.py              # build_prompt + backends (Qwen/Claude/DeepSeek/OpenAI)
-│   └── eval_quality.py                 # Benchmark de calidad de explicación (20 POs, #94/#99)
-├── 04_app/                             # Fase 4: demo / app (pendiente)
-├── tests/                              # Suite de pytest (pipeline, clasificador, métricas,
-│   │                                   #   handoff, LLM); fixtures de valores conocidos
-│   ├── conftest.py
-│   ├── test_pipeline_core.py
-│   ├── test_classifier_core.py
-│   ├── test_metrics_core.py
-│   ├── test_handoff_contract.py
-│   └── test_llm_integration.py
-├── requirements.txt                    # Dependencias (en la raíz)
-├── pyproject.toml                      # Config de pytest (pythonpath, testpaths)
-├── .env.example                        # Plantilla de variables de entorno
-└── README.md                           # Descripción general del repositorio
+El dato atraviesa cuatro fases secuenciales; cada una consume el artefacto de la anterior y no
+recomputa lo ya resuelto aguas arriba.
+
+```mermaid
+flowchart TD
+    CSV["CSV crudo · 400 POs · 39 columnas · sintético"] --> F1["F1 · pipeline_core.py<br/>limpieza + deltas + flags de calidad"]
+    F1 -->|"df_clean"| F2["F2 · classifier_core.py<br/>etapa por exceso sobre umbral · severidad"]
+    F2 -->|"df_classified"| F3["F3 · llm_integration.py<br/>explicación + acción + severidad<br/>few-shot C3 · gpt-4o-mini"]
+    F3 -->|"po_output.csv"| F4["F4 · 04_app/app.py<br/>app Streamlit · 2 vistas"]
 ```
 
+| Fase | Módulo | Hace | Produce |
+|---|---|---|---|
+| F1 | `01_data_pipeline_and_eda/pipeline_core.py` | Parsea timestamps, calcula tramos (`*_calc`) y marca flags de calidad sin borrar filas. | `df_clean` |
+| F2 | `02_clasif_reglas_negocio/classifier_core.py` | Asigna la etapa responsable (Vendor / Carrier / DC / Indeterminado) por mayor exceso sobre el umbral del mentor, más una severidad determinista. | `df_classified` |
+| F3 | `03_llm_integration/llm_integration.py` | Por PO tardío, genera explicación, acción y severidad con few-shot C3 sobre `gpt-4o-mini`. | `po_output.csv` (contrato F3→F4) |
+| F4 | `04_app/app.py` | App Streamlit con dos vistas; lee `po_output.csv` y no recomputa las fases anteriores. | vistas individual + agregada |
 
+## Quickstart
 
----
+Camino determinista de extremo a extremo (no consume API). Requiere Python 3.13.
 
-##  Plan de Desarrollo del Proyecto
+```bash
+# Clonar e instalar
+git clone https://github.com/CCMarv/po-delay-analyzer.git
+cd po-delay-analyzer
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+cp .env.example .env                                 # Windows: Copy-Item .env.example .env
 
-El proyecto se estructura en **4 fases secuenciales**:
+# Colocar el CSV crudo (gitignored) en la ruta por defecto:
+#   data/raw/po_root_cause_synthetic.csv
 
-###  Fase 1 — Data Pipeline (Limpieza y Validación) `[cerrada]`
+# Correr el pipeline y la suite:
+python 01_data_pipeline_and_eda/pipeline_core.py     # F1 — limpieza + validación
+python 02_clasif_reglas_negocio/classifier_core.py   # F2 — clasificación por etapa
+pytest                                                # 244 tests, sin API
+```
 
-* Procesamiento de un dataset inicial de 400 filas y 39 columnas que incluye anomalías intencionales.
-* "Cargar el CSV, limpiar timestamps, validar datos. EDA: cuantos POs tienen delay? Distribucion por vendor/DC."
+El detalle completo de setup y ejecución vive en [CONTRIBUTING.md](CONTRIBUTING.md): la Fase 3
+(explicaciones LLM; los backends de pago gastan créditos), la Fase 4 (app Streamlit), la nota
+`PYTHONUTF8=1` para consolas Windows y el flujo de trabajo con git. La portada no duplica esos
+comandos.
 
-* **Carga y Parseo**: Uso de `pandas` con `errors='coerce'` para evitar rupturas por valores nulos (dejándolos como `NaT`).
-* **Auditoría de Calidad**: Detección de tiempos invertidos (ej. `CHECKIN_DT` < `TRAILER_ARRIVE_DT`) marcados bajo la flag `_ts_issue` sin elimin registros.
-* **Cálculo de Métricas Clave (Lead Times)**:
-  * `yard_wait` = `CHECKIN` - `TRAILER_ARRIVE`
-  * `dock_time` = `CHECKOUT` - `CHECKIN`
-  * `carrier_lag` = `TRAILER_ARRIVE` - `APPROVED_DT`
-* **Output**: DataFrame limpio, con deltas calculados y banderas de calidad, listo como entrada para las siguientes fases.
+## Estado de fases
 
-###  Fase 2 — Clasificación por Etapa (Reglas de Negocio) `[cerrada]`
-Implementación de un clasificador **determinístico** basado en el exceso sobre el umbral de cada etapa (no probabilístico): la etapa primaria es el tramo de mayor exceso sobre su umbral del mentor, con vendor por señal directa de STA push. Las reglas se evalúan de forma reproducible y los umbrales viven externalizados en `rules_config.json`.
-"Implementar reglas que asignan vendor/carrier/DC a cada PO. Comparar con REASON_DSC. Documentar matches vs mismatches".
+| Fase | Estado | Resumen |
+|---|---|---|
+| F1 — Data pipeline + EDA | cerrada | Pipeline de ingesta, limpieza y validación cruzada + EDA. Determinista, sin costo de API. |
+| F2 — Clasificación por etapa | cerrada | Clasificador determinista por exceso sobre umbral; umbrales externalizados en `rules_config.json`. |
+| F3 — Integración LLM | en curso | Producción cableada: few-shot C3 sobre `gpt-4o-mini` (OpenAI, backend oficial); `po_output.csv` generado. Pendiente: evaluación a nivel dataset y juez local ([ADR-16](documentation/decisiones/ARD-16.md)); alcance del model card en deliberación (Discussion #80). |
+| F4 — App + evaluación | en curso | App Streamlit; dos vistas —individual (#163) y agregada (#164)— reconstruidas sobre el sistema de diseño de la fase. Chatbot diferido. |
 
-###  Fase 3 — LLM Root Cause (Integración con API) `[implementada, en curso]`
-Auditoría cognitiva de cada orden retrasada mediante el consumo dinámico de LLMs.
-* **Prompt Engineering**: Construcción de un prompt enriquecido por fila con los hitos temporales de las fases 1 y 2.
-"Disenar prompt, generar root cause explanations para todos los POs delayed. Asignar severidad. Primera evaluacion".
+Reparto de etapas sobre los **247 POs tardíos**: Vendor 131 (53.0%) · Carrier 40 (16.2%) ·
+DC 37 (15.0%) · Indeterminado 39 (15.8%).
 
-###  Fase 4 — Demo Interactiva + Evaluación Final `[pendiente]`
-Construcción de una interfaz de usuario para el consumo de resultados del negocio.
-"Construir notebook/app demo: seleccionar PO > ver timeline, causa, explicacion. Medir metricas. Presentar hallazgos."
+Resultados cabecera (población, umbral y fuente reproducible de cada cifra en
+[metricas-proyecto.md](documentation/metricas-proyecto.md)):
 
----
+| Métrica | Valor | Umbral del mentor |
+|---|---|---|
+| Stage accuracy | 100% (208/208) | > 80% ✅ |
+| Reason agreement | 88.8% (174/196) | referencia (no umbral) |
+| LLM Explanation Quality | 4.75/5 (few-shot C3) | > 4/5 ✅ |
+| Severity Ranking | 100% (14/14) | > 95% ✅ |
 
-##  Tecnologías y Variables Principales
+## Estructura del repositorio
 
-* **Lenguaje principal**: Python 3.x
-* **Librerías Core**: `pandas`, `numpy` (Próximamente: `Streamlit`/`ipywidgets`, `API del LLM`).
-* **Variables Críticas de Control**: `IS_LATE`, `VENDOR_NAME`, `DELAY_DAYS`, `REQUESTED_DT`, `RECPT_DT`, `REASON_DSC`, `HOT_PO_FLAG`.
+```text
+.
+├── 01_data_pipeline_and_eda/     # F1 — pipeline + EDA
+│   ├── pipeline_core.py          #   clean_po_data() + cross_validate_deltas() + deltas/flags
+│   ├── data_pipeline_and_EDA.ipynb
+│   └── README.md
+├── 02_clasif_reglas_negocio/     # F2 — clasificación por etapa (determinista)
+│   ├── classifier_core.py        #   classify_po_stages() + severidad + persistencia
+│   ├── metrics_core.py           #   stage accuracy + reason agreement + sensibilidad
+│   ├── rules_config.json         #   umbrales externalizados (leídos por nombre)
+│   ├── clasif_etapa.ipynb
+│   └── README.md
+├── 03_llm_integration/           # F3 — capa LLM sobre la base determinista
+│   ├── llm_integration.py        #   build_prompt + backends (OpenAI/Claude/DeepSeek/Qwen)
+│   ├── fewshot.py                 #   selección determinista del few-shot C3
+│   ├── fewshot_pool.json          #   pool auditado de ejemplos (mismatches de F2)
+│   ├── scorecard_core.py          #   scorecards por entidad (offline, sin API)
+│   ├── eval_*.py                  #   benchmarks de calidad/severidad/diversidad
+│   ├── llm_config.json            #   parámetros de inferencia reproducibles
+│   ├── MODEL_CARD.md
+│   └── README.md
+├── 04_app/                       # F4 — app Streamlit (lee el contrato F3→F4)
+│   ├── app.py
+│   ├── config.py
+│   └── README.md
+├── data/                         # raw/ y processed/ (gitignored; solo .gitkeep)
+├── documentation/
+│   ├── decisiones/               # ADRs (ARD-01 … ARD-18) + README (log índice)
+│   ├── data_dictionary.md        #   las 39 columnas + data card del dataset
+│   ├── metricas-proyecto.md      #   tabla única de métricas cabecera
+│   ├── validacion-y-qa.md        #   método de validación por capas
+│   ├── hallazgos-ai-vs-humano.md #   narrativa: cómputo temporal vs anotación humana
+│   ├── user_personas.md          #   perfiles que guían el diseño de la Fase 4
+│   ├── plan-traduccion.md        #   plan de traducción ES→EN (diferido)
+│   ├── convenciones-issues.md    #   acuerdos de gestión del equipo
+│   ├── SAD.md · SRS.md           #   especificaciones de arquitectura y requisitos
+│   └── kickoff_po_root_cause.html
+├── tests/                        # suite pytest (244 tests): F1/F2/F3, handoff, few-shot, evals
+├── CONTRIBUTING.md               # setup, reproducibilidad, flujo, qué no se commitea, tests/CI
+├── requirements.txt
+├── pyproject.toml                # config de pytest (pythonpath, testpaths)
+├── .env.example                  # plantilla de variables de entorno (placeholders vacíos)
+└── README.md
+```
 
----
-*Nota: Este documento refleja el progreso en tiempo real del desarrollo. Fases 1 y 2 cerradas; Fase 3 (integración LLM) en curso.*
+## Índice de documentación
+
+Organizado por propósito (lente [Diátaxis](https://diataxis.fr)): qué se consulta, qué explica
+el porqué y qué resuelve una tarea.
+
+### Referencia — consultar datos y contratos
+
+- [Data dictionary](documentation/data_dictionary.md) — las 39 columnas del dataset, tipos,
+  nulos conocidos y su rol en las reglas; data card del origen sintético.
+- [Model card (F3)](03_llm_integration/MODEL_CARD.md) — el sistema LLM: modelo, uso previsto,
+  datos de entrada, métricas de evaluación y límites conocidos.
+- [Métricas del proyecto](documentation/metricas-proyecto.md) — tabla única de las cinco
+  métricas cabecera, cada una con su población y su fuente reproducible.
+- READMEs de fase: [F1](01_data_pipeline_and_eda/README.md) ·
+  [F2](02_clasif_reglas_negocio/README.md) · [F3](03_llm_integration/README.md) ·
+  [F4](04_app/README.md) — metodología y "cómo correr" de cada fase.
+
+### Explicación — entender el porqué
+
+- [Registro de decisiones (ADRs)](documentation/decisiones/README.md) — el rastro histórico de
+  taxonomía, umbrales y contratos; las decisiones superadas se encadenan a las vigentes.
+- [Validación y QA](documentation/validacion-y-qa.md) — el método de validación por capas
+  (unitario, contrato, métrica, gate) y cómo un revisor lo reproduce.
+- [Hallazgos: cómputo vs anotación humana](documentation/hallazgos-ai-vs-humano.md) — dónde el
+  cómputo temporal supera al reason code humano, con la evidencia por caso.
+- [User personas](documentation/user_personas.md) — los dos perfiles (consulta individual /
+  reporte por lote) que definen las vistas de la Fase 4.
+- [Plan de traducción ES→EN](documentation/plan-traduccion.md) — alcance, orden y disparador de
+  la traducción bilingüe, diferida de forma deliberada.
+
+### How-to — resolver una tarea
+
+- [Guía de contribución](CONTRIBUTING.md) — montar el entorno, correr el proyecto, qué no se
+  commitea, tests y CI, y el flujo de trabajo con git.
+
+## Tecnologías
+
+- Lenguaje: Python 3.13.
+- Core de datos: `pandas`, `numpy`.
+- App (F4): Streamlit.
+- LLM: el entregable (`po_output.csv`) se genera con `gpt-4o-mini` (OpenAI, backend oficial);
+  `claude-sonnet-4-6` (Anthropic), `deepseek-chat` (DeepSeek) y `qwen2.5:7b` (local vía Ollama)
+  son backends alternos con la misma interfaz de prompt y parseo.
+- Pruebas: `pytest` (244 tests) en CI (GitHub Actions), en cada push y cada PR.
+- Las variables y columnas del dominio (`IS_LATE`, `REASON_DSC`, `HOT_PO_FLAG`, los timestamps
+  del lifecycle, …) se documentan en el [data dictionary](documentation/data_dictionary.md).
+
+## Contribución
+
+El setup reproducible, el flujo de trabajo y la política de qué no se commitea (secrets, CSV,
+outputs de notebook) están en [CONTRIBUTING.md](CONTRIBUTING.md). Los acuerdos de issues,
+labels, DoD y la regla de merge no bloqueante, en
+[convenciones-issues.md](documentation/convenciones-issues.md).
+
+## Licencia
+
+Proyecto académico (UDG / Blend360). No incluye un archivo `LICENSE` ni una licencia formal por
+ahora. El dataset es sintético y no representa entidades reales.

@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import datetime
+import argparse
 from pathlib import Path
 from typing import List
 from pydantic import BaseModel, Field
@@ -9,119 +10,220 @@ from dotenv import load_dotenv
 from agents import Agent, Runner, ModelSettings
 
 # Cargar variables de entorno
-load_dotenv()
+ruta_env = Path(__file__).resolve().parent.parent / ".env"
+load_dotenv(dotenv_path=ruta_env)
 model_name = os.getenv('MODEL_CHOICE', 'gpt-4o-mini')
+
+
+# Después de imports y antes de las clases Pydantic
+
+
+ACTOR_CONFIG = {
+    "vendor": {
+        "input_file": "reporte_vendors.json",  # tu archivo actual
+        "output_prefix": "vendor",
+        "titulo": "1. VENDORS",
+        "singular": "Vendor",
+        "referencias": {
+            "delay": {"bajo": 3, "medio": "3-5", "alto": ">5"},
+            "reschedule": {"bajo": 10, "medio": "10-15", "alto": ">15"},
+            "excess": {"bajo": 70, "medio": "70-85", "alto": ">85"},
+            "causa_raiz": {"bajo": 20, "medio": "20-35", "alto": ">35"}
+        }
+    },
+    "carrier": {
+        "input_file": "reporte_carriers.json",
+        "output_prefix": "carrier",
+        "titulo": "2. CARRIERS",
+        "singular": "Carrier",
+        "referencias": {
+            "delay": {"bajo": 1, "medio": "1-1.5", "alto": ">1.5"},
+            "reschedule": {"bajo": 12, "medio": "12-15", "alto": ">15"},
+            "excess": {"bajo": 12, "medio": "12-15", "alto": ">15"},
+            "causa_raiz": {"bajo": 10, "medio": "10-15", "alto": ">15"}
+        }
+    },
+    "dc": {
+        "input_file": "reporte_dcs.json",
+        "output_prefix": "dc",
+        "titulo": "3. DISTRIBUTION CENTERS",
+        "singular": "DC",
+        "referencias": {
+            "delay": {"bajo": 0.5, "medio": "0.5-0.75", "alto": ">0.75"},
+            "reschedule": {"bajo": 12, "medio": "12-15", "alto": ">15"},
+            "excess": {"bajo": 8, "medio": "8-12", "alto": ">12"},
+            "causa_raiz": {"bajo": 8, "medio": "8-12", "alto": ">12"}
+        }
+    }
+}
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 📐 CLASES PYDANTIC PARA ESTRUCTURAR LA SALIDA (OUTPUT_TYPE)
 # ═══════════════════════════════════════════════════════════════════════════
 
+from pydantic import BaseModel, Field
+from typing import List
+
 class AnalisisBloqueRiesgo(BaseModel):
-    nivel_riesgo: str = Field(description="Debe ser exactamente uno de estos valores: 'Crítico', 'Medio' o 'Bajo'")
-    entidades: List[str] = Field(description="Lista de nombres de las empresas afectadas en MAYÚSCULAS")
+    nivel_riesgo: str = Field(
+        description="Debe ser exactamente uno de estos valores: 'Alto', 'Medio' o 'Bajo'"
+    )
     
-    # Exigimos la profundidad analítica que te gustaba de Qwen
-    falla_raiz: str = Field(description=(
-        "Análisis profundo de negocio. Debe explicar detalladamente el impacto operativo real "
-        "de las métricas y conectar los números exactos extraídos del JSON (como Delay_Prom o Tasa_Reschedule). "
-        "Debe incluir de forma obligatoria la cadena exacta 'Score_Riesgo_Normalizado=X.X' y desglosar "
-        "cronológica o lógicamente CÓMO llegaste a esa conclusión analítica."
-    ))
+    entidades: List[str] = Field(
+        description="Lista de nombres de las empresas afectadas en MAYÚSCULAS, separadas por comas"
+    )
     
-    # Exigimos acciones imperativas y detalladas
-    accion: str = Field(description=(
-        "Plan de intervención inmediato redactado en prosa ejecutiva de alta densidad. "
-        "Debe usar verbos en un tono militar e imperativo (Se exige, Se interviene, Se condiciona) "
-        "y detallar las medidas comerciales, legales o logísticas con plazos temporales estrictos (ej. 15 o 30 días)."
-    ))
+    analisis: str = Field(
+        description=(
+            "Análisis ejecutivo que debe incluir:\n"
+            "- Patrones comunes y tendencias observadas en el bloque.\n"
+            "- Relaciones entre indicadores (ej. ¿Delay alto correlaciona con Excess elevado?).\n"
+            "- Posicionamiento relativo: ¿las entidades son mejores, peores o iguales que el promedio del bloque? Explica por qué.\n"
+            "- Consistencia: ¿el comportamiento operativo valida o contradice el Nivel_Riesgo_Absoluto?\n"
+            "- Implicaciones operativas y de negocio derivadas del comportamiento conjunto.\n"
+            "- Incluir al cierre: 'Score_Riesgo_Normalizado=X.X' basado en tu juicio analítico."
+        )
+    )
+    
+    accion: str = Field(
+        description=(
+            "Recomendaciones concretas y accionables, directamente vinculadas al análisis.\n"
+            "Deben ser específicas en tiempo comercial, legal o logístico.\n"
+            "Si falta información para definir una acción, incluye máximo 2 preguntas con 2 escenarios posibles (A/B) y acciones para cada uno.\n"
+            "No usar frases genéricas como 'mejorar procesos' sin detallar el 'cómo', 'cuándo' y 'quién'."
+        )
+    )
 
 class ReporteEspecialista(BaseModel):
-    titulo: str = Field(description="Ej: '1. PROVEEDORES', '2. TRANSPORTISTAS' o '3. CENTROS DE DISTRIBUCIÓN'")
-    bloques: List[AnalisisBloqueRiesgo] = Field(description="Lista obligatoria con 3 bloques: Crítico, Medio y Bajo")
+    titulo: str = Field(description="Ej: '1. VENDORS', '2. CARRIERS' o '3. DCs'")
+    bloques: List[AnalisisBloqueRiesgo] = Field(description="Lista obligatoria con al menos 1 bloque: Crítico, Medio o Bajo")
 
 class ReporteConclusionGlobal(BaseModel):
     conclusion: str = Field(description="Párrafo consolidado de cierre directivo sobre toda la red logística")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 🤖 CONFIGURACIÓN DE AGENTES (TEMPERATURA 0.1, SIN LOOPS, MAX TOKENS 150)
+# 🤖 CONFIGURACIÓN DE AGENTES (TEMPERATURA 0.1, SIN LOOPS, MAX TOKENS...)
 # ═══════════════════════════════════════════════════════════════════════════
 
-vendor_agent = Agent(
-    name="Director de Estrategia - Vendors",
-    model=model_name,
-    output_type=ReporteEspecialista,
-    model_settings=ModelSettings(
-        max_tokens=400,  # Límite seguro y compacto
-        temperature=0.1
-    ),
-    instructions="""
-    Eres el Director de Estrategia de Operaciones en Supply Chain. Devora el JSON de proveedores y genera un informe ejecutivo ultra-conciso en la clase ReporteEspecialista.
-    Métrica Excess = HORAS EXCEDIDAS en despacho vs contrato.
+def crear_agente(actor_type: str, config: dict):
+    """Crea un agente especializado según el tipo de actor"""
     
-    Sé breve, usa frases cortas y directo al grano en cada campo:
-    - Título: '1. PROVEEDORES'
-    - Bloque Crítico: nivel_riesgo='Crítico', entidades en MAYÚSCULAS. En falla_raiz explica en una frase corta cómo sus horas de exceso estrangulan la producción (incluye obligatoriamente 'Score_Riesgo_Normalizado=X'). En accion exige reemplazo o corrección a 15 días en tono imperativo.
-    - Bloque Medio: nivel_riesgo='Medio', entidades en MAYÚSCULAS. En falla_raiz detalla brevemente el impacto operativo de su Tasa_Reschedule. En accion ordena monitoreo mensual estricto.
-    - Bloque Bajo: nivel_riesgo='Bajo', entidades excelentes en MAYÚSCULAS. En falla_raiz justifica su predictibilidad. En accion ordena blindaje comercial de la cuenta.
-    """
-)
-
-carrier_agent = Agent(
-    name="Director de Estrategia - Carriers",
-    model=model_name,
-    output_type=ReporteEspecialista,
-    model_settings=ModelSettings(
-        max_tokens=400,
-        temperature=0.1
-    ),
-    instructions="""
-    Eres el Director de Estrategia de Operaciones en Supply Chain. Evalúa la red de transporte con el JSON recibido. Estructura en la clase ReporteEspecialista.
-    Métrica Excess = HORAS EXCEDIDAS en ruta o tránsito.
-    Regla de Score: 100 es pésimo rendimiento (peligro), 0 es excelencia.
+    # Variables para personalizar el prompt
+    referencias = config["referencias"]
+    prompt_personalizado = f"""
+    # ROL Y OBJETIVO
+    Eres un Analista de Riesgo Logístico especializado en {config['titulo']}.
     
-    Sé ultra-sintético y ejecutivo en tus descripciones:
-    - Título: '2. TRANSPORTISTAS'
-    - Bloque Crítico: nivel_riesgo='Crítico', entidades en MAYÚSCULAS. En falla_raiz explica brevemente cómo sus demoras y exceso de horas fracturan la entrega al cliente (incluye obligatoriamente 'Score_Riesgo_Normalizado=X'). En accion detalla la presión comercial a 30 días.
-    - Bloque Medio: nivel_riesgo='Medio', entidades en MAYÚSCULAS. En falla_raiz describe problemas de control de flota por su Tasa_Reschedule. En accion impón auditorías obligatorias a sus bitácoras.
-    - Bloque Bajo: nivel_riesgo='Bajo', entidades excelentes en MAYÚSCULAS. En falla_raiz resalta su cumplimiento. En accion ordena transferencia táctica de carga a 90 días.
-    """
-)
-
-dc_agent = Agent(
-    name="Director de Estrategia - Centros de Distribución",
-    model=model_name,
-    output_type=ReporteEspecialista,
-    model_settings=ModelSettings(
-        max_tokens=400,
-        temperature=0.1
-    ),
-    instructions="""
-    Eres el Director de Estrategia de Operaciones en Supply Chain. Analiza el JSON de infraestructura física de los almacenes (DCs). Estructura en la clase ReporteEspecialista.
-    Métrica Excess = HORAS EXCEDIDAS operativas en andenes de carga vs contrato.
-    Regla de Score: 100 es colapso operativo, 0 es flujo óptimo.
+    # GUÍAS INTERNAS (NO MENCIONAR EN OUTPUT)
+    Referencias orientativas para {config['singular']}:
+    | Métrica | Saludable | Seguimiento | Crítico |
+    |---------|-----------|-------------|---------|
+    | Delay_Prom | <{referencias['delay']['bajo']} | {referencias['delay']['medio']} | {referencias['delay']['alto']} |
+    | Tasa_Reschedule | <{referencias['reschedule']['bajo']} | {referencias['reschedule']['medio']} | {referencias['reschedule']['alto']} |
+    | Excess_por_PO | <{referencias['excess']['bajo']} | {referencias['excess']['medio']} | {referencias['excess']['alto']} |
+    | Tasa_causa_raiz | <{referencias['causa_raiz']['bajo']} | {referencias['causa_raiz']['medio']} | {referencias['causa_raiz']['alto']} |
     
-    Redacta de forma directa, concisa y sin rodeos teóricos:
-    - Título: '3. CENTROS DE DISTRIBUCIÓN'
-    - Bloque Crítico: nivel_riesgo='Crítico', entidades en MAYÚSCULAS. En falla_raiz explica en una línea el cuello de botella en andenes conectando Delay_Prom con Excess_por_PO (incluye obligatoriamente 'Score_Riesgo_Normalizado=X'). En accion ordena auditoría física inmediata a 15 días.
-    - Bloque Medio: nivel_riesgo='Medio', entidades en MAYÚSCULAS. En falla_raiz vincula la Tasa_Reschedule con problemas en armado de pedidos. En accion exige doble control de picking.
-    - Bloque Bajo: nivel_riesgo='Bajo', entidades excelentes en MAYÚSCULAS. En falla_raiz resalta la velocidad de desalojo de andenes. En accion ordena clonar mejores prácticas.
-    """
-)
+    # RESTO DEL PROMPT (igual que antes, pero reemplaza "Vendors" por {config['titulo']})
+    
+    # DICCIONARIO DE COLUMNAS
+    - **Entidad**: Vendor, Carrier o DC evaluado.
+    - **Nivel_Riesgo_Absoluto**: Clasificación global pre-calculada (referencia).
+    - **Delay_Prom**: Días de retraso promedio. Refleja confiabilidad en tiempos de entrega.
+    - **Tasa_Reschedule**: % de órdenes reprogramadas. Indica estabilidad operativa.
+    - **Excess_por_PO**: Horas excedentes promedio. Para DCs, es el Dwell Time Net. Es clave para eficiencia operativa.
+    - **n_POs_total**: Número total de órdenes. Usar para evaluar robustez estadística.
+    - **n_POs_causa_raiz**: Órdenes con causa raíz identificada.
+    - **Tasa_causa_raiz**: Proporción entre órdenes con causa raíz y total (n_POs_causa_raiz / n_POs_total). Alto = patrones repetitivos; Bajo = eventos aislados.
 
-master_analyst_agent = Agent(
-    name="Analista Maestro - Consolidador",
-    model=model_name,
-    model_settings=ModelSettings(
-        temperature=0.1,
-        max_tokens=600
-    ),
-    output_type=ReporteConclusionGlobal,
-    instructions="""
-    Recibe los reportes previos de la red de suministro y redacta un único párrafo de conclusión estratégica agregada. 
-    Estructura la salida en la clase ReporteConclusionGlobal.
+    # GUÍAS INTERNAS (NO MENCIONAR EN OUTPUT)
+    *Referencias orientativas de valores por tipo de entidad. No son reglas fijas; prioriza el comportamiento conjunto de las métricas.*
+
+    | Tipo       | Delay_Prom (días)        | Tasa_Reschedule (%)     | Excess_por_PO (horas)   | Tasa_causa_raíz (%)    |
+    | :--------- | :----------------------- | :---------------------- | :---------------------- | :--------------------- |
+    | **Vendor** | Bajo: <3; Medio: 3-5; Alto: >5 | Bajo: <10; Medio: 10-15; Alto: >15 | Bajo: <70; Medio:70-85; Alto: >85 | Bajo: <20; Medio:20-35; Alto: >35 |
+    | **Carrier**| Bajo: <1; Medio:1-1.5; Alto: >1.5 | Bajo: <12; Medio:12-15; Alto: >15 | Bajo: <12; Medio:12-15; Alto: >15 | Bajo: <10; Medio:10-15; Alto: >15 |
+    | **DC**      | Bajo:<0.5; Medio:0.5-0.75; Alto: >0.75 | Bajo: <12; Medio:12-15; Alto: >15 | Bajo: <8; Medio:8-12; Alto: >12 | Bajo: <8; Medio:8-12; Alto: >12 |
+
+    **Regla de interpretación de rangos:**
+    - "Saludable" NO significa "promedio" - significa que la métrica está en zona óptima.
+    - Cuando TODAS las entidades operan en zona saludable y son homogéneas, el Nivel_Riesgo_Absoluto DEBE ser cuestionado.
+    - No confundir "variación dentro de rango saludable" con "problemas operativos".
+
+
+    # METODOLOGÍA DE ANÁLISIS (RAZONAMIENTO INTERNO)
+    Sigue estos pasos mentalmente sin mostrarlos en la salida:
+    1.  **Comportamiento General**: Identifica tendencias y anomalías en el grupo de entidades.
+    2.  **Impulsores Clave**: Determina qué métricas son las que realmente diferencian el desempeño del grupo.
+    3.  **Relaciones**: Busca correlaciones (ej. ¿retraso alto implica mayor exceso de tiempo?).
+    4.  **Consistencia**: Evalúa si el Nivel_Riesgo_Absoluto es coherente con el comportamiento observado. 
+
+
+    5.  **Implicaciones Operativas**: Traduce los números a efectos en procesos diarios (ej. ¿señala inestabilidad estructural o eventos aislados?).
+    6.  **Impacto de Negocio**: Conecta el desempeño con consecuencias en costos, servicio al cliente, inventarios o planificación.
+    7.  **Recomendaciones**: Formula acciones directas que ataquen las causas raíz identificadas en el análisis.
+    8.  Si todas las entidades de un bloque muestran valores homogéneos (variación < 30% en todas las métricas) y el Nivel_Riesgo_Absoluto no refleja ese comportamiento, indícalo explícitamente como un hallazgo principal.
+
+    # REGLAS DE REDACCIÓN
+    **El análisis debe ser ejecutivo.** No describas valores numéricos (ej. "el delay es 5.4"). Explica su significado, patrón, causas probables e impacto. Supón que el lector ya ve la tabla; tu trabajo es interpretarla y responder "por qué" es importante y "qué" implica.
+    **Regla de homogeneidad**: Cuando un bloque presenta comportamiento uniforme sin diferenciación significativa entre entidades, el análisis debe enfocarse en:
+    - Explicar por qué todas son similares
+    - Evaluar si la clasificación de riesgo es consistente con los datos
+    - Recomendar una recalibración de la escala si todas operan muy por debajo del umbral de riesgo
+    - No forzar diferencias donde no existen
+
+    **Estructura de cada bloque de riesgo ("Alto", "Medio", "Bajo"):**
+    - **nivel_riesgo**: "Alto", "Medio" o "Bajo".
+    - **entidades**: Lista en MAYÚSCULAS separadas por comas.
+    - **analisis**: Explicación ejecutiva del comportamiento, patrones, relaciones, consistencia, implicaciones operativas/de negocio y riesgos futuros.
+    - **accion**: Recomendaciones concretas. Si falta información, incluye un máximo de 2 preguntas, cada una con dos escenarios posibles (A/B) y acciones específicas para cada uno.
+
+    # PROHIBICIONES
+    - Mencionar umbrales, referencias internas o valores numéricos aislados.
+    - Inventar causas, correlaciones o información no inferible de los datos.
+    - Dar recomendaciones genéricas (como "mejorar procesos") sin detallar el "cómo".
+    - Describir la tabla en lugar de interpretarla.
+    - Ignorar el `n_POs_total` al emitir conclusiones.
+    - Tratar el `Nivel_Riesgo_Absoluto` como una verdad absoluta.
+    - - Tratar diferencias mínimas (ej. 10% vs 15%) como patrones significativos sin validación estadística.
+    - Forzar conclusiones diferenciadoras cuando los datos muestran homogeneidad.
+    - Validar el Nivel_Riesgo_Absoluto cuando los datos muestran consistentemente desempeño en zona saludable.
+    - Usar frases como "exceso significativo" sin especificar que está dentro de parámetros óptimos.
+    - Recomendar "revisar procesos" sin vincularlo a un problema real identificado en los datos.
+
+    # EXCEPCIONES
+    Si identificas que TODAS las entidades son prácticamente iguales (homogeneidad), este es un hallazgo clave. El análisis debe:
+    - Destacar este comportamiento uniforme
+    - Evaluar si el Nivel_Riesgo_Absoluto refleja adecuadamente esta realidad (puede ser consistente, sobreestimado o subestimado según el caso)
+    - No forzar diferenciaciones donde no existen
+
+    
+    # FORMATO DE SALIDA
+    La respuesta **debe ser únicamente un objeto JSON** con la estructura `"bloque_[nivel]"`. Omite los bloques sin entidades.
+
+    ```json
+    {{
+    "bloque_alto": {{
+        "nivel_riesgo": "Alto",
+        "entidades": "ENTIDAD_A, ENTIDAD_B",
+        "analisis": "Análisis ejecutivo...",
+        "accion": "Recomendación o pregunta con escenarios..."
+    }},
+    "bloque_medio": {{ ... }},
+    "bloque_bajo": {{ ... }}
+    }}
     """
-)
+
+    return Agent(
+        name=f"Analista de riesgo logistico - {config['titulo']}",
+        model=model_name,
+        output_type=ReporteEspecialista,
+        model_settings=ModelSettings(
+            max_tokens=1200,
+            temperature=0.1
+        ),
+        instructions=prompt_personalizado
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -134,87 +236,129 @@ def construir_segmento_texto(reporte: ReporteEspecialista) -> str:
     
     for b in reporte.bloques:
         lista_empresas = ", ".join(b.entidades)
-        # Ajustamos el string para que tu frontend detecte "Crítico", "Medio" o "Bajo" sin problemas
+        # Ajustamos el string para que tu frontend detecte "Alto", "Medio" o "Bajo" sin problemas
         texto_bloque += f"**Zona de Riesgo {b.nivel_riesgo}**\n"
         texto_bloque += f"*Entidad o Entidades: {lista_empresas}*\n"
-        texto_bloque += f"*Falla Raíz: {b.falla_raiz}*\n"
+        texto_bloque += f"*Análisis: {b.analisis}*\n"
         texto_bloque += f"**Acción:** {b.accion}\n\n"
     
     return texto_bloque
 
 
+# ======================================================
+# TOKENS
+# ======================================================
+
+def imprimir_metricas_tokens(agent_name: str, result_object):
+    print("\n" + "-" * 40)
+    print(f"📊 TOKEN USAGE - {agent_name.upper()}")
+    print("-" * 40)
+    
+    try:
+        usage = result_object.context_wrapper.usage
+        print(f"  Requests:      {usage.requests}")
+        print(f"  Input tokens:  {usage.input_tokens}")
+        print(f"  Output tokens: {usage.output_tokens}")
+        print(f"  Total tokens:  {usage.total_tokens}")
+    except Exception as token_error:
+        print(f"  ⚠️ Información de tokens no disponible: {token_error}")
+        
+    print("-" * 40)
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # 🔋 PIPELINE DE EJECUCIÓN SECUENCIAL ACUMULATIVO
 # ═══════════════════════════════════════════════════════════════════════════
-
 async def main():
-    print("🔋 Iniciando Pipeline estructurado (Secuencial, Acumulativo, Temp 0.1, Max Tokens...)...")
-
+    # === PARSER DE ARGUMENTOS ===
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--actor",
+        choices=["vendor", "carrier", "dc", "all"],
+        required=True,
+        help="Tipo de actor a procesar o 'all' para el reporte consolidado"
+    )
+    args = parser.parse_args()
+    
+    # 🔄 Definimos qué actores procesar basándonos en el argumento
+    if args.actor == "all":
+        actores_a_procesar = ["vendor", "carrier", "dc"]
+    else:
+        actores_a_procesar = [args.actor]
+    
+    # Listas vacías para ir acumulando los textos en memoria
+    reportes_texto_acumulados = []
+    
+    # Configuración base de carpetas
     base_path = Path(__file__).parent
     data_folder = base_path / "data"
     data_folder.mkdir(parents=True, exist_ok=True)
-
-    try:
-        with open("reporte_vendors.json", "r", encoding="utf-8") as f: json_vendors = f.read()
-        with open("reporte_carriers.json", "r", encoding="utf-8") as f: json_carriers = f.read()
-        with open("reporte_dcs.json", "r", encoding="utf-8") as f: json_dcs = f.read()
-    except FileNotFoundError as e:
-        print(f"❌ Error de archivos locales: {e}")
-        return
-
-    # 🚀 EJECUCIÓN DE AGENTES + IMPRESIÓN DE SALIDAS EN PANTALLA + TOKENS
     
-    # --- AGENTE 1: PROVEEDORES ---
-    print("\n📦 Corriendo Agente de Proveedores...")
-    r_vendors = await Runner.run(vendor_agent, f"JSON:\n{json_vendors}")
-    txt_vendors = construir_segmento_texto(r_vendors.final_output)
-    print("--- SALIDA GENERADA VENDORS ---")
-    print(txt_vendors)
-    imprimir_metricas_tokens("Vendors", r_vendors)
+    # 🔁 BUCLE: Procesará uno por uno los actores de la lista
+    for actor_key in actores_a_procesar:
+        config = ACTOR_CONFIG[actor_key]
+        print(f"\n🔋 Procesando secuencialmente: {config['titulo']}")
+        
+        try:
+            input_file = config["input_file"]
+            with open(input_file, "r", encoding="utf-8") as f:
+                json_data = f.read()
+        except FileNotFoundError as e:
+            print(f"❌ Error de archivos locales para {actor_key}: {e}")
+            continue
 
-    # --- AGENTE 2: TRANSPORTISTAS ---
-    print("\n🚛 Corriendo Agente de Transportistas...")
-    r_carriers = await Runner.run(carrier_agent, f"JSON:\n{json_carriers}")
-    txt_carriers = construir_segmento_texto(r_carriers.final_output)
-    print("--- SALIDA GENERADA CARRIERS ---")
-    print(txt_carriers)
-    imprimir_metricas_tokens("Carriers", r_carriers)
+        # 🚀 EJECUCIÓN DE AGENTE INDIVIDUAL
+        print(f"📦 Corriendo Agente de {config['titulo']}...")   
+        agente = crear_agente(actor_key, config)
+        
+        try:
+            resultado = await Runner.run(agente, f"JSON:\n{json_data}")
+            txt_resultado = construir_segmento_texto(resultado.final_output)
+            
+            # Guardamos el texto en nuestra lista acumuladora
+            reportes_texto_acumulados.append(txt_resultado)
+            
+            print(f"--- SALIDA GENERADA {config['titulo']} ---")
+            print(txt_resultado)
+            imprimir_metricas_tokens(config['titulo'], resultado)
+            
+            # 💾 GUARDADO INDIVIDUAL POR ACTOR (Mantiene tu lógica original)
+            nombre_archivo_maestro = f"{config['output_prefix']}_raw.txt"
+            ruta_salida_streamlit = data_folder / nombre_archivo_maestro
+            
+            with open(ruta_salida_streamlit, "w", encoding="utf-8") as f:
+                f.write(txt_resultado)
+                
+            print(f"🎯 [ÉXITO] Archivo parcial guardado en: '{ruta_salida_streamlit}'")
+            
+        except Exception as e:
+            print(f"❌ Error ejecutando el agente para {actor_key}: {e}")
+            continue
 
-    # --- AGENTE 3: ALMACENES ---
-    print("\n🏢 Corriendo Agente de Almacenes...")
-    r_dcs = await Runner.run(dc_agent, f"JSON:\n{json_dcs}")
-    txt_dcs = construir_segmento_texto(r_dcs.final_output)
-    print("--- SALIDA GENERADA DCs ---")
-    print(txt_dcs)
-    imprimir_metricas_tokens("Centros de Distribución", r_dcs)
-
-    # --- AGENTE 4: CONSOLIDADOR DE CONCLUSIÓN ---
-    print("\n💡 Corriendo Agente Consolidador...")
-    paquete_contexto = f"{txt_vendors}\n{txt_carriers}\n{txt_dcs}"
-    r_master = await Runner.run(master_analyst_agent, f"Genera la conclusión basándote en esto:\n{paquete_contexto}")
-    txt_conclusion = f"**Conclusión:**\n{r_master.final_output.conclusion}"
-    print("--- SALIDA GENERADA CONCLUSIÓN ---")
-    print(txt_conclusion)
-    imprimir_metricas_tokens("Consolidador", r_master)
 
     # ═══════════════════════════════════════════════════════════════════════════
-    # 💾 GUARDADO ACUMULATIVO EN DRIVE/LOCAL CON TIMESTAMPS
+    # 💾 EXPORTACIÓN CONSOLIDADA 'agente1_raw.txt' (SOLO CUANDO SE USA 'all')
     # ═══════════════════════════════════════════════════════════════════════════
-    
-    # Generamos el timestamp exacto para el nombre del archivo
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    nombre_archivo_maestro = f"agente1_raw_{timestamp}.txt"
-    ruta_salida_streamlit = data_folder / nombre_archivo_maestro
+    if args.actor == "all" and reportes_texto_acumulados:
 
-    # Ensamblaje final de los bloques estructurados
-    informe_maestro_completo = f"{txt_vendors}{txt_carriers}{txt_dcs}{txt_conclusion}"
+        ruta_root_processed = Path(__file__).resolve().parent.parent / "data" / "processed"       
+        # Aseguramos que se creen tanto /data como /processed si no existen en el servidor
+        ruta_root_processed.mkdir(parents=True, exist_ok=True)        
+        # Apuntamos el archivo final ahí adentro
+        archivo_final_agente1 = ruta_root_processed / "agente1_raw.txt"
+        
+        # Unimos los tres análisis generados en un solo texto largo
+        contenido_agente1 = "\n".join(reportes_texto_acumulados)
+            
+        # Escribimos el archivo final maestro en UTF-8
+        archivo_final_agente1.write_text(contenido_agente1, encoding="utf-8")
+        
+        print("\n" + "🚀"*3)
+        print(f"🔥 [REPORTE MAESTRO GENERADO] Todo el pipeline se consolidó en: '{archivo_final_agente1.resolve()}'")
+        print("🚀"*3 + "\n")
 
-    with open(ruta_salida_streamlit, "w", encoding="utf-8") as f:
-        f.write(informe_maestro_completo)
 
-    print("\n" + "="*60)
-    print(f"🎯 [ÉXITO] Archivo maestro acumulado guardado en: '{ruta_salida_streamlit}'")
-    print("="*60)
 
 if __name__ == "__main__":
+    import asyncio
     asyncio.run(main())

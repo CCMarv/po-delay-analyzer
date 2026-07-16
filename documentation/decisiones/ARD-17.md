@@ -1,6 +1,6 @@
 # Lenguaje visual y codificación de color de la taxonomía
 
-* **Estatus:** 🔵 **BORRADOR** (la versión final la valida el equipo)
+* **Estatus:** 🟢 **VIGENTE** (cerrado 2026-07-14)
 * **Contexto Técnico:** Fase 4 / Sistema de diseño — codificación visual de la taxonomía (etapa, severidad y confianza del LLM) compartida por las dos superficies de consumo de la app; implementación asociada al #159
 * **Referencias:** Issue #162; #159 (sistema de diseño); #163 / #164 (vistas Diego / Ravi); Munzner (*What–Why–How*), Cleveland–McGill (jerarquía de canales gráficos), Okabe–Ito (*Color Universal Design*), WCAG 2.1 (§1.4.3 texto, §1.4.11 objetos no textuales); ADR-09 (personas); ADR-10 (severidad híbrida); [ADR-07](ARD-07.md) (taxonomía de Indeterminado); `04_app/config.py`, `04_app/assets/styles.css`, `04_app/components/badges.py`, `04_app/components/timeline.py`
 

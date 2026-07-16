@@ -1997,6 +1997,7 @@ def add_llm_explanations(
     save_every: int = DEFAULT_SAVE_EVERY,
     output_path: Optional[str] = None,
     kb: Optional[dict] = None,
+    examples: Optional[List[Dict[str, Any]]] = None,
     action_call: bool = False,
     action_backend=None,
 ) -> pd.DataFrame:
@@ -2014,6 +2015,11 @@ def add_llm_explanations(
         kb: dict opcional de la base de conocimiento de dominio (#151), tal cual lo
             devuelve `load_domain_kb`. Se pasa sin modificar a `build_prompt`. None
             (default) → sin bloque de contexto de dominio, comportamiento sin cambios.
+        examples: lista opcional de ejemplos few-shot (#99/ADR-12), tal cual la devuelve
+            `select_examples`. Se pasa sin modificar a `build_prompt`. None (default) →
+            zero-shot; `main()` la puebla con C3, la config de producción validada
+            (eval_quality_20pos_C3_t09: 20/20 @ temp 0.9). El default None preserva el
+            comportamiento de los callers/tests que no la pasan.
         action_call: activa la llamada de acción (ARD-16 ola 1): segunda llamada por
             PO con el contrato híbrido + checks por regla. False (default) → una sola
             llamada, columnas y comportamiento históricos sin cambios. OJO: duplica
@@ -2076,7 +2082,7 @@ def add_llm_explanations(
         po_nbr = row.get('PO_NBR', 'N/A')
         pbar.set_description(f"PO {po_nbr}")
 
-        prompt = build_prompt(row, kb=kb, rules=rules)
+        prompt = build_prompt(row, examples=examples, kb=kb, rules=rules)
         response = backend.call(prompt)
 
         if response:
@@ -2221,6 +2227,8 @@ def save_llm_output(df: pd.DataFrame, output_path: Union[str, Path]) -> None:
 # Las cinco columnas canónicas del mentor (kickoff §09 / README §9), en orden.
 # Son el contrato exacto del entregable y van SIEMPRE primero en el artefacto.
 _MENTOR_COLUMNS = ["PO_NBR", "stage", "severity", "explanation", "action"]
+"""Contrato canónico del mentor (kickoff §09 / README §9): las 5 columnas obligatorias
+del entregable, en orden fijo y siempre primero en el artefacto."""
 
 # Columnas de soporte para la app de Fase 4 (contrato F3→F4, #100): el timeline del
 # PO, los agravantes y la concordancia con la anotación humana. Permiten que la app
@@ -2230,8 +2238,13 @@ _TIMELINE_COLUMNS = [
     "PO_DT", "STA_DT", "APPROVED_DT", "TRAILER_ARRIVE_DT",
     "CHECKIN_DT", "CHECKOUT_DT", "RECPT_DT",
 ]
+"""Timeline del PO para la app de Fase 4 (contrato F3→F4, #100): las fechas clave del
+lifecycle, para que la app lea el artefacto sin recomputar el pipeline."""
 _AGGRAVANT_COLUMNS = ["HOT_PO_FLAG", "is_short_ship"]
+"""Agravantes del PO (hot PO, short ship) que la app muestra junto al diagnóstico."""
 _AGREEMENT_COLUMNS = ["REASON_DSC", "llm_coincide_con_reason"]
+"""Concordancia con la anotación humana: el motivo registrado por el DC y si la causa
+del LLM coincide con él."""
 
 # Columnas tier-1 (#158): confianza del LLM, nombres de entidad y magnitud/exceso del
 # delay por etapa. Ya calculadas upstream (F1/F2/F3); desbloquean las vistas de Fase 4
@@ -2240,6 +2253,9 @@ _ENRICHMENT_COLUMNS = [
     "llm_confianza", "VENDOR_NAME", "CARRIER_PARTY_NAME", "DC_LOC_NAME",
     "delay_days_calc", "excess_vendor_hrs", "excess_carrier_hrs", "excess_dc_hrs",
 ]
+"""Enriquecimiento tier-1 (#158): confianza del LLM, nombres de entidad y magnitud/exceso
+del delay por etapa, ya calculados upstream; desbloquean las vistas de Fase 4 sin que la
+app recompute nada."""
 
 # Columnas tier-2 (#161): la salida híbrida del diagnóstico diferencial de ARD-16 (la
 # llamada de acción, opt-in vía --action-call). Son las 8 del contrato de acción
@@ -2250,12 +2266,18 @@ _ENRICHMENT_COLUMNS = [
 # Con una corrida sin --action-call estas columnas no existen; el export las emite vacías
 # (ver export_deliverable_csv) para que el contrato tenga forma estable.
 _TIER2_COLUMNS = list(_ACTION_COLUMN_MAP) + ["llm_confianza_hipotesis"]
+"""Diagnóstico diferencial tier-2 (#161, ARD-16): la salida híbrida de la llamada de
+acción (las 8 del contrato + la 2ª confianza). Opt-in vía --action-call; sin él, el export
+las emite vacías para que el contrato tenga forma estable."""
 
 # Orden final del artefacto: las 5 del mentor primero, luego el bloque de soporte.
 _DELIVERABLE_COLUMNS = (
     _MENTOR_COLUMNS + _TIMELINE_COLUMNS + _AGGRAVANT_COLUMNS + _AGREEMENT_COLUMNS
     + _ENRICHMENT_COLUMNS + _TIER2_COLUMNS
 )
+"""Contrato completo del artefacto po_output.csv, en su orden final: las 5 del mentor
+primero, luego soporte (timeline, agravantes, concordancia), enriquecimiento tier-1 y
+diagnóstico diferencial tier-2."""
 
 
 def export_deliverable_csv(
@@ -2388,6 +2410,14 @@ def main() -> None:
             "backend (2 por PO, más reintentos de QA)."
         )
     )
+    parser.add_argument(
+        "--zero-shot", action="store_true",
+        help=(
+            "Desactiva el few-shot y corre el prompt zero-shot (baseline C0, "
+            "reproducción del benchmark). Default: apagado, es decir, producción usa "
+            "few-shot C3 (ADR-12/#99, validado en eval_quality_20pos_C3_t09: 20/20)."
+        )
+    )
     args = parser.parse_args()
 
     print("=" * 60)
@@ -2461,6 +2491,18 @@ def main() -> None:
 
     output_path = repo_root / "data" / "processed" / output_filename
 
+    # Few-shot C3 (ADR-12/#99): config de producción validada (eval_quality_20pos_C3_t09,
+    # 20/20 @ temp 0.9 seed 42). select_examples es determinista, así que el resultado del
+    # benchmark es el de producción; --zero-shot lo desactiva para reproducir el baseline C0.
+    if args.zero_shot:
+        examples = None
+        print("🎯 Prompt: zero-shot (baseline C0, few-shot desactivado por --zero-shot)")
+    else:
+        from fewshot import select_examples
+        examples = select_examples(3, stages=["Vendor", "Carrier", "DC"])
+        etapas = ", ".join(e["stage_primary"] for e in examples)
+        print(f"🎯 Prompt: few-shot C3 ({len(examples)} ejemplos: {etapas})")
+
     print("🤖 Ejecutando análisis con LLM...")
     df_with_llm = add_llm_explanations(
         df_classified,
@@ -2468,6 +2510,7 @@ def main() -> None:
         test_mode=test_mode,
         test_limit=test_limit,
         output_path=str(output_path),
+        examples=examples,
         action_call=args.action_call,
         action_backend=action_backend,
     )
