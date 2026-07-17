@@ -5,6 +5,7 @@ Ticket #103: Panel de métricas agregadas
 """
 from pathlib import Path
 import re
+import json
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -118,26 +119,18 @@ st.markdown("""
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 🔧 PARSER FLEXIBLE - Maneja múltiples secciones y niveles de riesgo
+# 🔧 PARSER ULTRA-ROBUSTO INTEGRADO 
 # ═══════════════════════════════════════════════════════════════════════════
 
 def parse_informe_completo(ruta_txt: Path):
-    """Parser que maneja la estructura completa con múltiples actores y niveles de riesgo"""
+    """Parser unificado que maneja múltiples actores y niveles de riesgo sin usar conclusiones."""
     if not ruta_txt.exists():
-        return [], ""
+        return []
     
     texto = ruta_txt.read_text(encoding="utf-8")
     
-    # Extraer conclusión si existe
-    conclusion = ""
-    conclusion_match = re.search(r"(?i)\*\*Conclusión:\*\*\s*\n*(.+?)(?=\Z)", texto, re.DOTALL)
-    if conclusion_match:
-        conclusion = clean_md(conclusion_match.group(1).strip())
-    
     # Dividir por secciones principales (### **1., ### **2., ### **3.)
-    # Usamos un patrón más flexible que capture números con o sin paréntesis
     secciones_raw = re.split(r"(?=###\s+\*\*\d+\.)", texto)
-    
     secciones = []
     
     # Mapeo de íconos por tipo de entidad
@@ -169,42 +162,24 @@ def parse_informe_completo(ruta_txt: Path):
                 icono = icon
                 break
         
-        # Extraer TODOS los bloques de riesgo (Alto, Medio, Bajo, etc.)
-        # Patrón que captura desde "Zona de Riesgo" hasta la siguiente "Zona de Riesgo" o el final
-        patron_bloques = r"\*\*Zona de Riesgo\s+(\w+)[^*]*\*\*\s*\n\*Entidad o Entidades?:\s*([^*\n]+)\*?\s*\n\*Análisis:\s*(.+?)(?=\n\*\*Acción:\*\*|\Z)"
+        # 🔥 REGEX MAESTRA CORREGIDA: 
+        # Captura Análisis y Acción al mismo tiempo, soportando el formato real (**Análisis:** y **Acción:**)
+        # Modifica ligeramente el patrón unificado de tu función para capturar el texto limpio:
+        patron_bloques_unificado = r"\*\*Zona de Riesgo\s+(\w+)\*\*\s*\n\*?Entidad o Entidades?:\s*([^\n\*]+)\*?\s*\n(?:\*\*|\*)Análisis(?:\*\*|\*)?:?[\s\*]*\n*(.+?)\n(?:\*\*|\*)Acción(?:\*\*|\*)?:?[\s\*]*(.+?)(?=\n\*\*Zona de Riesgo|\n\n###|\Z)"
         
-        # Buscar todos los bloques de riesgo en esta sección
-        bloques_encontrados = re.findall(patron_bloques, sec_text, re.DOTALL)
-        
-        # Si no encuentra con el patrón anterior, intentar con uno más simple
-        if not bloques_encontrados:
-            patron_simple = r"\*\*Zona de Riesgo\s+(\w+)[^*]*\*\*\s*\n\*Entidad o Entidades?:\s*([^\n]+)\s*\n\*Análisis:\s*([^\n]+?)(?=\n\*\*Acción:|\Z)"
-            bloques_encontrados = re.findall(patron_simple, sec_text, re.DOTALL)
-        
+        bloques_encontrados = re.findall(patron_bloques_unificado, sec_text, re.DOTALL)
         subsecciones = []
         
-        for nivel_riesgo, entidades_raw, analisis_raw in bloques_encontrados:
-            # Limpiar entidades
+        for nivel_riesgo, entidades_raw, analisis_raw, accion_raw in bloques_encontrados:
+            # Limpiar entidades (quitando asteriscos de los extremos)
             entidades_raw_clean = entidades_raw.replace("*", "").strip()
+            
             # Dividir por comas y " y "
             entidades = []
             for e in entidades_raw_clean.replace(" y ", ",").split(","):
                 e_clean = e.strip()
                 if e_clean:
                     entidades.append(e_clean)
-            
-            # Extraer la acción específica para este bloque de riesgo
-            # Buscamos la acción que viene después de este análisis
-            # Creamos un patrón que busca desde este análisis hasta la siguiente zona de riesgo
-            patron_accion = rf"\*Análisis:\s*{re.escape(analisis_raw)}.*?\*\*Acción:\*\*\s*(.+?)(?=\n\*\*Zona de Riesgo|\n\n###|\Z)"
-            accion_match = re.search(patron_accion, sec_text, re.DOTALL)
-            
-            if not accion_match:
-                # Intentar con patrón más simple
-                patron_accion_simple = r"\*\*Acción:\*\*\s*(.+?)(?=\n\*\*Zona de Riesgo|\n\n###|\Z)"
-                accion_match = re.search(patron_accion_simple, sec_text, re.DOTALL)
-            
-            accion = clean_md(accion_match.group(1).strip()) if accion_match else "No se especificó acción"
             
             # Determinar zona y score basado en el nivel de riesgo
             nivel_lower = nivel_riesgo.lower()
@@ -221,17 +196,13 @@ def parse_informe_completo(ruta_txt: Path):
                 score = 0.0
                 nivel_display = "Bajo"
             
-            # Extraer métricas del análisis
-            metricas = extraer_metricas(analisis_raw)
-            
             subsecciones.append({
                 "entidades": entidades,
-                "metricas": metricas,
-                "accion": accion,
                 "zona": zona,
                 "score": score,
                 "nivel_riesgo": nivel_display,
-                "analisis": clean_md(analisis_raw)
+                "analisis": clean_analysis_md(analisis_raw),
+                "accion": clean_analysis_md(accion_raw)  # Mantiene las viñetas en la acción también
             })
         
         if subsecciones:
@@ -244,55 +215,39 @@ def parse_informe_completo(ruta_txt: Path):
     # Ordenar las secciones por número (1, 2, 3)
     secciones.sort(key=lambda x: int(re.search(r"(\d+)", x["titulo"]).group(1)) if re.search(r"(\d+)", x["titulo"]) else 0)
     
-    return secciones, conclusion
+    return secciones
 
-def extraer_metricas(analisis: str) -> list:
-    """Extrae métricas relevantes del texto de análisis"""
-    metricas = []
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 🧼 FUNCIONES DE LIMPIEZA AUXILIARES
+# ═══════════════════════════════════════════════════════════════════════════
+
+def clean_analysis_md(texto: str) -> str:
+    """Limpia el markdown conservando saltos de línea estructurados para listas en HTML"""
+    texto = texto.strip()
     
-    # Buscar métricas numéricas
-    patrones = [
-        (r"retraso\s*(?:promedio)?\s*(?:de)?\s*([\d.]+)\s*(?:días|dias)", "Retraso promedio"),
-        (r"tasa\s*(?:de)?\s*(?:reprogramación|reprogramacion)\s*(?:de)?\s*([\d.]+)%", "Tasa de reprogramación"),
-        (r"tasa\s*(?:de)?\s*(?:causa|raíz)\s*(?:de)?\s*([\d.]+)%", "Tasa de causa raíz"),
-        (r"exceso\s*(?:de)?\s*(?:tiempo|por orden)\s*(?:de)?\s*([\d.]+)", "Exceso de tiempo"),
-        (r"incumplimiento\s*(?:de)?\s*([\d.]+)%", "Incumplimiento"),
-        (r"desviación\s*(?:de)?\s*([\d.]+)\s*(?:días|dias)", "Desviación"),
-        (r"puntualidad\s*(?:de)?\s*([\d.]+)%", "Puntualidad"),
-    ]
+    # 🧼 Quita dobles asteriscos residuales que puedan quedar al inicio del bloque
+    texto = re.sub(r"^[\s\*]+-\s*", "- ", texto)
     
-    for patron, nombre in patrones:
-        matches = re.findall(patron, analisis, re.IGNORECASE)
-        for match in matches:
-            metricas.append(f"📊 {nombre}: {match}")
-    
-    # Si no encontramos métricas numéricas, extraemos frases clave
-    if not metricas:
-        frases_clave = [
-            "desempeño significativamente inferior",
-            "nivel de riesgo alto",
-            "retraso promedio",
-            "tasa de reprogramación",
-            "umbrales críticos",
-            "inestabilidad operativa",
-            "problemas recurrentes",
-            "factores externos",
-            "comportamiento homogéneo",
-            "tasas de reprogramación consistentemente altas"
-        ]
+    # 🚨 SOLUCIÓN: Si el texto de la acción empieza con un bullet '-', 
+    # le metemos un salto de línea HTML al inicio para obligarlo a bajar de renglón
+    if texto.startswith("-"):
+        texto = "<br>" + texto
         
-        for frase in frases_clave:
-            if frase.lower() in analisis.lower():
-                metricas.append(f"⚠️ {frase.capitalize()}")
+    # Convierte todos los saltos de línea intermedios en etiquetas HTML <br>
+    texto = texto.replace("\n", "<br>")
     
-    return metricas[:3]  # Limitamos a 3 métricas
+    return texto
+
+
 
 def clean_md(texto: str) -> str:
-    """Limpia markdown básico."""
+    """Limpia markdown básico colapsando a una sola línea (para fallback)"""
     texto = re.sub(r"\*\*(.+?)\*\*", r"\1", texto)
     texto = texto.replace("\n", " ")
     texto = re.sub(r"\s+", " ", texto).strip()
     return texto
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 🎨 RENDERIZADO DE TARJETAS MEJORADO
@@ -315,7 +270,6 @@ def render_exec_card_v3(subsec: dict) -> str:
     entidades = subsec["entidades"]
     zona = subsec["zona"]
     score = subsec.get("score", 0)
-    metricas = subsec.get("metricas", [])
     accion = subsec.get("accion", "")
     analisis = subsec.get("analisis", "")
     
@@ -337,12 +291,7 @@ def render_exec_card_v3(subsec: dict) -> str:
     # Score
     score_html = f'<p class="score" style="margin:0 0 0.6rem 0; font-size:0.85rem; color:#718096;">Score de Riesgo: <b style="color:#2d3748;">{score:.1f}</b></p>'
     
-    # Métricas
-    metricas_html = ""
-    if metricas:
-        items = "".join(f'<li style="font-size:0.85rem; margin:0.25rem 0; color:#4a5568;">{m}</li>' for m in metricas)
-        metricas_html = f'<div class="metrics" style="margin:0.6rem 0; padding:0.6rem 1rem; background:#f7fafc; border-radius:6px;"><ul style="margin:0; padding-left:1.2rem;">{items}</ul></div>'
-    
+   
     # Análisis completo (sin truncar a 180 caracteres)
     analisis_html = ""
     if analisis:
@@ -351,19 +300,18 @@ def render_exec_card_v3(subsec: dict) -> str:
     # Acción
     accion_html = ""
     if accion and accion != "No se especificó acción":
-        accion_html = f'<div class="action" style="margin-top:0.8rem; padding-top:0.8rem; border-top:1px dashed #e2e8f0; font-size:0.9rem; line-height:1.5;"><span style="font-weight:700; color:#3182ce;">🎯 Acción recomendada:</span> {accion}</div>'
-    
+        accion_html = f'<div class="action" style="margin-top:0.8rem; padding-top:0.8rem; border-top:1px dashed #e2e8f0; font-size:0.9rem;">🎯 <b>Acción recomendada:</b> {accion}</div>'
+
+
     return f"""
     <div class="exec-card" style="width: 100%; background:#ffffff; border-radius:12px; padding:1.25rem; margin-bottom: 1.2rem; border-left: 6px solid {borde_color}; box-shadow: 0 2px 8px rgba(0,0,0,0.05);">
         {render_badge(zona)}
         {empresas_html}
         {score_html}
-        {metricas_html}
         {analisis_html}
         {accion_html}
     </div>
     """
-
 
 
 
@@ -376,15 +324,119 @@ st.markdown(
     <div class="page-header">
         <h1> Network Intelligence</h1>
         <p style="color: #718096; font-size: 1rem;">
-            Inteligencia agregada de red — Patrones sistémicos en POs tardíos
-        </p>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
-# ── KPIs globales (SIN "Etapa #1") ────────────────────────────────────────
-st.markdown("### 📈 Resumen de la Red")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 📊 PANEL ASIMÉTRICO: BARRA DE KPIS (IZQ) & GRÁFICOS APILADOS (DER)
+# ═══════════════════════════════════════════════════════════════════════════
+# 🎨 COLORES PROFESIONALES COMPARTIDOS
+PROFESSIONAL_COLORS = {
+    # Etapas
+    "Vendor": "#1e3a8a", "Carrier": "#3b82f6", "DC": "#0d9488", "Indeterminado": "#94a3b8",
+    # Severidades (Mapeo automático para minúsculas/mayúsculas si tu DF varía)
+    "HIGH": "#1e3a8a", "MEDIUM": "#3b82f6", "LOW": "#94a3b8",
+    "high": "#1e3a8a", "medium": "#3b82f6", "low": "#94a3b8"
+}
+
+st.markdown("#### Patrones sistémicos en POs tardíos")
+
+# 📐 CREAMOS LAS COLUMNAS PRINCIPALES: Peso 1 para KPIs (angosto) y 3 para Gráficos (ancho)
+col_barra_kpis, col_panel_graficos = st.columns([1, 3])
+
+
+# ── COLUMNA IZQUIERDA (SÚPER ANGOSTA): TARJETICAS KPI VERTICALES ──────────
+with col_barra_kpis:
+    # Espaciador sutil para alinearlo visualmente con el título de los gráficos
+    st.markdown("<div style='margin-top: 0.8rem;'></div>", unsafe_allow_html=True)
+    
+    # Tarjeta 1
+    st.metric(label="Total POs Tardíos", value=f"{247}")
+    st.markdown("<div style='margin-bottom: 0.5rem;'></div>", unsafe_allow_html=True)
+    
+    # Tarjeta 2
+    st.metric(label="Severidad Alta", value="81 (32.8%)")
+    st.markdown("<div style='margin-bottom: 0.5rem;'></div>", unsafe_allow_html=True)
+    
+    # Tarjeta 3
+    st.metric(label="Tasa de Acuerdo AI", value="87.4%")
+
+
+# ── COLUMNA DERECHA (ANCHA): GRÁFICOS UNO ENCIMA DEL OTRO ──────────────────
+with col_panel_graficos:
+    
+    # GRÁFICO 1: DISTRIBUCIÓN POR ETAPA
+    st.markdown('<div style="text-align: center;"><p style="font-size: 1.05rem; font-weight: 700; color: #2d3748; margin-bottom: 0.3rem; display: inline-block;"> Distribución por Etapa</p></div>', unsafe_allow_html=True)
+    
+    stage_counts = df[COL_STAGE].value_counts().reset_index()
+    stage_counts.columns = ['stage', 'count']
+    total_stages = stage_counts['count'].sum()
+    stage_counts['percentage'] = (stage_counts['count'] / total_stages * 100).round(1)
+    stage_counts['dummy'] = 'Etapas'
+
+    fig_stage = px.bar(
+        stage_counts, x='count', y='dummy', color='stage', orientation='h',
+        color_discrete_map=PROFESSIONAL_COLORS, custom_data=['percentage'], text='count'
+    )
+    fig_stage.update_traces(
+        texttemplate="<b>%{x}</b> (%{customdata}%)", textposition="inside",
+        insidetextanchor="middle", textfont=dict(size=12, color="white"), width=0.4,
+        hovertemplate="<b>%{scale_name}</b><br>Cantidad: %{x}<br>Porcentaje: %{customdata}%<extra></extra>"
+    )
+    fig_stage.update_layout(
+        height=125, margin=dict(l=20, r=0, t=5, b=0), # Añadimos margen izquierdo para despegar de los KPIs
+        xaxis=dict(showticklabels=False, showgrid=False, zeroline=False, title=""),
+        yaxis=dict(showticklabels=False, showgrid=False, zeroline=False, title=""),
+        barmode='stack', showlegend=True,
+        legend=dict(
+            orientation="h", yanchor="bottom", y=-1.9, xanchor="center", x=0.5,
+            title=None, font=dict(size=12)
+        )
+    )
+    st.plotly_chart(fig_stage, use_container_width=True)
+    
+    # Espaciador vertical elegante entre ambos gráficos
+    st.markdown("<div style='margin-bottom: 3.5rem;'></div>", unsafe_allow_html=True)
+
+    # GRÁFICO 2: DISTRIBUCIÓN POR SEVERIDAD
+    st.markdown('<div style="text-align: center;"><p style="font-size: 1.05rem; font-weight: 700; color: #2d3748; margin-bottom: 0.3rem; display: inline-block;"> Distribución por Severidad</p></div>', unsafe_allow_html=True)
+
+    severity_counts_df = df['severity'].value_counts().reset_index()
+    severity_counts_df.columns = ['severity', 'count']
+    total_severities = severity_counts_df['count'].sum()
+    severity_counts_df['percentage'] = (severity_counts_df['count'] / total_severities * 100).round(1)
+    severity_counts_df['dummy'] = 'Severidad'
+
+    fig_severity = px.bar(
+        severity_counts_df, x='count', y='dummy', color='severity', orientation='h',
+        color_discrete_map=PROFESSIONAL_COLORS, custom_data=['percentage'], text='count'
+    )
+    fig_severity.update_traces(
+        texttemplate="<b>%{x}</b> (%{customdata}%)", textposition="inside",
+        insidetextanchor="middle", textfont=dict(size=12, color="white"), width=0.4,
+        hovertemplate="<b>%{scale_name}</b><br>Cantidad: %{x}<br>Porcentaje: %{customdata}%<extra></extra>"
+    )
+    fig_severity.update_layout(
+        height=125, margin=dict(l=20, r=0, t=5, b=0),
+        xaxis=dict(showticklabels=False, showgrid=False, zeroline=False, title=""),
+        yaxis=dict(showticklabels=False, showgrid=False, zeroline=False, title=""),
+        barmode='stack', showlegend=True,
+        legend=dict(
+            orientation="h", yanchor="bottom", y=-1.9, xanchor="center", x=0.5,
+            title=None, font=dict(size=12)
+        )
+    )
+    st.plotly_chart(fig_severity, use_container_width=True)
+
+st.markdown("---")
+
+
+
+# 📈 LOGÍSTICA DE MÉTRICAS EN MEMORIA (No genera elementos visuales) ───
 total_pos = len(df)
 severity_counts = df[COL_SEVERITY].value_counts()
 
@@ -392,216 +444,146 @@ coincide_col = COL_LLM_COINCIDE
 if coincide_col in df.columns:
     coincide_values = df[coincide_col].dropna()
     total_with_validation = len(coincide_values)
-    disagreements = (coincide_values == False).sum()
+    disagreements = (coincide_values == False).sum() # 👈 RESCATADO: Cuenta los desacuerdos
     agreement_rate = ((coincide_values == True).sum() / total_with_validation * 100) if total_with_validation > 0 else 0
 else:
     total_with_validation = 0
     disagreements = 0
     agreement_rate = 0
-
-col1, col2, col3 = st.columns(3)
-with col1:
-    st.metric(label="Total POs Tardíos", value=total_pos)
-with col2:
-    high_count = severity_counts.get('HIGH', 0)
-    st.metric(label="Severidad Alta", value=f"{high_count} ({high_count/total_pos*100:.1f}%)")
-with col3:
-    st.metric(label="Tasa de Acuerdo AI", value=f"{agreement_rate:.1f}%")
-
-st.markdown("---")
-
-# ── Gráfico 1: Distribución por Etapa (COMPACTO) ──────────────────────────
-st.markdown("### 📦 Distribución por Etapa")
-col_chart1, col_chart2 = st.columns(2)
-
-stage_counts = df[COL_STAGE].value_counts().reset_index()
-stage_counts.columns = ['stage', 'count']
-
-with col_chart1:
-    fig_pie = px.pie(
-        stage_counts, names='stage', values='count',
-        title="Reparto de Etapas",
-        color='stage', color_discrete_map=COLORS
-    )
-    fig_pie.update_layout(
-        height=280, margin=dict(l=10, r=10, t=35, b=10),
-        title=dict(font=dict(size=13)),
-        legend=dict(font=dict(size=10), itemsizing='constant')
-    )
-    fig_pie.update_traces(textfont=dict(size=11))
-    st.plotly_chart(fig_pie, use_container_width=True)
-
-with col_chart2:
-    fig_bar = px.bar(
-        stage_counts, x='stage', y='count',
-        title="Conteo por Etapa",
-        color='stage', color_discrete_map=COLORS
-    )
-    fig_bar.update_layout(
-        height=280, margin=dict(l=10, r=10, t=35, b=10),
-        title=dict(font=dict(size=13)),
-        xaxis=dict(tickfont=dict(size=11)),
-        yaxis=dict(tickfont=dict(size=11))
-    )
-    st.plotly_chart(fig_bar, use_container_width=True)
-
-st.markdown("---")
-
-# ── Gráfico 2: Distribución por Severidad (COMPACTO) ──────────────────────
-st.markdown("### 🚨 Distribución por Severidad")
-col_sev1, col_sev2 = st.columns(2)
-
-severity_counts_df = df['severity'].value_counts().reset_index()
-severity_counts_df.columns = ['severity', 'count']
-
-with col_sev1:
-    fig_sev_pie = px.pie(
-        severity_counts_df, names='severity', values='count',
-        title="Distribución de Severidad",
-        color='severity',
-        color_discrete_map={
-            'HIGH': COLORS['high'], 'MEDIUM': COLORS['medium'], 'LOW': COLORS['low']
-        }
-    )
-    fig_sev_pie.update_layout(
-        height=280, margin=dict(l=10, r=10, t=35, b=10),
-        title=dict(font=dict(size=13)),
-        legend=dict(font=dict(size=10), itemsizing='constant')
-    )
-    fig_sev_pie.update_traces(textfont=dict(size=11))
-    st.plotly_chart(fig_sev_pie, use_container_width=True)
-
-with col_sev2:
-    st.markdown("#### Detalle de Severidad")
-    sev_df = severity_counts_df.copy()
-    sev_df.columns = ['Severidad', 'Cantidad']
-    sev_df['Porcentaje'] = (sev_df['Cantidad'] / total_pos * 100).round(1)
-    st.dataframe(sev_df, use_container_width=True, height=200)
-
-st.markdown("---")
-
-# ── Métricas de Validación (COMPACTAS) ────────────────────────────────────
-st.markdown("### ✅ Métricas de Validación")
-col_val1, col_val2, col_val3 = st.columns(3)
-
-with col_val1:
-    st.markdown(
-        f"""
-        <div class="custom-card val-card" style="border-left: 4px solid #48bb78;">
-            <h4 style="margin: 0 0 0.3rem 0; color: #718096;">Tasa de Acuerdo</h4>
-            <p class="big" style="margin: 0; font-size: 1.5rem; font-weight: 700; color: #48bb78;">
-                {agreement_rate:.1f}%
-            </p>
-            <p class="small" style="margin: 0.3rem 0 0 0; font-size: 0.75rem; color: #718096;">
-                AI vs Reason Humano
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-with col_val2:
-    st.markdown(
-        f"""
-        <div class="custom-card val-card" style="border-left: 4px solid #4299e1;">
-            <h4 style="margin: 0 0 0.3rem 0; color: #718096;">POs con Validación</h4>
-            <p class="big" style="margin: 0; font-size: 1.5rem; font-weight: 700; color: #4299e1;">
-                {total_with_validation}
-            </p>
-            <p class="small" style="margin: 0.3rem 0 0 0; font-size: 0.75rem; color: #718096;">
-                de {total_pos} totales
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-with col_val3:
-    st.markdown(
-        f"""
-        <div class="custom-card val-card" style="border-left: 4px solid #f56565;">
-            <h4 style="margin: 0 0 0.3rem 0; color: #718096;">Desacuerdos</h4>
-            <p class="big" style="margin: 0; font-size: 1.5rem; font-weight: 700; color: #f56565;">
-                {disagreements}
-            </p>
-            <p class="small" style="margin: 0.3rem 0 0 0; font-size: 0.75rem; color: #718096;">
-                Casos para revisar
-            </p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-st.markdown("---")
+    
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 🔥 SECCIÓN DINÁMICA: DIAGNÓSTICO ESTRATÉGICO (desde agente1_raw.txt)
+# 🔥 SECCIÓN DINÁMICA: DIAGNÓSTICO ESTRATÉGICO CON DESGLOSE COMPLETO POR ACTOR
 # ═══════════════════════════════════════════════════════════════════════════
 
-# Definir la ruta del archivo
-ruta_informe = Path(__file__).parent.parent.parent / "data" / "agente1_raw.txt"
+# 1. Definición de rutas base hacia los archivos correspondientes
+ruta_base_03 = Path(__file__).resolve().parent.parent.parent / "03_llm_integration"
+ruta_informe = Path(__file__).resolve().parent.parent.parent / "data" / "processed" / "agente1_raw.txt"
+
+# 🛠️ MAPEO MAESTRO: Sincroniza cada sección del reporte con su JSON y clave correspondiente
+CONFIG_ACTORES_COMPLETO = {
+    "1. VENDORS": {
+        "archivo_json": "reporte_vendors.json",
+        "clave_json": "vendors",
+        "emoji_tabla": "Tabla de Métricas Consolidadas: VENDORS"
+    },
+    "2. CARRIERS": {
+        "archivo_json": "reporte_carriers.json",
+        "clave_json": "carriers",
+        "emoji_tabla": "Tabla de Métricas Consolidadas: CARRIERS"
+    },
+    "3. DISTRIBUTION CENTERS": {
+        "archivo_json": "reporte_dcs.json",
+        "clave_json": "dcs",
+        "emoji_tabla": "Tabla de Métricas Consolidadas: DISTRIBUTION CENTERS"
+    }
+}
 
 # Título de la sección
 st.markdown(
     """
     <div style="text-align:center; margin: 1.5rem 0 1rem 0;">
-        <h2 style="margin:0; font-size:1.5rem; color:#2d3748;">🔍 Diagnóstico Estratégico Maestro</h2>
-        <p style="color:#718096; margin:0.2rem 0 0 0; font-size:0.95rem;">
-            Análisis de Riesgo y Plan de Acciones por Entidad
+        <h2 style="margin:0; font-size:2.00rem; color:#2d3748;">Diagnóstico Estratégico </h2>
+        <p style="color:#718096; margin:0.2rem 0 0 0; font-size:1.25rem;">
+            Análisis de Riesgo y Recomendaciones de Mejora
         </p>
     </div>
     """,
     unsafe_allow_html=True,
 )
 
-# Procesar el archivo
+# Procesar el archivo del agente de IA
 if not ruta_informe.exists():
-    st.warning("⚠️ No se encontró el archivo `agente1_raw.txt` en la carpeta data/. El agente LLM aún no ha generado el reporte de diagnóstico.")
+    st.warning(f"⚠️ No se encontró el archivo `agente1_raw.txt`. Buscado en: {ruta_informe.resolve()}")
 else:
-    # Parsear el informe
-    secciones, conclusion = parse_informe_completo(ruta_informe)
+    secciones = parse_informe_completo(ruta_informe)
     
     if not secciones:
-        st.info("📋 El archivo de diagnóstico no contiene secciones de riesgo. Verifica el formato del archivo.")
-        # Mostrar el contenido del archivo para debugging
-        with st.expander("🔍 Ver contenido del archivo para depuración"):
-            st.code(ruta_informe.read_text(encoding="utf-8")[:1000])
+        st.info("📋 El archivo de diagnóstico no contiene secciones de riesgo válidas.")
     else:
-        # Renderizar cada sección
+        # 🔄 1. RECORREMOS CADA ACTOR PRINCIPAL (VENDORS -> CARRIERS -> DCs)
         for sec in secciones:
-            # Título de la sección
+            titulo_seccion = sec["titulo"].upper()
+            
+            # Encabezado del Actor (Abarca el 100% del ancho)
             st.markdown(
-                f'<p class="section-title" style="font-size:1.2rem; font-weight:700; color:#2d3748; margin:1.5rem 0 0.8rem 0; border-left:4px solid #4299e1; padding-left:0.8rem;">{sec["icono"]} {sec["titulo"]}</p>',
+                f'<p class="section-title" style="font-size:1.2rem; font-weight:700; color:#2d3748; margin:2.5rem 0 1rem 0; border-left:4px solid #4299e1; padding-left:0.8rem;">{sec["icono"]} {sec["titulo"]}</p>',
                 unsafe_allow_html=True,
             )
             
-            # 🔥 CAMBIO AQUÍ: Se eliminan las columnas. Cada bloque va directo, uno abajo del otro.
+            # 🔄 2. APILAMOS TODAS LAS CARDS QUE SVALGAN PARA ESTE ACTOR (Alto, Medio, Bajo...)
             for subsec in sec["subsecciones"]:
                 card_html = render_exec_card_v3(subsec)
                 st.markdown(card_html, unsafe_allow_html=True)
+                # Separación sutil entre tarjetas del mismo actor
+                st.markdown("<div style='margin-bottom: 0.8rem;'></div>", unsafe_allow_html=True)
             
-            st.markdown("<br>", unsafe_allow_html=True)
-
-
-
-        # Mostrar conclusión si existe
-        if conclusion:
-            st.markdown("---")
-            st.markdown(
-                f"""
-                <div style="background: linear-gradient(135deg, #ebf8ff 0%, #bee3f8 100%); 
-                            border-left: 4px solid #3182ce; 
-                            padding: 1.2rem 1.5rem; 
-                            border-radius: 8px; 
-                            margin-top: 1rem;">
-                    <h4 style="margin: 0 0 0.5rem 0; color: #2c5282;">💡 Conclusión Estratégica</h4>
-                    <p style="margin: 0; color: #2d3748; line-height: 1.7; font-size: 0.95rem;">{conclusion}</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            # Espacio intermedio antes de pintar la tabla
+            st.markdown("<div style='margin-bottom: 0.5rem;'></div>", unsafe_allow_html=True)
+            
+            # 📂 3. PROCESAMOS Y RENDERIZAMOS LA TABLA COMPLETA DE ESTE ACTOR ABAJO
+            config_tabla = None
+            for clave_config, valor_config in CONFIG_ACTORES_COMPLETO.items():
+                if clave_config in titulo_seccion:
+                    config_tabla = valor_config
+                    break
+            
+            if config_tabla:
+                ruta_json_actor = ruta_base_03 / config_tabla["archivo_json"]
+                
+                if ruta_json_actor.exists():
+                    try:
+                        import json
+                        with open(ruta_json_actor, "r", encoding="utf-8") as f:
+                            datos_json = json.load(f)
+                        
+                        diccionario_entidades = datos_json.get(config_tabla["clave_json"], {})
+                        
+                        if diccionario_entidades:
+                            filas_tabla = []
+                            for nombre_entidad, metricas in diccionario_entidades.items():
+                                
+                                # Extraemos las tasas directo del JSON sin dividir entre 100
+                                tasa_resched_raw = metricas.get("tasa_reschedule") or metricas.get("reschedule_rate") or 0
+                                tasa_causa_raw = metricas.get("tasa_causa_raiz") or metricas.get("causa_raiz_rate") or 0
+                                
+                                filas_tabla.append({
+                                    "Entidad": nombre_entidad,
+                                    "Riesgo": metricas.get("nivel_riesgo_absoluto") or metricas.get("nivel_riesgo"),
+                                    "Delay Prom.": metricas.get("delay_promedio") or metricas.get("delay_prom"),
+                                    "Excess / PO": metricas.get("excess_por_po") or metricas.get("excess_time"),
+                                    "Reschedule %": tasa_resched_raw,  
+                                    "Causa Raíz %": tasa_causa_raw     
+                                    
+                                    })
+                            
+                            df_actor_completo = pd.DataFrame(filas_tabla)
+                            
+                            # Renderizado de la tabla completa abajo de sus cards
+                            st.markdown(f'<p style="font-size:0.92rem; font-weight:600; color:#4a5568; margin: 1rem 0 0.5rem 0.2rem;"> {config_tabla["emoji_tabla"]}</p>', unsafe_allow_html=True)
+                            st.dataframe(
+                                df_actor_completo,
+                                use_container_width=True,
+                                hide_index=True,
+                                column_config={
+                                    "Entidad": st.column_config.TextColumn("Entidad"),
+                                    "Riesgo": st.column_config.TextColumn("Riesgo"),
+                                    "Delay Prom.": st.column_config.NumberColumn("Delay", format="%.2f d"),
+                                    "Excess / PO": st.column_config.NumberColumn("Excess", format="%.1f hrs"),
+                                    "Reschedule %": st.column_config.NumberColumn("Resched", format="%.1f%%"),
+                                    "Causa Raíz %": st.column_config.NumberColumn("Causa Raíz", format="%.1f%%")
+                                }
+                            )
+                    except Exception as e:
+                        st.caption(f"ℹ️ No se pudieron cargar las métricas en tabla: {e}")
+                else:
+                    st.caption(f"ℹ️ Archivo de métricas '{config_tabla['archivo_json']}' no localizado.")
+            
+            # Línea divisoria gruesa para cerrar el bloque completo del actor antes de pasar al siguiente
+            st.markdown("<hr style='border-top: 2px solid #e2e8f0; margin: 2.5rem 0;'>", unsafe_allow_html=True)
 
 st.markdown("---")
-
 
 
 # ── Tabla de POs con Desacuerdo (SE MANTIENE AL FINAL) ─────────────────────

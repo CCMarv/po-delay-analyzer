@@ -157,8 +157,6 @@ def crear_agente(actor_type: str, config: dict):
     2.  **Impulsores Clave**: Determina qué métricas son las que realmente diferencian el desempeño del grupo.
     3.  **Relaciones**: Busca correlaciones (ej. ¿retraso alto implica mayor exceso de tiempo?).
     4.  **Consistencia**: Evalúa si el Nivel_Riesgo_Absoluto es coherente con el comportamiento observado. 
-
-
     5.  **Implicaciones Operativas**: Traduce los números a efectos en procesos diarios (ej. ¿señala inestabilidad estructural o eventos aislados?).
     6.  **Impacto de Negocio**: Conecta el desempeño con consecuencias en costos, servicio al cliente, inventarios o planificación.
     7.  **Recomendaciones**: Formula acciones directas que ataquen las causas raíz identificadas en el análisis.
@@ -175,7 +173,7 @@ def crear_agente(actor_type: str, config: dict):
     **Estructura de cada bloque de riesgo ("Alto", "Medio", "Bajo"):**
     - **nivel_riesgo**: "Alto", "Medio" o "Bajo".
     - **entidades**: Lista en MAYÚSCULAS separadas por comas.
-    - **analisis**: Explicación ejecutiva del comportamiento, patrones, relaciones, consistencia, implicaciones operativas/de negocio y riesgos futuros.
+    - **analisis**: Análisis ejecutivo estructurado OBLIGATORIAMENTE como una lista de viñetas (usando guiones '- '). Está estrictamente prohibido usar párrafos de texto corrido. Cada viñeta debe explicar de forma independiente el comportamiento, patrones, relaciones, consistencia e implicaciones operativas/de negocio. 
     - **accion**: Recomendaciones concretas. Si falta información, incluye un máximo de 2 preguntas, cada una con dos escenarios posibles (A/B) y acciones específicas para cada uno.
 
     # PROHIBICIONES
@@ -185,12 +183,13 @@ def crear_agente(actor_type: str, config: dict):
     - Describir la tabla en lugar de interpretarla.
     - Ignorar el `n_POs_total` al emitir conclusiones.
     - Tratar el `Nivel_Riesgo_Absoluto` como una verdad absoluta.
-    - - Tratar diferencias mínimas (ej. 10% vs 15%) como patrones significativos sin validación estadística.
+    - Tratar diferencias mínimas (ej. 10% vs 15%) como patrones significativos sin validación estadística.
     - Forzar conclusiones diferenciadoras cuando los datos muestran homogeneidad.
     - Validar el Nivel_Riesgo_Absoluto cuando los datos muestran consistentemente desempeño en zona saludable.
     - Usar frases como "exceso significativo" sin especificar que está dentro de parámetros óptimos.
     - Recomendar "revisar procesos" sin vincularlo a un problema real identificado en los datos.
-
+    - REDACTAR EL ANÁLISIS EN FORMA DE PÁRRAFO COMPACTO (Debe ser una lista de puntos claros y concisos, no un texto corrido).
+    
     # EXCEPCIONES
     Si identificas que TODAS las entidades son prácticamente iguales (homogeneidad), este es un hallazgo clave. El análisis debe:
     - Destacar este comportamiento uniforme
@@ -199,19 +198,8 @@ def crear_agente(actor_type: str, config: dict):
 
     
     # FORMATO DE SALIDA
-    La respuesta **debe ser únicamente un objeto JSON** con la estructura `"bloque_[nivel]"`. Omite los bloques sin entidades.
-
-    ```json
-    {{
-    "bloque_alto": {{
-        "nivel_riesgo": "Alto",
-        "entidades": "ENTIDAD_A, ENTIDAD_B",
-        "analisis": "Análisis ejecutivo...",
-        "accion": "Recomendación o pregunta con escenarios..."
-    }},
-    "bloque_medio": {{ ... }},
-    "bloque_bajo": {{ ... }}
-    }}
+    - Debes apegarte estrictamente al esquema estructurado de salida (Pydantic). Asegúrate de que el campo 'analisis' contenga saltos de línea y guiones para formar la lista de viñeta.
+   
     """
 
     return Agent(
@@ -238,8 +226,8 @@ def construir_segmento_texto(reporte: ReporteEspecialista) -> str:
         lista_empresas = ", ".join(b.entidades)
         # Ajustamos el string para que tu frontend detecte "Alto", "Medio" o "Bajo" sin problemas
         texto_bloque += f"**Zona de Riesgo {b.nivel_riesgo}**\n"
-        texto_bloque += f"*Entidad o Entidades: {lista_empresas}*\n"
-        texto_bloque += f"*Análisis: {b.analisis}*\n"
+        texto_bloque += f"*Entidad o Entidades: {lista_empresas}*\n\n"
+        texto_bloque += f"**Análisis:**\n{b.analisis}\n\n"  # Sin asteriscos contenedores y con salto de línea para los bullets
         texto_bloque += f"**Acción:** {b.accion}\n\n"
     
     return texto_bloque
@@ -289,11 +277,6 @@ async def main():
     # Listas vacías para ir acumulando los textos en memoria
     reportes_texto_acumulados = []
     
-    # Configuración base de carpetas
-    base_path = Path(__file__).parent
-    data_folder = base_path / "data"
-    data_folder.mkdir(parents=True, exist_ok=True)
-    
     # 🔁 BUCLE: Procesará uno por uno los actores de la lista
     for actor_key in actores_a_procesar:
         config = ACTOR_CONFIG[actor_key]
@@ -322,14 +305,6 @@ async def main():
             print(txt_resultado)
             imprimir_metricas_tokens(config['titulo'], resultado)
             
-            # 💾 GUARDADO INDIVIDUAL POR ACTOR (Mantiene tu lógica original)
-            nombre_archivo_maestro = f"{config['output_prefix']}_raw.txt"
-            ruta_salida_streamlit = data_folder / nombre_archivo_maestro
-            
-            with open(ruta_salida_streamlit, "w", encoding="utf-8") as f:
-                f.write(txt_resultado)
-                
-            print(f"🎯 [ÉXITO] Archivo parcial guardado en: '{ruta_salida_streamlit}'")
             
         except Exception as e:
             print(f"❌ Error ejecutando el agente para {actor_key}: {e}")
