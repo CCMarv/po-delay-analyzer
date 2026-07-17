@@ -32,7 +32,7 @@ Tras la aplicación rigurosa de los criterios de los ADRs vigentes (especialment
 | [ADR-14](ARD-14.md) | Endurecimiento del prompt de Fase 3 contra el overfitting al few-shot | 🔵 Borrador | Issue #143, #137/#144, #94 (benchmark), ADR-12, ADR-07, `llm_integration.py` (`build_prompt`) |
 | [ADR-15](ARD-15.md) | Contexto de dominio condicional por (actor × señal) para diversificar el prompt | 📘 Superado | Superado por [ADR-16](ARD-16.md); Issue #151, #143/#154, #94 (benchmark), ADR-12/13/14, ADR-07, `llm_integration.py` (`select_domain_context`), `domain_kb.json` |
 | [ADR-16](ARD-16.md) | El LLM como capa analítica sobre la base determinista validada | 🔵 Borrador | Feedback mentores (post-validación de main), ADR-14/12/10/07, [ADR-15](ARD-15.md) (📘 superado), `llm_integration.py` |
-| [ADR-17](ARD-17.md) | Lenguaje visual y codificación de color de la taxonomía | 🔵 Borrador | Issue #162, #159 (sistema de diseño), #163/#164; ADR-09/10, [ADR-07](ARD-07.md); `config.py`, `styles.css` |
+| [ADR-17](ARD-17.md) | Lenguaje visual y codificación de color de la taxonomía | 🟢 Vigente | Issue #162, #159 (sistema de diseño), #163/#164; ADR-09/10, [ADR-07](ARD-07.md); `config.py`, `styles.css` |
 | [ADR-18](ARD-18.md) | Idioma fuente canónico y convención de nombres para documentación bilingüe (ES→EN) | 🔵 Borrador | Issue #88, #96, `../plan-traduccion.md` |
 | [ADR-19](ARD-19.md) | Integración LLM para análisis holístico de root cause y enriquecimiento con scorecard estadístico | 🟢 VIGENTE | Feedback mentores, llm_integration.py |
 
