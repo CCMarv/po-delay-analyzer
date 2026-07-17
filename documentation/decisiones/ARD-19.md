@@ -58,7 +58,8 @@ La solución no es *o* LLM *o* estadística: es un pipeline donde la estadístic
 
 ## Diagrama
 
-    flowchart TD
+```mermaid
+flowchart TD
     subgraph "Fase 2: Scorecard Estadístico"
         A[df_classified.csv] --> B[scorecard_core.py]
         B --> C[reporte_vendors.json]
@@ -68,26 +69,26 @@ La solución no es *o* LLM *o* estadística: es un pipeline donde la estadístic
 
     subgraph "Fase 4: Pipeline Secuencial de Agentes"
         C --> F[Agente 1: Vendor]
-        F -->|"ACTOR_CONFIG vendor<br/>temperature=0.1<br/>max_tokens=1200"| G[Output Pydantic<br/>ReporteEspecialista]
+        F -->|ACTOR_CONFIG vendor<br>temperature=0.1<br>max_tokens=1200| G[Output Pydantic<br>ReporteEspecialista]
         
-        G --> H[construir_segmento_texto<br/>Traductor Pydantic→Texto]
-        H --> I[reportes_texto_acumulados<br/>Lista acumulativa]
+        G --> H[construir_segmento_texto<br>Traductor Pydantic→Texto]
+        H --> I[reportes_texto_acumulados<br>Lista acumulativa]
         
         D --> J[Agente 2: Carrier]
-        J -->|"ACTOR_CONFIG carrier<br/>temperature=0.1<br/>max_tokens=1200"| K[Output Pydantic<br/>ReporteEspecialista]
+        J -->|ACTOR_CONFIG carrier<br>temperature=0.1<br>max_tokens=1200| K[Output Pydantic<br>ReporteEspecialista]
         
-        K --> L[construir_segmento_texto<br/>Traductor Pydantic→Texto]
+        K --> L[construir_segmento_texto<br>Traductor Pydantic→Texto]
         L --> I
         
         E --> M[Agente 3: DC]
-        M -->|"ACTOR_CONFIG dc<br/>temperature=0.1<br/>max_tokens=1200"| N[Output Pydantic<br/>ReporteEspecialista]
+        M -->|ACTOR_CONFIG dc<br>temperature=0.1<br>max_tokens=1200| N[Output Pydantic<br>ReporteEspecialista]
         
-        N --> O[construir_segmento_texto<br/>Traductor Pydantic→Texto]
+        N --> O[construir_segmento_texto<br>Traductor Pydantic→Texto]
         O --> I
     end
 
     subgraph "Consolidación Final"
-        I --> P[agente1_raw.txt<br/>data/processed/]
+        I --> P[agente1_raw.txt<br>data/processed/]
     end
 
     style F fill:#e1f5ff,stroke:#0072B2,stroke-width:2px
@@ -97,6 +98,7 @@ La solución no es *o* LLM *o* estadística: es un pipeline donde la estadístic
     style K fill:#fff4e6,stroke:#E69F00,stroke-width:2px
     style N fill:#fff4e6,stroke:#E69F00,stroke-width:2px
     style P fill:#e8f5e9,stroke:#009E73,stroke-width:3px
+```
 
 
 
