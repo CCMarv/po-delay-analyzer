@@ -1,16 +1,31 @@
 """Configuración global de la aplicación Streamlit — Fase 4."""
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 # ─ Rutas del proyecto ──────────────────────────────────────────────────────
 APP_DIR = Path(__file__).resolve().parent
 REPO_ROOT = APP_DIR.parent
 DATA_PROCESSED_DIR = REPO_ROOT / "data" / "processed"
 
+# Cargar .env de la raíz del repo (mismo archivo que telegram_bot/config.py).
+_DOTENV_PATH = REPO_ROOT / ".env"
+if _DOTENV_PATH.exists():
+    load_dotenv(_DOTENV_PATH)
+
 # ── Artefacto de handoff F3→F4 (único input de la app) ─────────────────────
 PO_OUTPUT_CSV = DATA_PROCESSED_DIR / "po_output.csv"
 
 # ── Muestra versionada (fallback cuando no se corrió Fase 3 localmente) ────
 PO_OUTPUT_SAMPLE_CSV = REPO_ROOT / "data" / "samples" / "po_output_sample.csv"
+
+# ── Canal adicional: bot de Telegram (ARD-20, landing, ARD-23) ─────────────
+# Handle público del bot para el enlace "Consultar por Telegram" de la
+# landing. ARD-20 no expone un handle público (solo el token en .env, que es
+# secreto); esta var es operativa y distinta del token — no se inventa un
+# valor si falta: la landing oculta el botón y muestra solo la descripción.
+TELEGRAM_BOT_USERNAME = os.getenv("TELEGRAM_BOT_USERNAME", "")
 
 # ── Scorecards por entidad (JSON del motor offline scorecard_core.py) ──────
 # Regenerables y gitignored; la app los lee, no recomputa la capa estadística.
@@ -70,6 +85,41 @@ STAGE_SEGMENT_COLUMNS = {
     "carrier": (COL_APPROVED_DT, COL_TRAILER_ARRIVE_DT),
     "dc": (COL_TRAILER_ARRIVE_DT, COL_CHECKIN_DT, COL_CHECKOUT_DT),
 }
+
+# Etapa → columna de exceso de horas de ESA etapa únicamente (tier 1, ARD-21).
+# "Indeterminado" queda fuera a propósito: no tiene tramo propio (ARD-22 §7 D4).
+STAGE_EXCESS_COLUMN = {
+    "vendor": COL_EXCESS_VENDOR_HRS,
+    "carrier": COL_EXCESS_CARRIER_HRS,
+    "dc": COL_EXCESS_DC_HRS,
+}
+
+# Etapa → etiqueta legible (Title case) para texto compuesto en UI ("Exceso
+# Vendor: …", pill de tramo del timeline, chips de leyenda). Las claves de
+# stage_key son minúsculas (normalizadas desde el CSV vía .lower()).
+STAGE_DISPLAY = {
+    "vendor": "Vendor",
+    "carrier": "Carrier",
+    "dc": "DC",
+    "indeterminado": "Indeterminado",
+}
+
+
+def dataset_cutoff_date(df):
+    """Fecha de corte real del artefacto: máximo timestamp entre las 7 columnas
+    del lifecycle, tras `dropna` (ARD-22 §7 T3). Devuelve `None` si el df no
+    trae ninguna fecha válida (guarda para df vacío o columnas ausentes)."""
+    import pandas as pd
+
+    date_cols = [
+        COL_PO_DT, COL_STA_DT, COL_APPROVED_DT, COL_TRAILER_ARRIVE_DT,
+        COL_CHECKIN_DT, COL_CHECKOUT_DT, COL_RECPT_DT,
+    ]
+    present = [c for c in date_cols if c in df.columns]
+    if not present:
+        return None
+    max_ts = pd.to_datetime(df[present].stack(), errors="coerce").max()
+    return None if pd.isna(max_ts) else max_ts
 
 # ── Sistema de diseño — paleta (ARD-17) ─────────────────────────────────────
 # Etapa: hue categórico Okabe-Ito (CUD), idéntico en toda la app. Indeterminado

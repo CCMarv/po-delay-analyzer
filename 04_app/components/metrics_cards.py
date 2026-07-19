@@ -3,20 +3,24 @@ from html import escape
 import streamlit as st
 
 
-def metric_card(label: str, value, icon: str = "") -> None:
+def metric_card(label: str, value, icon: str = "", mono: bool = False) -> None:
     """Renderiza una tarjeta de métrica con los tokens del sistema de diseño.
 
     label/value se escapan: value recibe nombres de VENDOR/CARRIER/DC del
     dataset, que no son un vocabulario cerrado y se interpolan sin sanitizar.
+
+    `mono`: usa la familia monoespaciada (ARD-22 §7 T1) para datos técnicos —
+    horas, días, porcentajes. No aplica a nombres de entidad ni prosa.
     """
     icon_prefix = f"{icon} " if icon else ""
     label_html = escape(str(label))
     value_html = escape(str(value))
+    value_class = "metric-card__value metric-card__value--mono" if mono else "metric-card__value"
     st.markdown(
         f"""
         <div class="metric-card">
             <p class="metric-card__label">{icon_prefix}{label_html}</p>
-            <p class="metric-card__value">{value_html}</p>
+            <p class="{value_class}">{value_html}</p>
         </div>
         """,
         unsafe_allow_html=True,

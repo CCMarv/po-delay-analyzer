@@ -214,15 +214,20 @@ h1, h2, h3 {
 .badge-confidence--baja { --ordinal-color: var(--ordinal-low); }
 
 /* ── Segmento de timeline (tramo del lifecycle) ─────────────────────────── */
+/* Densidad comprimida (ARD-22 §7 D2/T2): padding/gap reducidos para que los 7
+   eventos quepan sin scroll vertical en laptop estándar. Borde neutro por
+   defecto; el hue de etapa (ARD-23) solo aparece en el/los tramo(s)
+   resaltado(s), vía la clase --{etapa} que timeline.py solo agrega cuando
+   `highlighted=True`. */
 .timeline-segment {
     display: flex;
     align-items: center;
-    gap: var(--space-sm);
-    padding: var(--space-sm) var(--space-md);
-    border-radius: 8px;
-    border-left: 4px solid var(--stage-color, var(--stage-indeterminado));
-    background-color: var(--surface-card);
-    margin-bottom: var(--space-xs);
+    gap: var(--space-xs);
+    padding: 5px var(--space-md);
+    border-radius: 6px;
+    border-left: 4px solid var(--border-subtle);
+    background-color: var(--surface-bg);
+    margin-bottom: 4px;
 }
 
 .timeline-segment--highlighted {
@@ -230,10 +235,102 @@ h1, h2, h3 {
     box-shadow: var(--shadow-sm);
 }
 
-.timeline-segment--vendor { --stage-color: var(--stage-vendor); }
-.timeline-segment--carrier { --stage-color: var(--stage-carrier); }
-.timeline-segment--dc { --stage-color: var(--stage-dc); }
-.timeline-segment--indeterminado { --stage-color: var(--stage-indeterminado); }
+.timeline-segment--highlighted.timeline-segment--vendor { border-left-color: var(--stage-vendor); }
+.timeline-segment--highlighted.timeline-segment--carrier { border-left-color: var(--stage-carrier); }
+.timeline-segment--highlighted.timeline-segment--dc { border-left-color: var(--stage-dc); }
+.timeline-segment--highlighted.timeline-segment--indeterminado { border-left-color: var(--stage-indeterminado); }
+
+.timeline-segment .timestamp {
+    margin-left: auto;
+}
+
+/* Pill "TRAMO {ETAPA} — etapa responsable" (mockup Exception Workbench):
+   junto al timestamp, solo en el primer segmento resaltado de un PO. */
+.timeline-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background-color: var(--surface-card);
+    border: 1px solid var(--border-subtle);
+    color: var(--text-primary);
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 1px 8px;
+    border-radius: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.timeline-pill__dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: var(--stage-indeterminado);
+}
+
+.timeline-pill__dot--vendor { background-color: var(--stage-vendor); }
+.timeline-pill__dot--carrier { background-color: var(--stage-carrier); }
+.timeline-pill__dot--dc { background-color: var(--stage-dc); }
+.timeline-pill__dot--indeterminado { background-color: var(--stage-indeterminado); }
+
+/* ── Chip de etapa (punto + texto neutro) ──────────────────────────────── */
+/* ARD-23: adaptación al mockup — la landing colorea la palabra Vendor/
+   Carrier/DC como texto, lo que falla contraste WCAG en tema claro (p. ej.
+   Carrier #E69F00 sobre blanco ≈2.2:1). Se conserva la señal de color en el
+   punto (mismo idiom que las leyendas de Ravi), el texto queda en tinta
+   neutra. Reusable en bullets de landing y leyendas de distribución. */
+.stage-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 600;
+}
+
+.stage-chip__dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    background-color: var(--stage-indeterminado);
+}
+
+.stage-chip__dot--vendor { background-color: var(--stage-vendor); }
+.stage-chip__dot--carrier { background-color: var(--stage-carrier); }
+.stage-chip__dot--dc { background-color: var(--stage-dc); }
+.stage-chip__dot--indeterminado { background-color: var(--stage-indeterminado); }
+
+/* ── Barra de distribución apilada (Ravi, ARD-23) ────────────────────────── */
+/* HTML/CSS puro en vez de plotly (mockup Network Intelligence): fidelidad
+   exacta y elimina los offsets frágiles de leyenda que plotly forzaba. Los
+   segmentos reciben su ancho vía `style="width:{pct}%"` desde la página; el
+   color viene de `stage_colors()`/`severity_colors()` (config.py), nunca hex
+   suelto en el markup. */
+.dist-bar {
+    display: flex;
+    height: 28px;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: var(--space-sm);
+}
+
+.dist-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+}
+
+.dist-legend__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.dist-legend__count {
+    font-family: var(--font-mono);
+}
 
 /* ── Tarjetas ───────────────────────────────────────────────────────────── */
 .custom-card {
@@ -270,6 +367,23 @@ h1, h2, h3 {
     margin: 0;
 }
 
+/* Variante mono (ARD-22 §7 T1): horas/días/porcentajes, nunca nombres de
+   entidad ni prosa — los dígitos alineados por columna facilitan escanear. */
+.metric-card__value--mono {
+    font-family: var(--font-mono);
+    font-size: 1.5rem;
+}
+
+/* Paridad de fila (ARD-22 §7 D1/T2, revisado por ARD-23): modificador sobre
+   .custom-card para que las cards de una misma fila compartan alto/padding
+   sin one-offs inline por card. */
+.diag-card {
+    min-height: 128px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
 /* ── Ajustes de tablas ─────────────────────────────────────────────────── */
 [data-testid="stDataFrame"] {
     border-radius: 0.5rem;
@@ -295,10 +409,13 @@ h1, h2, h3 {
 .dashboard-card {
     background-color: var(--surface-card);
     border-radius: 12px;
+    border-top: 3px solid var(--accent);
     padding: var(--space-lg);
     margin-bottom: var(--space-md);
     box-shadow: var(--shadow-sm);
-    border: 1px solid var(--border-subtle);
+    border-left: 1px solid var(--border-subtle);
+    border-right: 1px solid var(--border-subtle);
+    border-bottom: 1px solid var(--border-subtle);
     display: flex;
     flex-direction: column;
     min-height: 280px;
@@ -335,6 +452,70 @@ h1, h2, h3 {
     flex-grow: 1;
 }
 
+/* ── KPIs de la landing (hero) ──────────────────────────────────────────── */
+.landing-kpi {
+    background-color: var(--surface-card);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    padding: var(--space-md) var(--space-lg);
+    text-align: center;
+}
+
+.landing-kpi__value {
+    font-family: var(--font-mono);
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.landing-kpi__label {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    margin-top: 4px;
+}
+
+/* ── Card de canal adicional (Telegram, ARD-20/ARD-23) ──────────────────── */
+/* Enlace a un canal externo de comandos fijos de lectura — no chat embebido
+   ni exportación (ARD-22 §6 lo prohíbe). Sin TELEGRAM_BOT_USERNAME en el
+   entorno, la card describe el canal sin botón activo: no se inventa handle. */
+.telegram-card {
+    background-color: var(--surface-elevated);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    padding: var(--space-md) var(--space-lg);
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+}
+
+.telegram-card__title {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.telegram-card__desc {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    margin-top: 2px;
+}
+
+.telegram-card__link {
+    border: 1px solid var(--border-subtle);
+    background-color: var(--surface-card);
+    color: var(--text-secondary);
+    text-decoration: none;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.telegram-card__link:hover {
+    background-color: var(--surface-elevated);
+}
+
 /* ── Botones de dashboard ──────────────────────────────────────────────── */
 .stButton > button {
     width: 100%;
@@ -355,17 +536,35 @@ h1, h2, h3 {
     transform: translateY(-1px);
 }
 
-/* ── Footer simple ─────────────────────────────────────────────────────── */
+/* ── Footer de procedencia (ARD-22 §7 T3) ────────────────────────────────── */
+/* Fecha de corte real (máx timestamp del df) + origen del artefacto. Layout
+   flex de dos columnas en la landing (corte a la izquierda, nota de
+   solo-lectura a la derecha, mockup Home Landing); centrado apilado en las
+   2 vistas (mockup Workbench/Network). `.simple-footer--split` es el
+   modificador para la variante flex. */
 .simple-footer {
     text-align: center;
-    padding: var(--space-xl);
+    border-top: 1px solid var(--border-subtle);
+    padding: var(--space-md) 0 4px;
+    margin-top: var(--space-xl);
     color: var(--text-muted);
-    font-size: 0.875rem;
-    margin-top: 3rem;
+    font-size: 0.72rem;
 }
 
 .simple-footer p {
-    margin: 0.25rem 0;
+    margin: 2px 0;
+}
+
+.simple-footer .timestamp {
+    font-family: var(--font-mono);
+}
+
+.simple-footer--split {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    text-align: left;
+    font-size: 0.72rem;
 }
 
 /* ── Responsive adjustments ────────────────────────────────────────────── */
@@ -456,77 +655,32 @@ a.nav-link.active {
     padding-top: 80px !important;
 }
 
-/* ── Cards de Análisis LLM ──────────────────────────────────────────────── */
+/* ── Card de placeholder tier-2 (ARD-23) ──────────────────────────────── */
+/* Estado "sin diagnóstico diferencial" cuando el PO no tiene tier-2 (opt-in,
+   ARD-21). Borde punteado (mockup Exception Workbench) en vez de la card
+   sólida con hover-lift: distingue visualmente un estado vacío de una card
+   con contenido. Única instancia en la app (placeholder de Diego). */
 .llm-card {
     background-color: var(--surface-card);
-    border-radius: 8px;
-    padding: 1.25rem;
-    box-shadow: var(--shadow-sm);
-    border: 1px solid var(--border-subtle);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-}
-
-.llm-card:hover {
-    transform: translateY(-3px);
-    box-shadow: var(--shadow-md);
+    border-radius: 12px;
+    border: 1px dashed var(--border-subtle);
+    padding: var(--space-md) var(--space-lg);
 }
 
 .llm-icon {
-    font-size: 2rem;
-    margin-bottom: var(--space-sm);
+    font-size: 1.5rem;
 }
 
 .llm-card h4 {
-    margin: 0 0 var(--space-sm) 0;
+    margin: 0 0 4px 0;
     color: var(--text-primary);
-    font-size: 0.95rem;
+    font-size: 0.9rem;
     font-weight: 600;
 }
 
 .llm-text {
-    color: var(--text-secondary);
-    font-size: 0.85rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
     line-height: 1.5;
     margin: 0;
-    flex-grow: 1;
-    overflow-y: auto;
-    max-height: 120px;
-}
-
-.llm-badge {
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    font-weight: 700;
-    text-align: center;
-    margin: 0;
-    font-size: 1rem;
-}
-
-/* Responsive para cards LLM */
-@media (max-width: 1200px) {
-    .llm-card {
-        margin-bottom: var(--space-md);
-    }
-}
-
-/* Ajustar scrollbar en texto largo */
-.llm-text::-webkit-scrollbar {
-    width: 6px;
-}
-
-.llm-text::-webkit-scrollbar-track {
-    background: var(--surface-elevated);
-    border-radius: 3px;
-}
-
-.llm-text::-webkit-scrollbar-thumb {
-    background: var(--text-muted);
-    border-radius: 3px;
-}
-
-.llm-text::-webkit-scrollbar-thumb:hover {
-    background: var(--text-secondary);
 }

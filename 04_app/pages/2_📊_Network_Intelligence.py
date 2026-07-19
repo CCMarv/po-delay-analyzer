@@ -1,7 +1,13 @@
 """Network Intelligence — Vista de Ravi (Supply-Chain Analyst).
 Reporte agregado de la población de POs tardíos con distribución por etapa,
-severidad, y tasa de desacuerdo AI vs humano.
+severidad, tendencia temporal y tasa de desacuerdo AI vs humano.
 Ticket #103: Panel de métricas agregadas
+
+Restilada desde el mockup "Network Intelligence" (ARD-23): KPIs y barras de
+distribución en HTML/CSS puro (R3/R4, sin los offsets frágiles de leyenda de
+plotly), tendencia temporal sobre PO_DT (R1, plotly con etiquetado directo),
+tasa de desacuerdo como % titular + conteo (R2), cards ejecutivas sin score
+numérico redundante (ARD-23), tipografía mono (T1) y pie de procedencia (T3).
 """
 from pathlib import Path
 import re
@@ -10,8 +16,9 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from config import (
-    SCORECARDS_DIR, DATA_PROCESSED_DIR, COL_PO, COL_STAGE, COL_SEVERITY, COL_REASON_DSC,
-    COL_LLM_COINCIDE, stage_colors, severity_colors, plot_theme,
+    SCORECARDS_DIR, DATA_PROCESSED_DIR, COL_PO, COL_PO_DT, COL_STAGE, COL_SEVERITY,
+    COL_REASON_DSC, COL_LLM_COINCIDE, COL_LLM_CONFIANZA, SEVERITY, STAGE_DISPLAY,
+    plot_theme, confidence_bucket, dataset_cutoff_date,
 )
 from services.data_service import load_po_output
 from components.navbar import render_navbar
@@ -36,16 +43,6 @@ if css_file.exists():
 # ── CSS compacto para esta vista (consume tokens de styles.css, ARD-17) ────
 st.markdown("""
 <style>
-    /* KPIs más compactos */
-    [data-testid="stMetric"] {
-        background-color: var(--surface-elevated);
-        border: 1px solid var(--border-subtle);
-        border-radius: 10px;
-        padding: 0.75rem 1rem !important;
-    }
-    [data-testid="stMetricLabel"] { font-size: 0.8rem !important; }
-    [data-testid="stMetricValue"] { font-size: 1.4rem !important; }
-
     /* Tarjetas del plan ejecutivo (surface/border/shadow los da .exec-card
        de styles.css; aquí solo el detalle propio de esta vista) */
     .exec-card:hover {
@@ -54,7 +51,6 @@ st.markdown("""
     }
     .exec-card { transition: transform 0.2s; }
     .exec-card .name { font-size: 1.05rem; font-weight: 700; color: var(--text-primary); margin: 0 0 0.3rem 0; }
-    .exec-card .score { font-size: 0.75rem; color: var(--text-muted); margin: 0 0 0.5rem 0; }
     .exec-card .action {
         margin-top: 0.6rem;
         padding-top: 0.6rem;
@@ -65,13 +61,13 @@ st.markdown("""
     }
     .exec-card .action b { color: var(--accent); }
 
-    /* Headers de sección más compactos */
+    /* Headers de sección más compactos (border-left coloreado por actor,
+       inline, ARD-23: el mockup usa el hue de la etapa, no un acento fijo) */
     .section-title {
         font-size: 1.15rem;
         font-weight: 700;
         color: var(--text-secondary);
         margin: 0.5rem 0 0.6rem 0;
-        border-left: 4px solid var(--accent);
         padding-left: 0.6rem;
     }
 </style>
@@ -236,10 +232,13 @@ def render_exec_card_v3(subsec: dict, stage_hue: str) -> str:
     """Tarjeta ejecutiva de una entidad: badge de riesgo (ordinal) + análisis + acción.
     El borde izquierdo usa el hue de la etapa del actor de la sección (Vendor/Carrier/DC),
     no la zona de riesgo: son dos variables distintas (nominal vs. ordinal) y no deben
-    competir por el mismo canal de color (ARD-17)."""
+    competir por el mismo canal de color (ARD-17).
+
+    ARD-23: sin línea de "Score de Riesgo" — era una re-codificación numérica literal
+    del mismo ordinal que el badge ya porta (100/50/0 = Alto/Medio/Bajo); el badge ya
+    es la señal, el número no agrega información nueva."""
     entidades = subsec["entidades"]
     zona = subsec["zona"]
-    score = subsec.get("score", 0)
     accion = subsec.get("accion", "")
     analisis = subsec.get("analisis", "")
 
@@ -253,9 +252,6 @@ def render_exec_card_v3(subsec: dict, stage_hue: str) -> str:
             for emp in entidades
         )
         empresas_html = f'<div style="margin: 0.6rem 0; line-height: 1.6;">{badges_empresas}</div>'
-
-    # Score
-    score_html = f'<p class="score" style="margin:0 0 0.6rem 0; font-size:0.85rem; color:var(--text-muted);">Score de Riesgo: <b style="color:var(--text-secondary);">{score:.1f}</b></p>'
 
     # Análisis completo (sin truncar a 180 caracteres)
     analisis_html = ""
@@ -272,7 +268,6 @@ def render_exec_card_v3(subsec: dict, stage_hue: str) -> str:
     <div class="exec-card" style="width: 100%; margin-bottom: 1.2rem; border-left: 6px solid {stage_hue};">
         {render_badge(zona)}
         {empresas_html}
-        {score_html}
         {analisis_html}
         {accion_html}
     </div>
@@ -283,19 +278,7 @@ def render_exec_card_v3(subsec: dict, stage_hue: str) -> str:
 # ── Carga de datos ──────────────────────────────────────────────────────────
 df = load_po_output()
 
-# Paleta y tokens de Plotly resueltos una sola vez al tema activo (ARD-17): Plotly
-# no puede leer variables CSS, así que el hex se resuelve aquí. Los valores del CSV
-# vienen en Title case ('Vendor'/'Carrier'/'DC'/'Indeterminado'); las claves de
-# STAGE_COLORS son minúsculas, de ahí el .lower() con fallback a Indeterminado.
-_STAGE_COLORS = stage_colors()
-_SEVERITY = severity_colors()
 _PLOT_THEME = plot_theme()
-
-STAGE_COLOR_MAP = {
-    s: _STAGE_COLORS.get(str(s).lower(), _STAGE_COLORS["indeterminado"])
-    for s in df[COL_STAGE].dropna().unique()
-}
-SEV_COLOR_MAP = {k: v["color"] for k, v in _SEVERITY.items()}
 
 # ── Header ──────────────────────────────────────────────────────────────────
 st.markdown(
@@ -322,117 +305,165 @@ coincide_col = COL_LLM_COINCIDE
 if coincide_col in df.columns:
     coincide_values = df[coincide_col].dropna()
     total_with_validation = len(coincide_values)
-    disagreements = (coincide_values == False).sum()
-    agreement_rate = ((coincide_values == True).sum() / total_with_validation * 100) if total_with_validation > 0 else 0
+    disagreements = int((coincide_values == False).sum())
+    disagreement_pct = (disagreements / total_with_validation * 100) if total_with_validation > 0 else 0.0
 else:
     total_with_validation = 0
     disagreements = 0
-    agreement_rate = 0
+    disagreement_pct = 0.0
 
 
 # ═══════════════════════════════════════════════════════════════════════════
-# 📊 PANEL ASIMÉTRICO: BARRA DE KPIS (IZQ) & GRÁFICOS APILADOS (DER)
+# 📊 PANEL ASIMÉTRICO: KPIS (IZQ, HTML) & DISTRIBUCIÓN APILADA (DER, HTML)
 # ═══════════════════════════════════════════════════════════════════════════
 st.markdown("#### Patrones sistémicos en POs tardíos")
 
-# 📐 CREAMOS LAS COLUMNAS PRINCIPALES: Peso 1 para KPIs (angosto) y 3 para Gráficos (ancho)
 col_barra_kpis, col_panel_graficos = st.columns([1, 3])
 
-
-# ── COLUMNA IZQUIERDA (SÚPER ANGOSTA): TARJETICAS KPI VERTICALES ──────────
+# ── COLUMNA IZQUIERDA: KPIs como cards HTML (R2: desacuerdo, % + conteo) ────
 with col_barra_kpis:
-    # Espaciador sutil para alinearlo visualmente con el título de los gráficos
-    st.markdown("<div style='margin-top: 0.8rem;'></div>", unsafe_allow_html=True)
+    st.markdown(
+        f"""
+        <div class="metric-card" style="margin-bottom:10px;">
+            <p class="metric-card__label">Total POs Tardíos</p>
+            <p class="metric-card__value metric-card__value--mono">{total_pos}</p>
+        </div>
+        <div class="metric-card" style="margin-bottom:10px;">
+            <p class="metric-card__label">Severidad Alta</p>
+            <p class="metric-card__value metric-card__value--mono">{n_high}
+                <span style="font-size:0.9rem; font-weight:600; color:var(--text-secondary);">({high_pct:.1f}%)</span></p>
+        </div>
+        <div class="metric-card">
+            <p class="metric-card__label">Tasa de Desacuerdo AI</p>
+            <p class="metric-card__value metric-card__value--mono">{disagreement_pct:.1f}%</p>
+            <p style="margin:2px 0 0; color:var(--text-muted); font-size:0.8rem; font-family:var(--font-mono);">
+                {disagreements}/{total_with_validation} POs</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    st.metric(label="Total POs Tardíos", value=f"{total_pos}")
-    st.markdown("<div style='margin-bottom: 0.5rem;'></div>", unsafe_allow_html=True)
-
-    st.metric(label="Severidad Alta", value=f"{n_high} ({high_pct:.1f}%)")
-    st.markdown("<div style='margin-bottom: 0.5rem;'></div>", unsafe_allow_html=True)
-
-    st.metric(label="Tasa de Acuerdo AI", value=f"{agreement_rate:.1f}%")
-
-
-# ── COLUMNA DERECHA (ANCHA): GRÁFICOS UNO ENCIMA DEL OTRO ──────────────────
+# ── COLUMNA DERECHA: distribución por etapa y severidad (HTML/CSS, R3/R4) ──
 with col_panel_graficos:
+    STAGE_ORDER = ("vendor", "carrier", "dc", "indeterminado")
+    SEVERITY_ORDER = ("HIGH", "MEDIUM", "LOW")
 
-    # GRÁFICO 1: DISTRIBUCIÓN POR ETAPA
-    st.markdown('<div style="text-align: center;"><p style="font-size: 1.05rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 0.3rem; display: inline-block;">Distribución por Etapa</p></div>', unsafe_allow_html=True)
+    stage_counts_by_key = {}
+    for raw_stage, cnt in df[COL_STAGE].value_counts().items():
+        key = str(raw_stage).lower()
+        stage_counts_by_key[key] = stage_counts_by_key.get(key, 0) + int(cnt)
+    total_stage = sum(stage_counts_by_key.values())
 
-    stage_counts = df[COL_STAGE].value_counts().reset_index()
-    stage_counts.columns = ['stage', 'count']
-    total_stages = stage_counts['count'].sum()
-    stage_counts['percentage'] = (stage_counts['count'] / total_stages * 100).round(1)
-    stage_counts['dummy'] = 'Etapas'
-    # Cifras en la LEYENDA, en tinta neutra (ARD-17 §5: el texto nunca se colorea con
-    # el hue de etapa; el color vive solo en la marca). Ningún color de texto único
-    # pasa 4.5:1 en los 4 segmentos de Okabe-Ito a la vez (blanco falla en Carrier/DC,
-    # oscuro falla en Vendor/HIGH), así que el relleno queda puro y las cifras viajan
-    # aparte, pintadas por Plotly con font_color del tema activo.
-    stage_legend = {
-        row['stage']: f"{row['stage']} — {int(row['count'])} ({row['percentage']}%)"
-        for _, row in stage_counts.iterrows()
-    }
+    stage_bar_html, stage_legend_html = [], []
+    for key in STAGE_ORDER:
+        count = stage_counts_by_key.get(key, 0)
+        if count == 0:
+            continue
+        pct = (count / total_stage * 100) if total_stage else 0.0
+        label = STAGE_DISPLAY[key]
+        stage_bar_html.append(f'<div style="width:{pct}%; background:var(--stage-{key});"></div>')
+        stage_legend_html.append(
+            '<span class="dist-legend__item">'
+            f'<span class="stage-chip__dot stage-chip__dot--{key}"></span>{label} — '
+            f'<span class="dist-legend__count">{count} ({pct:.1f}%)</span></span>'
+        )
 
-    fig_stage = px.bar(
-        stage_counts, x='count', y='dummy', color='stage', orientation='h',
-        color_discrete_map=STAGE_COLOR_MAP,
+    severity_counts_by_key = dict(severity_counts)
+    total_severity = sum(severity_counts_by_key.get(k, 0) for k in SEVERITY_ORDER)
+    sev_var = {"HIGH": "ordinal-high", "MEDIUM": "ordinal-medium", "LOW": "ordinal-low"}
+
+    sev_bar_html, sev_legend_html = [], []
+    for key in SEVERITY_ORDER:
+        count = int(severity_counts_by_key.get(key, 0))
+        if count == 0:
+            continue
+        pct = (count / total_severity * 100) if total_severity else 0.0
+        entry = SEVERITY[key]
+        sev_bar_html.append(f'<div style="width:{pct}%; background:var(--{sev_var[key]});"></div>')
+        sev_legend_html.append(
+            '<span class="dist-legend__item">'
+            f'<span style="color:var(--{sev_var[key]});">{entry["icon"]}</span>{entry["label"]} — '
+            f'<span class="dist-legend__count">{count} ({pct:.1f}%)</span></span>'
+        )
+
+    st.markdown(
+        f"""
+        <div class="custom-card" style="height:100%;">
+            <p style="margin:0 0 8px; color:var(--text-secondary); font-size:0.85rem; font-weight:700;">Distribución por Etapa</p>
+            <div class="dist-bar">{''.join(stage_bar_html)}</div>
+            <div class="dist-legend" style="margin-bottom:18px;">{''.join(stage_legend_html)}</div>
+            <p style="margin:0 0 8px; color:var(--text-secondary); font-size:0.85rem; font-weight:700;">Distribución por Severidad</p>
+            <div class="dist-bar">{''.join(sev_bar_html)}</div>
+            <div class="dist-legend">{''.join(sev_legend_html)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
-    fig_stage.for_each_trace(lambda t: t.update(name=stage_legend.get(t.name, t.name)))
-    fig_stage.update_traces(width=0.4, hovertemplate="<b>%{fullData.name}</b><extra></extra>")
-    fig_stage.update_layout(
-        height=125, margin={"l": 20, "r": 0, "t": 5, "b": 0},
-        xaxis={"showticklabels": False, "showgrid": False, "zeroline": False, "title": ""},
-        yaxis={"showticklabels": False, "showgrid": False, "zeroline": False, "title": ""},
-        barmode='stack', showlegend=True,
-        legend={
-            "orientation": "h", "yanchor": "bottom", "y": -1.9, "xanchor": "center", "x": 0.5,
-            "title": None, "font": {"size": 12, "color": _PLOT_THEME["font_color"]},
-        },
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+
+# ═══════════════════════════════════════════════════════════════════════════
+# 📈 TENDENCIA TEMPORAL (R1): conteo de POs tardíos por periodo sobre PO_DT
+# ═══════════════════════════════════════════════════════════════════════════
+ser_dt = df.dropna(subset=[COL_PO_DT])
+if ser_dt.empty:
+    st.info("No hay fechas válidas en PO_DT para calcular la tendencia temporal.")
+else:
+    span_days = (ser_dt[COL_PO_DT].max() - ser_dt[COL_PO_DT].min()).days
+    # Granularidad data-driven: semanal si el span cabe en ~medio año, si no
+    # mensual — evita una serie de 1-2 puntos en cortes muy cortos o cientos
+    # de puntos ilegibles en cortes largos.
+    freq = "W" if span_days <= 180 else "MS"
+    freq_noun = "semana" if freq == "W" else "mes"
+    freq_adj = "semanal" if freq == "W" else "mensual"
+
+    trend_df = ser_dt.set_index(COL_PO_DT).resample(freq).size().reset_index()
+    trend_df.columns = ["periodo", "conteo"]
+
+    fig_trend = px.line(trend_df, x="periodo", y="conteo")
+    fig_trend.update_traces(
+        line_color=_PLOT_THEME["line_color"], line_width=2.5,
+        mode="lines+markers", marker={"size": 5, "color": _PLOT_THEME["line_color"]},
+        hovertemplate="%{x|%Y-%m-%d}: %{y}<extra></extra>",
+    )
+    fig_trend.update_layout(
+        height=230, margin={"l": 40, "r": 10, "t": 10, "b": 30},
+        xaxis={"title": "", "showgrid": False},
+        yaxis={"title": "", "gridcolor": _PLOT_THEME["gridcolor"], "showgrid": True},
+        showlegend=False, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         font_color=_PLOT_THEME["font_color"],
     )
-    st.plotly_chart(fig_stage, width="stretch")
 
-    # Espaciador vertical elegante entre ambos gráficos
-    st.markdown("<div style='margin-bottom: 3.5rem;'></div>", unsafe_allow_html=True)
+    # Etiquetado directo (ARD-17): primero, pico y último punto — sin leyenda.
+    # Evita duplicar la anotación si dos de los tres coinciden (span corto).
+    idx_peak = int(trend_df["conteo"].idxmax())
+    idx_last = len(trend_df) - 1
+    annotated = set()
 
-    # GRÁFICO 2: DISTRIBUCIÓN POR SEVERIDAD
-    st.markdown('<div style="text-align: center;"><p style="font-size: 1.05rem; font-weight: 700; color: var(--text-secondary); margin-bottom: 0.3rem; display: inline-block;">Distribución por Severidad</p></div>', unsafe_allow_html=True)
+    def _annotate(idx: int, suffix: str = "") -> None:
+        if idx in annotated:
+            return
+        annotated.add(idx)
+        row = trend_df.iloc[idx]
+        fig_trend.add_annotation(
+            x=row["periodo"], y=row["conteo"], text=f"{int(row['conteo'])}{suffix}",
+            showarrow=False, yshift=14,
+            font={"size": 12, "family": "Consolas, Menlo, monospace", "color": _PLOT_THEME["font_color"]},
+        )
 
-    severity_counts_df = df[COL_SEVERITY].value_counts().reset_index()
-    severity_counts_df.columns = ['severity', 'count']
-    total_severities = severity_counts_df['count'].sum()
-    severity_counts_df['percentage'] = (severity_counts_df['count'] / total_severities * 100).round(1)
-    severity_counts_df['dummy'] = 'Severidad'
-    # Prefijo de ícono (■/◆/●) en la leyenda: conserva la redundancia triple de
-    # severidad (luminancia + forma + texto, ARD-17 §3), que la rampa acromática por
-    # sí sola perdería al no tener ya el ícono junto al color en la marca.
-    severity_legend = {
-        row['severity']: f"{_SEVERITY.get(row['severity'], {}).get('icon', '')} {row['severity']} — {int(row['count'])} ({row['percentage']}%)"
-        for _, row in severity_counts_df.iterrows()
-    }
+    _annotate(0)
+    _annotate(idx_peak, " · pico")
+    _annotate(idx_last)
 
-    fig_severity = px.bar(
-        severity_counts_df, x='count', y='dummy', color='severity', orientation='h',
-        color_discrete_map=SEV_COLOR_MAP,
-        category_orders={'severity': ['LOW', 'MEDIUM', 'HIGH']},
-    )
-    fig_severity.for_each_trace(lambda t: t.update(name=severity_legend.get(t.name, t.name)))
-    fig_severity.update_traces(width=0.4, hovertemplate="<b>%{fullData.name}</b><extra></extra>")
-    fig_severity.update_layout(
-        height=125, margin={"l": 20, "r": 0, "t": 5, "b": 0},
-        xaxis={"showticklabels": False, "showgrid": False, "zeroline": False, "title": ""},
-        yaxis={"showticklabels": False, "showgrid": False, "zeroline": False, "title": ""},
-        barmode='stack', showlegend=True,
-        legend={
-            "orientation": "h", "yanchor": "bottom", "y": -1.9, "xanchor": "center", "x": 0.5,
-            "title": None, "font": {"size": 12, "color": _PLOT_THEME["font_color"]},
-        },
-        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font_color=_PLOT_THEME["font_color"],
-    )
-    st.plotly_chart(fig_severity, width="stretch")
+    with st.container(border=True):
+        st.markdown(
+            f"""
+            <p style="margin:0 0 2px; color:var(--text-secondary); font-size:0.85rem; font-weight:700;">
+                Tendencia temporal — POs tardíos por {freq_noun}</p>
+            <p style="margin:0 0 4px; color:var(--text-muted); font-size:0.72rem;">
+                Conteo {freq_adj} sobre la fecha de creación del PO · etiquetado directo, sin leyenda</p>
+            """,
+            unsafe_allow_html=True,
+        )
+        st.plotly_chart(fig_trend, width="stretch")
 
 st.markdown("---")
 
@@ -503,9 +534,9 @@ else:
                     break
             stage_hue = f"var(--stage-{config_tabla['stage_key']})" if config_tabla else "var(--stage-indeterminado)"
 
-            # Encabezado del Actor (Abarca el 100% del ancho)
+            # Encabezado del Actor (borde coloreado por el hue de la etapa, ARD-23)
             st.markdown(
-                f'<p class="section-title">{sec["titulo"]}</p>',
+                f'<p class="section-title" style="border-left:4px solid {stage_hue};">{sec["titulo"]}</p>',
                 unsafe_allow_html=True,
             )
 
@@ -577,11 +608,31 @@ st.markdown("---")
 
 # ── Tabla de POs con Desacuerdo (SE MANTIENE AL FINAL) ─────────────────────
 if disagreements > 0:
-    st.markdown("### POs con Desacuerdo AI vs Humano")
+    st.markdown(
+        f"### POs con Desacuerdo AI vs Humano "
+        f"<span style='color:var(--text-muted); font-size:0.85rem; font-weight:600; "
+        f"font-family:var(--font-mono);'>· {disagreements} de {total_with_validation} "
+        f"({disagreement_pct:.1f}%)</span>",
+        unsafe_allow_html=True,
+    )
     df_disagreement = df[df[COL_LLM_COINCIDE] == False].copy()
+    df_disagreement["Severidad"] = df_disagreement[COL_SEVERITY].map(
+        lambda s: SEVERITY.get(s, {}).get("label", s) if pd.notna(s) else "N/A"
+    )
+    df_disagreement["Confianza LLM"] = df_disagreement[COL_LLM_CONFIANZA].map(
+        lambda v: confidence_bucket(v)["label"] if pd.notna(v) else "N/A"
+    )
     st.dataframe(
-        df_disagreement[[COL_STAGE, COL_SEVERITY, COL_REASON_DSC, COL_LLM_COINCIDE]],
-        width="stretch"
+        df_disagreement[[COL_PO, COL_STAGE, "Severidad", COL_REASON_DSC, "Confianza LLM"]].rename(
+            columns={COL_PO: "PO", COL_STAGE: "Etapa (AI)", COL_REASON_DSC: "Reason humano"}
+        ),
+        width="stretch",
+        hide_index=True,
+    )
+    st.markdown(
+        '<p style="margin:6px 0 0; color:var(--text-muted); font-size:0.78rem; font-style:italic;">'
+        "Un desacuerdo es un hallazgo a revisar, no un error del LLM.</p>",
+        unsafe_allow_html=True,
     )
 
 
@@ -609,13 +660,16 @@ else:
             st.switch_page("pages/1_🔍_Exception_Workbench.py")
 
 
-# ─ Footer ────────────────────────────────────────────────────────────────
+# ─ Footer de procedencia (ARD-22 §7 T3) ─────────────────────────────────────
+cutoff = dataset_cutoff_date(df)
+cutoff_str = cutoff.strftime("%Y-%m-%d") if cutoff is not None else "N/A"
 st.markdown("---")
 st.markdown(
-    """
+    f"""
     <div class="simple-footer">
         <p>Network Intelligence · Vista de Ravi (Supply-Chain Analyst)</p>
-        <p>Reporte agregado de patrones sistémicos en la red de POs tardíos</p>
+        <p>Corte del dataset: <span class="timestamp">{cutoff_str}</span> · Fuente:
+        <span class="timestamp">po_output.csv</span> (Fase 3, corte histórico)</p>
     </div>
     """,
     unsafe_allow_html=True,
