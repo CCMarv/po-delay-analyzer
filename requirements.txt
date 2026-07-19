@@ -21,9 +21,12 @@ pydantic>=2.9.2
 # ============================================================
 # Fase 4 - Streamlit Demos
 # ============================================================
-streamlit>=1.30.0
+# >=1.51.0: piso real de la app (no de la doc genérica de Streamlit). Cubre
+# st.context.theme (1.46), width= en st.dataframe/st.button (1.48-1.49) y
+# width= en st.plotly_chart (1.51, la más estricta de las que usa la app).
+streamlit>=1.51.0
 plotly>=5.18.0
 # ============================================================
-# Fase 5 - Telegram Bot
+# Fase 4 - Telegram Bot
 # ============================================================
-python-telegram-bot>=20.0
+python-telegram-bot>=22.0
