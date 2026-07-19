@@ -245,9 +245,16 @@ suelta invita a sobre-lectura.
 
    La validación de calidad siguiente del carril 1 corresponde a la evaluación a nivel
    dataset que desarrolla el equipo, que reemplaza al fixture de 20 POs como instrumento.
-9. **Pendientes de implementación.** Interacción del contrato nuevo con el few-shot
-   (C1–C3); exposición en Fase 4 del razonamiento, las dos confianzas, los `qa_flags` y
-   las capacidades del carril 3; calibración del juez local.
+9. **Pendientes de implementación (actualizado al cierre, 2026-07-19).**
+   ~~Interacción del contrato nuevo con el few-shot (C1–C3)~~ — **resuelto**: C3 es la
+   config de producción (ADR-12, `llm_integration.py`). ~~Exposición en Fase 4 del
+   razonamiento, las dos confianzas~~ — **resuelto**: las 9 columnas tier-2 están pobladas
+   247/247 y consumidas por la app (ver [ARD-21](ARD-21.md)). `qa_flags` **sigue fuera del
+   entregable, por decisión explícita de auditoría** (`llm_integration.py`: "llm_qa_flags NO
+   entra"), no por falta de tiempo. Las capacidades del carril 3 quedan **parcialmente
+   entregadas** por [ARD-19](ARD-19.md) (síntesis ejecutiva; el Q&A conversacional sigue
+   diferido, #160). Genuinamente pendiente: **calibración del juez local** y el estadio
+   agéntico del carril 2 (Decisión 4), diferido a la evaluación a nivel dataset del equipo.
 
 ## Validación (plan, carril 1)
 
@@ -299,3 +306,10 @@ produce el diagnóstico diferencial de la llamada de acción sin conocimiento cu
 opt-in de #151 permanece en la llamada 1 y no se revierte. Un borrador previo no versionado
 de este ARD desarrolló la Opción B (perímetro curado con playbook) y se reemplazó al
 precisarse el pedido.
+
+**[ARD-19](ARD-19.md)** (2026-07-17, síntesis ejecutiva por actor sobre scorecards) entrega
+una parte del carril 3 reservado en la Decisión 5 (síntesis ejecutiva del portafolio); no
+supera esta decisión, cuyo carril 1 sigue vigente en producción y cuyo carril 2 agéntico y
+calibración del juez local (Decisión 7) siguen sin resolver — por eso este ARD se mantiene
+🔵 Borrador con razón explícita, en vez de cerrarse a 🟢, aunque el carril 1 esté implementado
+y en producción.
