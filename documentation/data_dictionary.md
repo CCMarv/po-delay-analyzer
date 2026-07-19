@@ -76,6 +76,7 @@ Este documento combina el diccionario de datos columna por columna con el contex
 | Columna | Tipo | % Nulos | Rol en el Proyecto / Reglas | Descripción |
 | :--- | :--- | :--- | :--- | :--- |
 | `PO_NBR` | int64 / object| 0% | Identificador Único | Número único de identificación de la Orden de Compra (Primary Key lógica). |
+| `VENDOR_NBR` | int64 | 0% | Atributo Entidad | Identificador numérico del proveedor que emite y despacha la orden; par de `VENDOR_NAME`. |
 | `VENDOR_NAME` | object | 0% | Atributo Entidad | Nombre comercial del proveedor que emite y despacha la orden. |
 | `CARRIER_PARTY_NAME`| object | 0% | Atributo Entidad | Nombre de la empresa transportista (carrier) encargada del traslado. |
 | `TRAILER_NBR` | object | 0% | Atributo Entidad | Número de placa o identificación física de la caja/tráiler logístico. |

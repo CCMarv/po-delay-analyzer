@@ -120,7 +120,7 @@ La corrida produce dos artefactos en `../data/processed/`:
 
 Es el insumo de trabajo y auditoría (incluye, p. ej., la `severity` determinística de F2 junto a la `llm_severidad`). También se generan guardados parciales cada 50 POs (configurable vía `DEFAULT_SAVE_EVERY`) para no perder progreso en corridas largas.
 
-**2. CSV-entregable** — `po_output.csv`, el artefacto del **contrato F3→F4** (#100): el único input de Fase 4. Tiene dos bloques de columnas, en este orden.
+**2. CSV-entregable** — `po_output.csv`, el artefacto del **contrato F3→F4** (#100): el único input de Fase 4. Tiene **33 columnas** en cuatro bloques, en este orden: el contrato base (16, sin numeración tier) y las ampliaciones tier-1/tier-2 que fija [ARD-21](../documentation/decisiones/ARD-21.md). La copia operativa verificada exacta 33/33 vive en [`04_app/README.md`](../04_app/README.md#1-entrada-el-contrato-f3f4-100); esta sección explica el origen, ARD-21 es el registro de diseño.
 
 **Bloque 1 — Contrato del mentor (las 5 columnas que evalúa, primero y en orden):**
 
@@ -140,15 +140,52 @@ Es el insumo de trabajo y auditoría (incluye, p. ej., la `severity` determinís
 | Agravantes | `HOT_PO_FLAG, is_short_ship` | marcar hot PO / short ship en la vista |
 | Concordancia | `REASON_DSC, llm_coincide_con_reason` | mostrar si el diagnóstico coincide con la anotación humana |
 
+Bloque 1 (5) + Bloque 2 (11) = las **16 columnas del contrato base** (ARD-21). Las siguientes
+17 amplían ese contrato en dos rondas:
+
+**Tier-1 (8 columnas, #158)** — enriquecimiento con datos ya computados aguas arriba, sin llamada LLM adicional:
+
+| Columnas | Para qué |
+|---|---|
+| `llm_confianza, VENDOR_NAME, CARRIER_PARTY_NAME, DC_LOC_NAME, delay_days_calc, excess_vendor_hrs, excess_carrier_hrs, excess_dc_hrs` | confianza del diagnóstico, entidades responsables y exceso de horas por etapa (contexto de la vista individual, Diego) |
+
+**Tier-2 (9 columnas, #161, PR #174)** — salida híbrida de la llamada de acción ([ADR-16](../documentation/decisiones/ARD-16.md) carril 1, opt-in vía `--action-call`; sin el flag estas 9 columnas salen **vacías, no ausentes** — el contrato de 33 es estable con o sin él):
+
+| Columnas | Para qué |
+|---|---|
+| `llm_razonamiento, llm_hipotesis, llm_hipotesis_evidencia, llm_accion_inmediata, llm_accion_correctiva, llm_accion_preventiva, llm_hipotesis_alt, llm_paso_discriminante, llm_confianza_hipotesis` | hipótesis principal con evidencia y plan escalonado, hipótesis alternativa con su paso discriminante, y una segunda confianza específica de la hipótesis |
+
 **Alcance de filas:** solo los **POs tardíos** (`delay_days_calc > 0`) — los que el LLM explica y los que la app ofrece en el selector. Los on-time no entran.
 
 **Regla del contrato F3→F4:** Fase 4 **lee** `po_output.csv` y nada más; **no recomputa** las reglas de F1/F2 ni vuelve a llamar al LLM. Por eso el artefacto trae ya el timeline y los agravantes: todo lo que la app necesita está en el CSV. (Una demo opcional de "regenerar este PO en vivo" sería la única excepción y va por separado del flujo principal.) El contrato está blindado por `tests/test_handoff_f3.py`.
 
-El `po_output.csv` del entregable se genera con el backend oficial, **OpenAI**:
+El `po_output.csv` del entregable se genera con el backend oficial, **OpenAI**. Añade
+`--action-call` para poblar también el tier-2 (segunda llamada, gasta API adicional por PO):
 
 ```bash
-python llm_integration.py --mode full --backend openai
+python llm_integration.py --mode full --backend openai --action-call
 ```
+
+## Síntesis ejecutiva de red (`llm_integration_network_intelligence_view.py`)
+
+Script aparte, gobernado por [ADR-19](../documentation/decisiones/ARD-19.md): no genera
+`po_output.csv` ni pertenece a su contrato. Lee los scorecards por entidad ya calculados por
+`scorecard_core.py` (`data/processed/scorecards/reporte_{vendors,carriers,dcs}.json`) y corre
+tres agentes especializados en secuencia (SDK `openai-agents`, distinto del backend de
+`llm_integration.py`), uno por actor (Vendor/Carrier/DC), para producir una síntesis narrativa
+de reliability por entidad.
+
+```bash
+# --actor: vendor | carrier | dc | all
+python llm_integration_network_intelligence_view.py --actor all
+```
+
+Solo `--actor all` consolida los tres análisis y escribe
+`data/processed/agente1_raw.txt`, el artefacto que consume en producción la página
+`Network Intelligence` (`04_app/pages/2_📊_Network_Intelligence.py`, persona Ravi). Es una
+dependencia real de Fase 3→Fase 4 —no un componente aislado ni un POC— formalizada en
+[ARD-21](../documentation/decisiones/ARD-21.md). Requiere que el paso de scorecards haya
+corrido antes (lee sus JSON de entrada) y gasta API en cada corrida.
 
 ## Diseño del prompt
 

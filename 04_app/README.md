@@ -19,9 +19,11 @@ Lo genera la Fase 3 (`03_llm_integration/llm_integration.py`, `export_deliverabl
 La app **no recomputa** Fase 1/2 ni vuelve a llamar al LLM: solo lee artefactos ya
 producidos aguas arriba. El contrato del CSV está blindado por `tests/test_handoff_f3.py`.
 
-La vista agregada (§2) consume además scorecards por entidad: indicadores derivados que se
-generan offline (§3), no forman parte del contrato del mentor, son regenerables y quedan
-fuera del control de versiones.
+La vista agregada (§2) consume además scorecards por entidad y la síntesis ejecutiva de red
+(`agente1_raw.txt`): indicadores y narrativa derivados que se generan offline/vía LLM (§3), no
+forman parte del contrato del mentor, son regenerables y quedan fuera del control de
+versiones. `agente1_raw.txt` es una dependencia real de Fase 3→Fase 4, no un artefacto
+aislado ([ARD-21](../documentation/decisiones/ARD-21.md)).
 
 Estructura del CSV (las cinco del mentor primero, en orden; luego soporte para la app):
 
@@ -51,6 +53,12 @@ El diseño se organiza por **modo de consumo**, no por entidad de la cadena:
 
 Detalle de las personas en `../documentation/user_personas.md`.
 
+Streamlit no es el único canal: `telegram_bot/` ([ADR-20](../documentation/decisiones/ARD-20.md))
+expone un segundo front-end con comandos fijos por persona (`/po`, `/timeline`, `/alertas`,
+`/hot` para Diego; `/kpi`, `/scorecards`, `/distribucion`, `/mismatches` para Ravi) sobre el
+mismo contrato F3→F4 — sin razonamiento libre ni llamada a LLM en tiempo de consulta, distinto
+del chatbot conversacional diferido (#160).
+
 ## 3. Cómo correr
 
 ```bash
@@ -66,19 +74,29 @@ python 03_llm_integration/scorecard_core.py \
     data/processed/df_classified.csv data/processed/scorecards
 #    En Windows, si la consola falla con emojis, anteponer PYTHONUTF8=1
 
-# 3. Lanzar la app:
+# 3. Generar la síntesis ejecutiva de red (GASTA API, ADR-19), input de Network
+#    Intelligence: produce data/processed/agente1_raw.txt. Debe correr después del
+#    paso 2 (lee esos scorecards). Requiere --actor all para consolidar el reporte.
+python 03_llm_integration/llm_integration_network_intelligence_view.py --actor all
+
+# 4. Lanzar la app:
 streamlit run 04_app/app.py
 ```
 
 ## 4. Estado
 
-La app lee dos artefactos, ambos regenerables y fuera del control de versiones:
+La app lee tres artefactos, todos regenerables y fuera del control de versiones:
 
-- `data/processed/po_output.csv` — contrato tier 1 (§1), input primario de ambas vistas.
+- `data/processed/po_output.csv` — contrato base + tier-1/tier-2 (§1, ARD-21), input
+  primario de ambas vistas.
 - `data/processed/scorecards/reporte_{vendors,carriers,dcs}.json` — indicadores por
   entidad que alimentan la vista agregada. Los produce offline
   `03_llm_integration/scorecard_core.py` sobre `df_classified.csv`; la app los lee, no
   recomputa la capa estadística ni llama a ninguna API.
+- `data/processed/agente1_raw.txt` — síntesis ejecutiva de red por actor. La produce
+  `03_llm_integration/llm_integration_network_intelligence_view.py --actor all` (ADR-19,
+  gasta API) a partir de los scorecards; la consume Network Intelligence, no la app en
+  general.
 
 Las dos vistas, individual (#163) y agregada (#164), están reconstruidas sobre el sistema
 de diseño de la fase. Incorporado en el lote de elevación a calidad de deployment:

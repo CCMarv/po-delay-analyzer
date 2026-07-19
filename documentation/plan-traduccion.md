@@ -25,9 +25,9 @@ El alcance ideal añade, si el tiempo lo permite tras completar el mínimo:
 - README de fase.
 - Data dictionary (`documentation/data_dictionary.md`).
 
-Queda fuera de alcance la documentación interna de proceso: notas locales
-(`data/_local_notes/`), registros de decisiones (ADRs) y el código. Estos sirven al equipo,
-no a la evaluación bilingüe, y su traducción no aporta al entregable.
+Queda fuera de alcance la documentación interna de proceso: notas locales de trabajo,
+registros de decisiones (ADRs) y el código. Estos sirven al equipo, no a la evaluación
+bilingüe, y su traducción no aporta al entregable.
 
 ## Orden
 
