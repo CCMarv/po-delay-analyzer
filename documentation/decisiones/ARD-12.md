@@ -1,6 +1,6 @@
 # Diseño del prompt de Fase 3: few-shot que enseña el razonamiento, con fuente única
 
-* **Estatus:** 🔵 **BORRADOR** (lo cierra el equipo)
+* **Estatus:** 🟢 **Vigente** (cerrado 2026-07-19)
 * **Contexto Técnico:** Fase 3 / Integración LLM — diseño del prompt que genera la explicación y la acción
 * **Referencias:** Issue #99; #94 (benchmark de calidad, 20 POs); #91/#67 (prompt base); ADR-10 (severidad y umbral); `03_llm_integration/llm_integration.py` (`build_prompt`, `_format_example`, `_examples_block`); `03_llm_integration/eval_quality.py`
 
@@ -42,7 +42,7 @@ Se elige la **Opción C**.
 2. Los ejemplos provienen de **mismatches reales de F2** (la clasificación computada discrepa del `REASON_DSC` humano), verificados como **disjuntos del benchmark de 20 POs** antes de cualquier corrida, para que la métrica no se contamine.
 3. Cada ejemplo es **espejo de la forma** del caso real (mismos bloques del prompt) pero **curado en contenido**: solo los campos que enseñan el razonamiento de la acción (la señal de exceso de la etapa elegida, el delay citado, el responsable a nombrar, el motivo en discusión y los agravantes activos). No incluye el timeline de fechas —mostrarlo reenseñaría a recalcular, contra #91— ni campos de ruido. El JSON ideal de cada ejemplo lleva las **cinco claves completas**, para reforzar que las cinco deben existir siempre.
 4. `build_prompt()` queda como **fuente única** del prompt y se **elimina** `prompt_template.txt`.
-5. La combinación ganadora (cuántos ejemplos) se elige por su tasa de (c) contra el benchmark, sin degradar (a) ni (b).
+5. La combinación ganadora (cuántos ejemplos) se elige por su tasa de (c) contra el benchmark, sin degradar (a) ni (b). **Ganador registrado (cierre, 2026-07-19):** C3 — 3 ejemplos few-shot, uno por etapa (Vendor + Carrier + DC) — es la configuración de producción, validada 20/20 en (c) a temperatura 0.9 con semilla 42 (`03_llm_integration/fixtures/eval_quality_20pos_C3_t09.md`), cableada en `llm_integration.py` (`select_examples(3, stages=["Vendor", "Carrier", "DC"])`).
 
 ## Consecuencias
 
