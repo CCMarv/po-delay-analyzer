@@ -2,6 +2,7 @@
 
 Consulta individual de un PO tardío con timeline, diagnóstico LLM y validación.
 """
+from html import escape
 from pathlib import Path
 import streamlit as st
 import pandas as pd
@@ -172,12 +173,13 @@ with col_diag4:
 # Reason humano
 with col_diag5:
     reason = po_data.get(COL_REASON_DSC, "N/A")
+    reason_html = escape(str(reason)) if pd.notna(reason) else "N/A"
     st.markdown(
         f"""
         <div class="custom-card">
             <h4 style="margin: 0 0 0.5rem 0; color: var(--text-muted);">Reason Humano</h4>
             <p style="margin: 0; font-size: 0.9rem; color: var(--text-secondary);">
-                {reason if pd.notna(reason) else "N/A"}
+                {reason_html}
             </p>
         </div>
         """,
@@ -243,9 +245,11 @@ st.markdown("### Diagnóstico Diferencial")
 
 
 def _t2(col: str) -> str:
-    """Texto tier-2 seguro: valor limpio, o guion largo si viene vacío/NaN."""
+    """Texto tier-2 seguro: valor limpio y escapado para HTML, o guion largo
+    si viene vacío/NaN. Escapado porque es texto generativo del LLM, no un
+    vocabulario cerrado, y se interpola con unsafe_allow_html."""
     valor = po_data.get(col)
-    return str(valor).strip() if pd.notna(valor) else "—"
+    return escape(str(valor).strip()) if pd.notna(valor) else "—"
 
 
 def _microlabel(texto: str) -> str:
