@@ -39,3 +39,8 @@ __pycache__/
 # == SISTEMA OPERATIVO ==
 .DS_Store
 Thumbs.db
+
+# == MUESTRA VERSIONADA (Fase 4) ==
+# Excepción: muestra versionada del artefacto F3→F4 — la app demo abre sin correr Fase 3
+!data/samples/
+!data/samples/**
