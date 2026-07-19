@@ -1,6 +1,6 @@
 # Endurecimiento del prompt de Fase 3 contra el overfitting al few-shot
 
-* **Estatus:** 🔵 **BORRADOR** (lo cierra el equipo)
+* **Estatus:** 🟢 **Vigente** (cerrado 2026-07-19)
 * **Contexto Técnico:** Fase 3 / Integración LLM — reglas del prompt para que razone por PO en vez de calcar el ejemplo o el motivo humano
 * **Referencias:** Issue #143; #137 / PR #144 (experimento de temperatura que lo surfaceó); #94 (benchmark de calidad, 20 POs); ADR-12 (diseño del prompt few-shot, que nombró el riesgo); ADR-07 (taxonomía de Indeterminado); ADR-03b / ADR-06b (medición de Vendor, no se reabre); ADR-13 (temperatura); `03_llm_integration/llm_integration.py` (`build_prompt`, `_format_example`)
 

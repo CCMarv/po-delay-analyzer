@@ -1,6 +1,6 @@
 # Manejo de secretos y seguridad de API keys (multi-proveedor LLM)
 
-* **Estatus:** 🔵 **BORRADOR** (abierto 2026-06-27; la versión final la valida el equipo)
+* **Estatus:** 🟢 **Vigente** (cerrado 2026-07-19; abierto 2026-06-27)
 * **Contexto Técnico:** Fase 3 / Integración LLM — credenciales de los proveedores de la API
 * **Referencias:** Best Practices for API Key Safety (OpenAI Help Center, 7 prácticas);
   `03_llm_integration/llm_integration.py` (backends Claude/OpenAI/DeepSeek, `create_backend`);
@@ -55,3 +55,9 @@ quedan documentadas como deuda de producción, no implementadas en este alcance.
 * **Negativas:** La seguridad descansa en disciplina humana y en un `.env` en texto plano por
   máquina; no hay rotación automática ni control de acceso centralizado. Si el proyecto pasara a
   producción, habría que reabrir esta decisión hacia la Opción C (encadenar nuevo ADR).
+
+## Nota de cierre (2026-07-19)
+La auditoría de cierre detectó que `llm_integration.py` seguía implementando `--api-key`
+—la Opción A que este ARD marca "Descartada"— como el ejemplo principal de su docstring y en
+el orden de sus mensajes de error. Se retiró el flag de la CLI (queda solo la resolución por
+`.env`), reconciliando el código con la decisión ya tomada aquí; no se reabre ninguna opción.
