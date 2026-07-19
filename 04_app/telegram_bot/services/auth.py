@@ -5,10 +5,9 @@ from config import TELEGRAM_USER_WHITELIST, TELEGRAM_RAVI_USER_IDS
 def is_authorized(user_id: int) -> bool:
     """Verifica si un user_id de Telegram está autorizado a usar el bot.
 
-    Si la whitelist está vacía, todos pueden usar el bot.
+    Fail-closed: si la whitelist está vacía, NADIE está autorizado. Solo los
+    IDs listados en TELEGRAM_USER_WHITELIST pueden usar el bot.
     """
-    if not TELEGRAM_USER_WHITELIST:
-        return True
     return user_id in TELEGRAM_USER_WHITELIST
 
 
