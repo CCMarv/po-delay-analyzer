@@ -22,8 +22,26 @@ from sklearn.preprocessing import StandardScaler
 # ─────────────────────────────────────────────────────────────────────────
 # RESOLUCIÓN DE RUTAS (RAÍZ DEL REPO)
 # ─────────────────────────────────────────────────────────────────────────
-REPO_ROOT = Path(__file__).resolve().parent.parent  # 03_llm_integration → repo_root
-DATA_PROCESSED = REPO_ROOT / "data" / "processed"
+
+# ─────────────────────────────────────────────────────────────────────────
+# RESOLUCIÓN DE RUTAS (RAÍZ DEL REPO) - VERSIÓN LIMPIA
+# ─────────────────────────────────────────────────────────────────────────
+import os
+
+def find_repo_root():
+    """Encuentra la raíz del proyecto buscando la carpeta data/"""
+    current = Path(__file__).resolve().parent
+    
+    # Buscar hacia arriba hasta encontrar data/
+    for parent in [current] + list(current.parents):
+        if (parent / "data").exists() and (parent / "data" / "processed").exists():
+            return parent
+    
+    # Si no encuentra, usar directorio actual
+    return current
+
+REPO_ROOT = find_repo_root()
+DATA_PROCESSED = (REPO_ROOT / "data" / "processed").resolve()
 CSV_DEFAULT_PATH = DATA_PROCESSED / "df_classified.csv"
 
 
@@ -481,7 +499,7 @@ def _simplificar_scorecard(scorecard_completo: dict) -> dict:
 
 def build_all_scorecards(
     csv_path: str | Path = None,
-    output_dir: str | Path = ".",
+    output_dir: str | Path = DATA_PROCESSED,
 ) -> Dict[str, Dict]:
     """Construye los 3 scorecards y escribe los JSON en output_dir."""
     
@@ -515,8 +533,8 @@ def build_all_scorecards(
 if __name__ == "__main__":
     # Ejecución como script: usa CSV default o argumento
     csv_arg = sys.argv[1] if len(sys.argv) > 1 else None
-    out_arg = sys.argv[2] if len(sys.argv) > 2 else "."
-    
+    out_arg = DATA_PROCESSED
+
     try:
         reports = build_all_scorecards(csv_arg, out_arg)
         for key, payload in reports.items():

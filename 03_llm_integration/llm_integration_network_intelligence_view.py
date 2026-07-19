@@ -15,9 +15,11 @@ load_dotenv(dotenv_path=ruta_env)
 model_name = os.getenv('MODEL_CHOICE', 'gpt-4o-mini')
 
 
+# Definir la ruta base primero
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DATA_PROCESSED = REPO_ROOT / "data" / "processed"
+
 # Después de imports y antes de las clases Pydantic
-
-
 ACTOR_CONFIG = {
     "vendor": {
         "input_file": "reporte_vendors.json",  # tu archivo actual
@@ -276,6 +278,15 @@ async def main():
     
     # Listas vacías para ir acumulando los textos en memoria
     reportes_texto_acumulados = []
+
+    # ✅ Verificar que los archivos existen
+    print(f"\n📁 Buscando archivos en: {DATA_PROCESSED}")
+    for actor_key in ACTOR_CONFIG:
+        archivo = DATA_PROCESSED / ACTOR_CONFIG[actor_key]["input_file"]
+        existe = "✅" if archivo.exists() else "❌"
+        print(f"  {existe} {archivo.name}")
+    print()
+
     
     # 🔁 BUCLE: Procesará uno por uno los actores de la lista
     for actor_key in actores_a_procesar:
@@ -283,7 +294,7 @@ async def main():
         print(f"\n🔋 Procesando secuencialmente: {config['titulo']}")
         
         try:
-            input_file = config["input_file"]
+            input_file = DATA_PROCESSED / config["input_file"]
             with open(input_file, "r", encoding="utf-8") as f:
                 json_data = f.read()
         except FileNotFoundError as e:
