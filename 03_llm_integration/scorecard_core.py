@@ -479,21 +479,39 @@ def _simplificar_scorecard(scorecard_completo: dict) -> dict:
     }
 
 
+def _report_date_from_data(df: pd.DataFrame) -> str:
+    """Fecha de vigencia del dato: máximo RECPT_DT del CSV, no la fecha de corrida.
+
+    Determinista — dos corridas sobre el mismo CSV producen el mismo
+    report_date, así los JSON quedan byte-idénticos entre ejecuciones.
+    Si la columna falta o no parsea ningún valor, cae a la fecha de hoy.
+    """
+    if "RECPT_DT" in df.columns:
+        recpt = pd.to_datetime(df["RECPT_DT"], errors="coerce").dropna()
+        if len(recpt):
+            return recpt.max().date().isoformat()
+    return date.today().isoformat()
+
+
 def build_all_scorecards(
     csv_path: str | Path = None,
-    output_dir: str | Path = ".",
+    output_dir: str | Path = None,
 ) -> Dict[str, Dict]:
-    """Construye los 3 scorecards y escribe los JSON en output_dir."""
-    
+    """Construye los 3 scorecards y escribe los JSON en output_dir.
+
+    output_dir default: data/processed/scorecards/ (misma carpeta donde la
+    app y el bot los buscan; antes escribía en el CWD).
+    """
+
     df = load_po_data(csv_path)
-    out_dir = Path(output_dir)
+    out_dir = Path(output_dir) if output_dir is not None else DATA_PROCESSED / "scorecards"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     delay_col = "delay_days_calc"
-    
+
     cut_low_global, cut_high_global, po_delay_percentiles = _po_level_risk_cuts(df, delay_col)
 
-    report_date = date.today().isoformat()
+    report_date = _report_date_from_data(df)
     all_reports = {}
     
     for actor_key in ACTOR_CONFIG:
@@ -515,8 +533,8 @@ def build_all_scorecards(
 if __name__ == "__main__":
     # Ejecución como script: usa CSV default o argumento
     csv_arg = sys.argv[1] if len(sys.argv) > 1 else None
-    out_arg = sys.argv[2] if len(sys.argv) > 2 else "."
-    
+    out_arg = sys.argv[2] if len(sys.argv) > 2 else None
+
     try:
         reports = build_all_scorecards(csv_arg, out_arg)
         for key, payload in reports.items():
