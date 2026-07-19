@@ -101,7 +101,7 @@ Resultados cabecera (población, umbral y fuente reproducible de cada cifra en
 |---|---|---|
 | Stage accuracy | 100% (208/208) | > 80% ✅ |
 | Reason agreement | 88.8% (174/196) | referencia (no umbral) |
-| LLM Explanation Quality | 4.75/5 (few-shot C3) | > 4/5 ✅ |
+| LLM Explanation Quality | 5/5 (few-shot C3, revalidado a temp. 0.9) | > 4/5 ✅ |
 | Severity Ranking | 100% (14/14) | > 95% ✅ |
 
 ## Estructura del repositorio
