@@ -48,7 +48,6 @@ Las keys **nunca** se escriben en el código ni se pasan como argumento en produ
    ANTHROPIC_API_KEY=sk-ant-...
    OPENAI_API_KEY=sk-...
    DEEPSEEK_API_KEY=sk-...
-   OLLAMA_URL=http://localhost:11434/api/generate
    ```
 3. Confirma que `.env` está en `.gitignore`:
    ```bash
@@ -93,7 +92,7 @@ python llm_integration.py --mode custom --limit 50 --backend deepseek
 ### Modo producción (todos los POs retrasados)
 
 ```bash
-python llm_integration.py --mode full --backend claude
+python llm_integration.py --mode full --backend openai
 ```
 
 ### Parámetros adicionales
@@ -102,7 +101,7 @@ python llm_integration.py --mode full --backend claude
 |---|---|---|
 | `--mode` | `test` | `test` (10 POs), `full` (todos), `custom` (usa `--limit`) |
 | `--limit` | `50` | Cantidad de POs en modo `custom` |
-| `--backend` | `local` | `local`, `claude` o `deepseek` |
+| `--backend` | `local` | `local`, `claude`, `openai` o `deepseek` |
 | `--api-key` | `None` | Override manual de la key (no recomendado; usa `.env`) |
 | `--claude-model` | `claude-sonnet-4-6` | Modelo de Claude a usar |
 | `--deepseek-model` | `deepseek-chat` | Modelo de DeepSeek (`deepseek-chat` o `deepseek-reasoner`) |

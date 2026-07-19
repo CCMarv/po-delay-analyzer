@@ -10,8 +10,8 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from config import (
-    SCORECARDS_DIR, COL_PO, COL_STAGE, COL_SEVERITY, COL_REASON_DSC, COL_LLM_COINCIDE,
-    stage_colors, severity_colors, plot_theme,
+    SCORECARDS_DIR, DATA_PROCESSED_DIR, COL_PO, COL_STAGE, COL_SEVERITY, COL_REASON_DSC,
+    COL_LLM_COINCIDE, stage_colors, severity_colors, plot_theme,
 )
 from services.data_service import load_po_output
 from components.navbar import render_navbar
@@ -441,7 +441,7 @@ st.markdown("---")
 # 🔥 SECCIÓN DINÁMICA: DIAGNÓSTICO ESTRATÉGICO CON DESGLOSE COMPLETO POR ACTOR
 # ═══════════════════════════════════════════════════════════════════════════
 
-ruta_informe = Path(__file__).resolve().parent.parent.parent / "data" / "processed" / "agente1_raw.txt"
+ruta_informe = DATA_PROCESSED_DIR / "agente1_raw.txt"
 
 # 🛠️ MAPEO MAESTRO: Sincroniza cada sección del reporte con su JSON, clave y etapa
 CONFIG_ACTORES_COMPLETO = {
@@ -480,7 +480,11 @@ st.markdown(
 
 # Procesar el archivo del agente de IA
 if not ruta_informe.exists():
-    st.warning(f"No se encontró el archivo `agente1_raw.txt`. Buscado en: {ruta_informe.resolve()}")
+    st.warning(
+        "No se encontró el archivo `agente1_raw.txt`. Se genera con "
+        "`python 03_llm_integration/llm_integration_network_intelligence_view.py "
+        "--actor all` (gasta API). Buscado en: data/processed/agente1_raw.txt"
+    )
 else:
     secciones = parse_informe_completo(ruta_informe)
 

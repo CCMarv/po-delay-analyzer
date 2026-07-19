@@ -4,12 +4,15 @@ Misma lógica que 04_app/services/data_service.py pero sin dependencia de
 Streamlit ni st.cache_data. Usa caché en memoria (dict con un DataFrame).
 """
 import json
+import logging
 from pathlib import Path
 from typing import Optional
 
 import pandas as pd
 
-from config import PO_OUTPUT_CSV, SCORECARDS_DIR, COL_PO
+from config import PO_OUTPUT_CSV, PO_OUTPUT_SAMPLE_CSV, SCORECARDS_DIR, COL_PO
+
+logger = logging.getLogger(__name__)
 
 # ── Caché en memoria ───────────────────────────────────────────────────────
 _cache: dict = {}
@@ -17,6 +20,10 @@ _cache: dict = {}
 
 def load_po_output(force_reload: bool = False) -> pd.DataFrame:
     """Carga el CSV de salida de Fase 3.
+
+    Si no existe el artefacto real, cae a la muestra versionada en
+    data/samples/ (mismo fallback que 04_app/services/data_service.py) con un
+    warning en el log. Si tampoco existe la muestra, lanza un error accionable.
 
     Args:
         force_reload: Si True, ignora la caché y recarga del disco.
@@ -27,10 +34,28 @@ def load_po_output(force_reload: bool = False) -> pd.DataFrame:
     if not force_reload and "df" in _cache:
         return _cache["df"]
 
-    if not PO_OUTPUT_CSV.exists():
+    if PO_OUTPUT_CSV.exists():
+        target = PO_OUTPUT_CSV
+    elif PO_OUTPUT_SAMPLE_CSV.exists():
+        target = PO_OUTPUT_SAMPLE_CSV
+        logger.warning(
+            "Mostrando la muestra versionada (%s, no el artefacto completo). "
+            "Las cifras agregadas no son las canónicas del entregable. "
+            "El artefacto completo se genera corriendo la Fase 3 — ver "
+            "03_llm_integration/README.md.",
+            target.name,
+        )
+    else:
         raise FileNotFoundError(
-            f"No se encontró po_output.csv en:\n{PO_OUTPUT_CSV}\n\n"
-            "Ejecuta el pipeline de Fase 3 para generarlo."
+            f"No se encontró po_output.csv en:\n{PO_OUTPUT_CSV}\n"
+            f"ni la muestra versionada en:\n{PO_OUTPUT_SAMPLE_CSV}\n\n"
+            "El primero es el artefacto de handoff de Fase 3; la muestra "
+            "viene en el repo y no debería faltar salvo que se haya borrado "
+            "(restaurarla con: git checkout -- data/samples/po_output_sample.csv).\n\n"
+            "Para generar el artefacto completo (gasta API):\n"
+            "  cd 03_llm_integration\n"
+            "  python llm_integration.py --mode full --backend openai\n"
+            "Detalle en 03_llm_integration/README.md."
         )
 
     # Intentar múltiples codificaciones
@@ -38,13 +63,13 @@ def load_po_output(force_reload: bool = False) -> pd.DataFrame:
     df = None
     for enc in encodings:
         try:
-            df = pd.read_csv(PO_OUTPUT_CSV, low_memory=False, encoding=enc)
+            df = pd.read_csv(target, low_memory=False, encoding=enc)
             break
         except UnicodeDecodeError:
             continue
 
     if df is None:
-        df = pd.read_csv(PO_OUTPUT_CSV, low_memory=False, encoding="utf-8", errors="replace")
+        df = pd.read_csv(target, low_memory=False, encoding="utf-8", errors="replace")
 
     # Parsear fechas
     date_cols = [

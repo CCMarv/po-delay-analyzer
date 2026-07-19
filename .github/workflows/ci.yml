@@ -5,8 +5,8 @@
 # esa red de seguridad: la palomita verde reemplaza el "en mi compu sí jala".
 #
 # Qué garantiza la DoD del issue:
-#   - check verde cuando los módulos importan y la suite completa pasa (114 tests a jun 2026,
-#     pipeline + clasificador + métricas + contrato de handoff + LLM);
+#   - check verde cuando los módulos importan y la suite completa de tests/ pasa (pipeline +
+#     clasificador + métricas + contrato de handoff + LLM + páginas de la app);
 #   - check ROJO si un módulo no importa (pasos "Import smoke check") o si un test falla.
 #
 # Nota de versión: el issue sugería alinear a 3.10/3.11, pero esa nota quedó
@@ -80,6 +80,28 @@ jobs:
         env:
           PYTHONPATH: 03_llm_integration:02_clasif_reglas_negocio:01_data_pipeline_and_eda
 
+      # Smoke aislado para el generador de la vista de red (T7). Solo importa el
+      # módulo (no llama a la API): valida que agents/pydantic/dotenv resuelven y
+      # que no quedó ningún error de sintaxis o de import a nivel de módulo.
+      - name: Import smoke check (network intelligence view)
+        run: python -c "import llm_integration_network_intelligence_view"
+        env:
+          PYTHONPATH: 03_llm_integration
+          PYTHONUTF8: "1"
+
+      # Smoke aislado para el bot de Telegram (T5/T7): sin token real, config.py
+      # imprime un warning (no revienta) y bot.py no llama a main() al importarse
+      # (guard __name__ == "__main__"). Es justo lo que habría atrapado el
+      # _REPO_ROOT roto de T5 antes de llegar a producción.
+      - name: Import smoke check (telegram bot)
+        run: python -c "import bot"
+        env:
+          PYTHONPATH: 04_app/telegram_bot
+          PYTHONUTF8: "1"
+
       # pytest toma su config (testpaths, pythonpath, -v) de pyproject.toml.
+      # Incluye tests/test_app_smoke.py: import-smoke de las páginas de 04_app/
+      # vía streamlit.testing.v1.AppTest (no es un paso aparte porque ya corre
+      # dentro de la suite, con el pythonpath que pyproject.toml ya declara).
       - name: Run tests
         run: pytest

@@ -1,6 +1,6 @@
-"""Configuración del bot de Telegram — Fase 5.
+"""Configuración del bot de Telegram — Fase 4.
 
-Lee variables de entorno desde .env (mismo archivo que Fase 4).
+Lee variables de entorno desde .env (mismo archivo que el resto de Fase 4).
 """
 import os
 from pathlib import Path
@@ -9,7 +9,9 @@ from pathlib import Path
 # Cargar desde .env en la raíz del repo
 from dotenv import load_dotenv
 
-_REPO_ROOT = Path(__file__).resolve().parent.parent
+# telegram_bot/ -> 04_app/ -> raíz del repo (tres .parent, no dos: este archivo
+# vive un nivel más adentro que 04_app/config.py).
+_REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 _DOTENV_PATH = _REPO_ROOT / ".env"
 if _DOTENV_PATH.exists():
     load_dotenv(_DOTENV_PATH)
@@ -19,8 +21,9 @@ if not TELEGRAM_BOT_TOKEN:
     print("⚠️  TELEGRAM_BOT_TOKEN no definido en .env. El bot no arrancará.")
 
 # ── Whitelist de usuarios autorizados ───────────────────────────────────────
-# IDs de Telegram separados por comas (opcional: si está vacío, cualquiera usa
-# el bot; si tiene valores, solo esos IDs pueden ejecutar comandos).
+# IDs de Telegram separados por comas. Fail-closed: si está vacía, NADIE puede
+# usar el bot (arranca, pero rechaza a todos los comandos); solo los IDs
+# listados aquí quedan autorizados.
 # Formato en .env: TELEGRAM_USER_WHITELIST=12345678,87654321
 _WHITELIST_STR = os.getenv("TELEGRAM_USER_WHITELIST", "")
 TELEGRAM_USER_WHITELIST = (
@@ -43,6 +46,7 @@ TELEGRAM_RAVI_USER_IDS = (
 REPO_ROOT = _REPO_ROOT
 DATA_PROCESSED_DIR = REPO_ROOT / "data" / "processed"
 PO_OUTPUT_CSV = DATA_PROCESSED_DIR / "po_output.csv"
+PO_OUTPUT_SAMPLE_CSV = REPO_ROOT / "data" / "samples" / "po_output_sample.csv"
 SCORECARDS_DIR = DATA_PROCESSED_DIR / "scorecards"
 
 # ── Columnas canónicas (mismas que 04_app/config.py) ────────────────────────
