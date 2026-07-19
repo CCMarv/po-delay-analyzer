@@ -62,6 +62,40 @@ retrasados. Confirma el proveedor y el conteo antes de lanzarla.
 En Windows, si un script de Fase 3 imprime emojis y la consola falla con `UnicodeEncodeError`,
 antepón `PYTHONUTF8=1` (o `set PYTHONUTF8=1` en la sesión).
 
+### Camino completo hasta la app (Fase 4)
+
+La Fase 4 solo **lee** artefactos ya generados aguas arriba (no recomputa nada). Para abrir la
+app con el contrato completo (incluida la vista Network Intelligence), en orden:
+
+```bash
+# 1-2. Fases 1-2 (offline, ver arriba)
+
+# 3. Fase 3 — diagnóstico + acción de producción. GASTA API (backend openai).
+#    --action-call puebla las columnas tier-2 (diagnóstico diferencial, ARD-16);
+#    produce data/processed/po_output.csv (contrato F3→F4, 33 columnas, ARD-21).
+python 03_llm_integration/llm_integration.py --mode full --backend openai --action-call
+
+# 4. Scorecards por entidad (offline, sin API). Toma dos argumentos posicionales:
+#    CSV de entrada y carpeta de salida.
+python 03_llm_integration/scorecard_core.py data/processed/df_classified.csv data/processed/scorecards
+
+# 5. Síntesis ejecutiva de red por actor (ADR-19). GASTA API (arquitectura multi-agente,
+#    SDK openai-agents). Lee los scorecards del paso 4; requiere --actor all para consolidar
+#    el reporte y escribir data/processed/agente1_raw.txt, que consume Network Intelligence.
+python 03_llm_integration/llm_integration_network_intelligence_view.py --actor all
+
+# 6. Lanzar la app (lee po_output.csv + scorecards + agente1_raw.txt)
+streamlit run 04_app/app.py
+```
+
+Los pasos 3 y 5 gastan créditos de API — confirma proveedor y conteo antes de lanzarlos (ver
+"Uso de API real" en `.claude/instructions.md`). El paso 4 debe correr antes que el 5: la
+síntesis de red lee los JSON de scorecards que ese paso produce. Sin correr Fase 3 localmente,
+la app cae a la muestra versionada (`data/samples/`); Network Intelligence necesita el
+paso 5 para su panel completo. Detalle del contrato y de cada script en
+[`03_llm_integration/README.md`](03_llm_integration/README.md) y
+[`04_app/README.md`](04_app/README.md).
+
 ## Flujo de trabajo
 
 El ciclo de un cambio: gap → issue → rama → commits → PR + self-review → CI en verde →
@@ -84,7 +118,7 @@ en comandos de git vive en la
 ## Tests y CI
 
 ```bash
-pytest      # 244 tests; configuración en pyproject.toml
+pytest      # 251 tests; configuración en pyproject.toml
 ```
 
 La suite cubre el pipeline (Fase 1), el clasificador y las métricas (Fase 2), el contrato de
