@@ -62,13 +62,19 @@ python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\Act
 pip install -r requirements.txt
 cp .env.example .env                                 # Windows: Copy-Item .env.example .env
 
-# Colocar el CSV crudo (gitignored) en la ruta por defecto:
+# Colocar el CSV crudo (gitignored) en la ruta por defecto — solo hace falta
+# para correr el pipeline F1/F2, no para abrir la app:
 #   data/raw/po_root_cause_synthetic.csv
 
 # Correr el pipeline y la suite:
 python 01_data_pipeline_and_eda/pipeline_core.py     # F1 — limpieza + validación
 python 02_clasif_reglas_negocio/classifier_core.py   # F2 — clasificación por etapa
-pytest                                                # 244 tests, sin API
+pytest                                                # 249 tests, sin API
+
+# Abrir la app (Fase 4). Sin correr Fase 3 localmente, cae a la muestra
+# versionada (data/samples/); el artefacto completo vive en
+# data/processed/po_output.csv, generado por 03_llm_integration/llm_integration.py:
+streamlit run 04_app/app.py
 ```
 
 El detalle completo de setup y ejecución vive en [CONTRIBUTING.md](CONTRIBUTING.md): la Fase 3
