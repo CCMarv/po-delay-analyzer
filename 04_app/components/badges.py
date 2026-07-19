@@ -29,6 +29,9 @@ def severity_badge_html(severity: str) -> str:
 
 
 def confidence_badge_html(score: float) -> str:
-    """Badge de confianza: bucket ordinal (Alta/Media/Baja) a partir del escalar `llm_confianza`."""
+    """Badge de confianza: bucket ordinal (Alta/Media/Baja) a partir del escalar
+    `llm_confianza`. Solo el bucket, sin el % crudo (ARD-23: el número exacto
+    sugiere una precisión que el bucket ordinal no pretende — mismo mecanismo
+    que severidad, "nunca número crudo" de ARD-22 §6)."""
     bucket = confidence_bucket(score)
-    return f'<span class="badge-confidence badge-confidence--{bucket["key"]}">{bucket["label"]} ({score:.0%})</span>'
+    return f'<span class="badge-confidence badge-confidence--{bucket["key"]}">{bucket["label"]}</span>'
