@@ -10,8 +10,8 @@ final (#105).
 |---|---|---|---|---|:--:|
 | Stage accuracy | 100% (208/208) | > 80% | 208 evaluables = 247 tardíos − 39 Indeterminados sin gap medible | `metrics_core.py` sobre `df_classified` (generado por `classifier_core.py`); `02_clasif_reglas_negocio/README.md` §5.1 | ✅ cumple |
 | Reason agreement | 88.8% (174/196) | — (referencia, no umbral) | 196 clasificables (tardíos con `reason_group_manual` no nulo; nulos→"Unknown" fuera) | `metrics_core.py`; `02_clasif_reglas_negocio/README.md` §5.4; 8 de los 22 mismatches narrados en `03_llm_integration/mismatches_ai_vs_humano.md` | hallazgo |
-| LLM Explanation Quality | 4.75/5 (19/20), few-shot C3; baseline zero-shot 3.25/5 (13/20) | 4/5 (80%) | 20 POs (muestra estratificada 8/4/4/4, semilla 42) | `eval_quality.py`, backend oficial; `03_llm_integration/eval_quality_20pos.md` (+ fixtures C1/C2/C3) | ✅ cumple (C3) |
-| Severity Ranking | 100% (14/14) | > 95% | 14 POs con `HOT_PO_FLAG=1 & delay_days_calc>3`, sobre `po_output.csv` (severidad = LLM) | `eval_severity_ranking.py` (sin API); `po_output.csv` generado por `llm_integration.py --mode full`; `03_llm_integration/eval_severity_ranking.md` | ✅ cumple |
+| LLM Explanation Quality | 5/5 (20/20), few-shot C3 @ temp 0.9 (producción) | 4/5 (80%) | 20 POs (muestra estratificada 8/4/4/4, semilla 42) | `eval_quality.py`, backend oficial; `03_llm_integration/fixtures/eval_quality_20pos_C3_t09.md` (validación humana) | ✅ cumple |
+| Severity Ranking | 100% (14/14) | > 95% | 14 POs con `HOT_PO_FLAG=1 & delay_days_calc>3`, sobre `po_output.csv` (severidad = LLM) | `eval_severity_ranking.py` (sin API); `po_output.csv` generado por `llm_integration.py --mode full`; `03_llm_integration/eval_severity_ranking.md`; divergencia vs regla F2 en nota abajo | ✅ cumple |
 | Reparto de etapas | Vendor 131 (53.0%) · Carrier 40 (16.2%) · DC 37 (15.0%) · Indeterminado 39 (15.8%) | N/A (descriptivo) | 247 tardíos | `classifier_core.py` imprime el reparto; `02_clasif_reglas_negocio/README.md` "Reparto resultante" | descriptivo |
 
 ## Poblaciones (no mezclar denominadores)
@@ -33,10 +33,26 @@ El Indeterminado del reparto (39) se desglosa en 15 `sin_datos` (sin hora de tr�
 ## Notas
 
 - La severidad oficial del entregable es la del LLM (`severity ← llm_severidad`, ADR-10); la
-  regla determinística de F2 se conserva como auditoría y da 14/14 por construcción.
+  regla determinística de F2 se conserva como línea base de auditoría en el artefacto interno
+  y da 14/14 por construcción (mide ranking, no coincidencia con el LLM).
 - Reason agreement no tiene umbral del mentor: es la tesis del proyecto. El desacuerdo con la
   anotación humana (~20% incorrecta, dato del kickoff) es esperado y deseado; los 22 mismatches
   son la evidencia de que el cómputo temporal por timestamps supera a la anotación manual.
-- LLM Explanation Quality: la cifra titular (4.75/5) corresponde a la combinación few-shot
-  ganadora C3; el zero-shot (3.25/5) es el baseline de la progresión medida contra el mismo
-  benchmark (semilla 42).
+- LLM Explanation Quality: la cifra titular (5/5, 20/20) corresponde a la configuración de
+  producción — few-shot C3 a temperatura 0.9, la que genera `po_output.csv` — con validación
+  humana. Es el punto final de una progresión medida contra el mismo benchmark (semilla 42):
+  zero-shot 3.25/5 (13/20) → few-shot C3 a temp 0.3 (benchmark de selección de la combinación
+  ganadora) 4.75/5 (19/20) → el endurecimiento del prompt en #143 cierra el único fallo
+  (PO 100182, etapa Indeterminado) a 5/5 (20/20), aún a temp 0.3 → ADR-13 re-valida esa cifra
+  a la temperatura real de producción (0.9) sin regresión. El 4.75/5 no se descarta: es el
+  hito que demostró que C3 supera la meta del mentor (4/5) y ganó frente a C1/C2; el 5/5 es la
+  cifra que describe lo que el entregable produce hoy.
+- Severity: divergencia LLM vs regla F2. Sobre los 247 tardíos, `severity` (LLM, la oficial)
+  coincide con la severidad determinística de F2 en 213/247 (86.2%). Las 34 divergencias
+  (13.8%) **siempre escalan** — nunca desescalan: 30 casos LOW→MEDIUM, 4 casos MEDIUM→HIGH.
+  Lectura: el LLM ejerce juicio adicional sobre agravantes que la regla fija no captura
+  (p. ej. combinaciones de hot PO / short ship / retraso borderline), y ese juicio nunca baja
+  la alerta frente a la regla — es un hallazgo, no un defecto. Reproducción sin gastar API:
+  comparar la columna `severity` de `po_output.csv` (o `llm_severidad` en
+  `df_with_llm_full_openai.csv`) contra la `severity` de `df_classified.csv` (F2), por
+  `PO_NBR`. Detalle narrativo en `documentation/validacion-y-qa.md`.
