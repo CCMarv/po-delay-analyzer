@@ -37,6 +37,7 @@ Tras la aplicación rigurosa de los criterios de los ADRs vigentes (especialment
 | [ADR-19](ARD-19.md) | Integración LLM para análisis holístico de root cause y enriquecimiento con scorecard estadístico | 🟢 Vigente | Feedback mentores, ADR-16 (carril 3, complementario); `llm_integration_network_intelligence_view.py`, `scorecard_core.py` |
 | [ADR-20](ARD-20.md) | Bot de Telegram como canal adicional de consumo | 🔵 Borrador | PR #193 (bot), PR #194 (SAD/SRS), Issue #196; distinción con Issue #160 (chatbot diferido, carril 3 de ADR-16); ADR-09; `04_app/telegram_bot/` |
 | [ADR-21](ARD-21.md) | Contrato de datos tier-1/tier-2 de `po_output.csv` (incl. `agente1_raw.txt`) | 🔵 Borrador | Issue #158 (tier 1), Issue #161 (tier 2), PR #174; ADR-09/10, ADR-16 (carril 1); `04_app/config.py`, `llm_integration_network_intelligence_view.py` |
+| [ADR-22](ARD-22.md) | Spec de retrabajo de la interfaz F4: información clave por persona y checklist ejecutable | 🔵 Borrador | Issue #130; ADR-09, ARD-17, ARD-21; issue #197 |
 
 ## Notas de Proceso e Integración
 *   **Estándar de Documentación:** Todo el registro técnico del proyecto se rige bajo la plantilla **MADR (Markdown Architecture Decision Records)**, elegida formalmente por el equipo tras el debate documentado en la discusión [#79](#).
