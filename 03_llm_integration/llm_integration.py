@@ -75,9 +75,9 @@ DEFAULT_ACTION_QA_RETRIES = 2
 # --- Operativo (despliegue) ---
 # Cambia por entorno, no por lógica del producto: se lee de .env con default en
 # código. Documentadas en .env.example.
-DEFAULT_DELAY_SECONDS = float(os.environ.get("LLM_DELAY_SECONDS", "0.5"))
-RETRY_SLEEP_SECONDS = float(os.environ.get("LLM_RETRY_SLEEP_SECONDS", "2"))
-DEFAULT_SAVE_EVERY = int(os.environ.get("LLM_SAVE_EVERY", "50"))
+DEFAULT_DELAY_SECONDS = float(os.environ.get("LLM_DELAY_SECONDS") or "0.5")
+RETRY_SLEEP_SECONDS = float(os.environ.get("LLM_RETRY_SLEEP_SECONDS") or "2")
+DEFAULT_SAVE_EVERY = int(os.environ.get("LLM_SAVE_EVERY") or "50")
 
 # --- Fallbacks del parser (_parse_llm_json) ---
 # Rutas de degradación cuando el modelo no devuelve JSON usable; no son config
