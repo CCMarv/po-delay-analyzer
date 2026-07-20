@@ -25,6 +25,7 @@ from config import (
 )
 from services.data_service import load_po_output, get_po_by_number, get_unique_po_list
 from components.navbar import render_navbar
+from components.theme_toggle import inject_theme_css
 from components.badges import stage_badge_html, severity_badge_html, confidence_badge_html
 from components.timeline import timeline_segment_html
 from components.metrics_cards import metric_card
@@ -34,17 +35,14 @@ st.set_page_config(
     page_title="Exception Workbench",
     page_icon="",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 # ── Navbar superior ─────────────────────────────────────────────────────────
 render_navbar(active_page="diego")
 
-# ── Cargar CSS personalizado ────────────────────────────────────────────────
-css_file = Path(__file__).parent.parent / "assets" / "styles.css"
-if css_file.exists():
-    with open(css_file, encoding="utf-8") as f:
-        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+# ── CSS de tema (tokens del sistema de diseño, ARD-17) ──────────────────────
+inject_theme_css()
 
 # ── Carga de datos ──────────────────────────────────────────────────────────
 df = load_po_output()

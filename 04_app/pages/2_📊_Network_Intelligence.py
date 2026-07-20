@@ -22,23 +22,21 @@ from config import (
 )
 from services.data_service import load_po_output
 from components.navbar import render_navbar
+from components.theme_toggle import inject_theme_css
 
 # ── Configuración de página ─────────────────────────────────────────────────
 st.set_page_config(
     page_title="Network Intelligence",
     page_icon="",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 # ── Navbar superior ─────────────────────────────────────────────────────────
 render_navbar(active_page="ravi")
 
-# ─ Cargar CSS personalizado ────────────────────────────────────────────────
-css_file = Path(__file__).parent.parent / "assets" / "styles.css"
-if css_file.exists():
-    with open(css_file, encoding="utf-8") as f:
-        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+# ── CSS de tema (tokens del sistema de diseño, ARD-17) ──────────────────────
+inject_theme_css()
 
 # ── CSS compacto para esta vista (consume tokens de styles.css, ARD-17) ────
 st.markdown("""
