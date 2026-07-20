@@ -42,6 +42,12 @@ TELEGRAM_RAVI_USER_IDS = (
     else set()
 )
 
+# ── Modo demo (bypass de autorización) ──────────────────────────────────────
+# Si está activo, is_authorized() acepta cualquier user_id sin necesidad de
+# whitelist — pensado para demos/presentación, NO para producción. Ver
+# services/auth.py::is_authorized y ARD-20 (modelo fail-closed).
+DEMO_MODE = os.getenv("DEMO_MODE", "").strip().lower() in ("1", "true", "yes")
+
 # ── Rutas de datos (reusando la misma estructura que Fase 4) ────────────────
 REPO_ROOT = _REPO_ROOT
 DATA_PROCESSED_DIR = REPO_ROOT / "data" / "processed"

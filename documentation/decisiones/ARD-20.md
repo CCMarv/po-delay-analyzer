@@ -84,6 +84,11 @@ Fase 3 (`po_output.csv`, scorecards) — no un producto nuevo ni el chatbot conv
   a refactor futuro, no bloqueante para este entregable.
 - Segunda superficie de autorización que mantener sincronizada con las variables de `.env`
   (`TELEGRAM_USER_WHITELIST`, `TELEGRAM_RAVI_USER_IDS`) además del flujo de Streamlit.
+- **Excepción explícita (`DEMO_MODE`):** una variable de entorno dedicada permite desactivar el
+  gate fail-closed por completo para fines de demo/presentación. Es un bypass total (no solo de
+  perfil), documentado en `services/auth.py::is_authorized` y logueado como warning visible al
+  arrancar el bot. Vacío/false por default — el modelo fail-closed no cambia salvo activación
+  explícita.
 
 ## Relación con otras decisiones
 
