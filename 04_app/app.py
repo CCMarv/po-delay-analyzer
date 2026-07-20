@@ -8,6 +8,7 @@ from pathlib import Path
 import streamlit as st
 from config import COL_SEVERITY, TELEGRAM_BOT_USERNAME, dataset_cutoff_date
 from services.data_service import load_po_output
+from services.qr_service import telegram_qr_png
 from components.navbar import render_navbar
 from components.theme_toggle import inject_theme_css
 
@@ -165,6 +166,9 @@ st.markdown(
     """,
     unsafe_allow_html=True,
 )
+if TELEGRAM_BOT_USERNAME:
+    with st.expander("Mostrar QR para abrir el bot en Telegram"):
+        st.image(telegram_qr_png(TELEGRAM_BOT_USERNAME), width=160)
 
 # ── Footer de procedencia (ARD-22 §7 T3) ────────────────────────────────────
 cutoff = dataset_cutoff_date(df)

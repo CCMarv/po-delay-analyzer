@@ -30,3 +30,5 @@ plotly>=5.18.0
 # Fase 4 - Telegram Bot
 # ============================================================
 python-telegram-bot>=22.0
+# QR del enlace al bot en la landing. [pil] añade Pillow para renderizar el PNG.
+qrcode[pil]>=7.4
