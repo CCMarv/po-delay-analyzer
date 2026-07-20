@@ -57,7 +57,7 @@ Streamlit no es el único canal: `telegram_bot/` ([ADR-20](../documentation/deci
 expone un segundo front-end con comandos fijos por persona (`/po`, `/timeline`, `/alertas`,
 `/hot` para Diego; `/kpi`, `/scorecards`, `/distribucion`, `/mismatches` para Ravi) sobre el
 mismo contrato F3→F4 — sin razonamiento libre ni llamada a LLM en tiempo de consulta, distinto
-del chatbot conversacional diferido (#160).
+del chatbot conversacional diferido (#160). Cómo correr el bot: `telegram_bot/README.md`.
 
 ## 3. Cómo correr
 
