@@ -1,6 +1,6 @@
 # Idioma fuente canónico y convención de nombres para documentación bilingüe (ES→EN)
 
-* **Estatus:** 🔵 **BORRADOR** (abierto 2026-07-13; la versión final la valida el equipo)
+* **Estatus:** 🟢 **VIGENTE** (ratificado 2026-07-19; borrador abierto 2026-07-13)
 * **Contexto Técnico:** Documentación — Cierre y entregables; plan de traducción ES→EN
 * **Referencias:** Issue #88 (plan de traducción); Issue #96 (ejecución de la traducción);
   `../plan-traduccion.md`; repo del mentor (kickoff ES + EN publicados como artefactos
@@ -48,3 +48,14 @@ separada por idioma.
 Se adopta la **Opción B**: idioma fuente ES canónico, traducción EN derivada con convención
 de nombres de archivo hermano `.en.md`. El detalle operativo (alcance, orden y disparador de
 la traducción) vive en `../plan-traduccion.md`.
+
+El alcance bilingüe del entregable cubre la documentación versionada de autoría humana del
+repositorio (portada, READMEs de fase, `SAD`/`SRS`, ADRs, y los reportes legibles de
+evaluación de Fase 3) más la presentación (ES + EN, producida aparte). Quedan fuera los
+fixtures crudos de benchmark y las plantillas internas de proceso, que no aportan a la
+evaluación bilingüe. Las salidas que el LLM emite por PO —la explicación y la acción
+recomendada del `po_output.csv`— también quedan fuera de este alcance y permanecen en
+español: son salida del producto, no documentación de evaluación, y duplicarlas al inglés
+cargaría el gasto de API y el contrato del CSV sin aporte al objetivo bilingüe. Por eso el
+issue #96 (explicaciones bilingües del LLM) se descarta; el plan bilingüe vigente es el de
+esta decisión y su detalle operativo en `../plan-traduccion.md`.
