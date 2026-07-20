@@ -217,18 +217,15 @@ PLOT_THEME = {
 
 
 def current_theme() -> str:
-    """Tema activo ('light'/'dark') vía `st.context.theme`.
+    """Tema activo — la app está bloqueada a CLARO en Fase 1.
 
-    Cae a 'light' fuera de una sesión de Streamlit en curso (script/tests) o
-    si la API no existe en la versión instalada (`requirements.txt` solo fija
-    `streamlit>=1.30.0`, más vieja que la que introdujo `st.context.theme`).
+    Streamlit queda fijado a un solo modo vía un único `[theme]` en config.toml, así
+    que el tema siempre es claro. El modo oscuro (y sus variantes `*_DARK`, que quedan
+    dormidas) se difieren a la export estática (Fase 2), donde el toggle manual es
+    instantáneo vía CSS. Las funciones `stage_colors()`/`severity_colors()`/etc. siguen
+    aceptando un `theme` explícito, útil para la Fase 2 y para tests.
     """
-    try:
-        import streamlit as st
-        theme_type = st.context.theme.type
-        return theme_type if theme_type in ("light", "dark") else "light"
-    except Exception:
-        return "light"
+    return "light"
 
 
 def stage_colors(theme: str | None = None) -> dict:
