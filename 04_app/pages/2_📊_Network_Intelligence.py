@@ -27,7 +27,7 @@ from components.theme_toggle import inject_theme_css
 # ── Configuración de página ─────────────────────────────────────────────────
 st.set_page_config(
     page_title="Network Intelligence",
-    page_icon="",
+    page_icon="📊",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
