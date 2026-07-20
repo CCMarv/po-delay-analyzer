@@ -1,8 +1,8 @@
 # Integración LLM para análisis holístico de root cause y enriquecimiento con scorecard estadístico
-Estatus: 🟢 VIGENTE (cerrado 2026-07-17).
 
-Contexto Técnico: Fase 3 / Integración LLM — pipeline de análisis holístico de root cause por actor (Vendor / Carrier / DC), con enriquecimiento del input vía scorecard estadístico; implementación asociada a `03_llm_integration/llm_integration_network_intelligence_view.py` y `03_llm_integration/scorecard_core.py`
-`data/processed/df_classified.csv`; `data/processed/agente1_raw.txt`; `data/processed/reporte_{vendors,carriers,dcs}.json`
+* **Estatus:** 🟢 **Vigente** (cerrado 2026-07-17; reconciliado con [ARD-16](ARD-16.md) y con el código el 2026-07-19)
+* **Contexto Técnico:** Fase 3 / Integración LLM — pipeline de análisis holístico de root cause por actor (Vendor / Carrier / DC), con enriquecimiento del input vía scorecard estadístico
+* **Referencias:** Feedback de mentores (post-validación de main); [ARD-16](ARD-16.md) (carril 3 — esta decisión entrega una parte, ver Relación con otras decisiones); ADR-09 (personas de Fase 4), ADR-10 (severidad); `03_llm_integration/llm_integration_network_intelligence_view.py`, `03_llm_integration/scorecard_core.py`; artefactos `data/processed/df_classified.csv` (input), `data/processed/scorecards/reporte_{vendors,carriers,dcs}.json` (scorecard, resuelto vía `REPO_ROOT`, no depende del CWD), `data/processed/agente1_raw.txt` (salida consolidada)
 
 ## Contexto y Problema
 La Fase 3 introduce una superficie de consumo de inteligencia de red que debe responder a una pregunta directiva única: *¿dónde está la causa raíz del retraso y qué implica operativamente?* La respuesta no puede ser una lista cruda de POs ni un agregado sin interpretación; tiene que ser un análisis ejecutivo, accionable y jerarquizado por zonas de riesgo (Alto / Medio / Bajo) para cada uno de los tres actores de la cadena (Vendor, Carrier, DC).
@@ -21,6 +21,8 @@ La solución no es *o* LLM *o* estadística: es un pipeline donde la estadístic
 
 **Arquitectura de agentes — tres agentes especializados en secuencia (elegida).** Un agente por actor, cada uno con su propio `ACTOR_CONFIG` (umbrales orientativos, singular, título, archivo de entrada/salida), ejecutados secuencialmente y acumulados en `agente1_raw.txt`. Pros: cada agente opera con referencias calibradas a su actor, el contexto se mantiene enfocado, la salida es reproducible por actor, y el pipeline falla de forma aislada (un error en carriers no tumba vendors). Contras: mayor latencia total (3 llamadas secuenciales) y mayor consumo de tokens; mitigado con `temperature=0.1`, `max_tokens=1200` y salida estructurada Pydantic.
 
+**Deuda registrada (cierre, 2026-07-19).** El argumento de aislamiento se sostiene para las referencias primarias que cada agente recibe primero (`view:118-127`, propias de su actor), pero el prompt de cada agente además inyecta una segunda tabla comparativa con los umbrales de los **tres** actores (`view:142-146`), lo que diluye la separación estricta que este párrafo reclama. No se retira esa tabla aquí — es cambio de código/prompt (núcleo calificable) y queda fuera del alcance de esta reconciliación documental.
+
 **Enriquecimiento del input — POs crudas como único input (descartada).** Entregar el JSON de POs directamente al LLM sin pre-procesamiento estadístico. Pros: simple. Contras: el LLM tiene que calcular promedios, detectar outliers y ponderar tamaños de muestra sobre la marcha, con resultados no reproducibles y sesgados por POs extremas.
 
 **Enriquecimiento del input — scorecard estadístico como input enriquecido (elegido).** `scorecard_core.py` produce, por cada entidad, un conjunto de métricas validadas con diferentes técnicas estadísticas. Pros: el LLM recibe diagnóstico ya robustecido estadísticamente, con tamaños de muestra explícitos (`n_POs_total`, `n_POs_causa_raiz`) y credibilidad cuantificada (`Credibilidad_Z_*`). Contras: complejidad de implementación y necesidad de mantener el scorecard sincronizado con el pipeline de Fase 2 que genera `df_classified.csv`.
@@ -31,7 +33,9 @@ La solución no es *o* LLM *o* estadística: es un pipeline donde la estadístic
 
 **Estructura de salida — texto libre (descartada).** Imposible de parsear de forma robusta en el frontend; cualquier variación de formato rompe el render.
 
-**Estructura de salida — Pydantic con `AnalisisBloqueRiesgo` + `ReporteEspecialista` (elegida).** Tres bloques obligatorios por actor (Alto / Medio / Bajo), cada uno con `nivel_riesgo`, `entidades` (MAYÚSCULAS), `analisis` (viñetas) y `accion` (con escenarios A/B si falta info). Pros: el traductor `construir_segmento_texto` produce el formato exacto que Streamlit espera; la validación falla rápido si el modelo se sale del esquema; el `Score_Riesgo_Normalizado` queda anclado en el análisis como cierre verificable.
+**Estructura de salida — Pydantic con `AnalisisBloqueRiesgo` + `ReporteEspecialista` (elegida).** El esquema exige una lista con **al menos 1 bloque** de riesgo (`nivel_riesgo` ∈ {Alto, Medio, Bajo}), sin tope fijo — no un conteo cerrado de tres por actor: cuántos bloques emite el modelo depende de cuántos niveles de riesgo distintos observa (la corrida de referencia produjo 4 bloques repartidos en los 3 actores, ninguno "Bajo"). Cada bloque lleva `entidades` (MAYÚSCULAS), `analisis` (viñetas) y `accion` (con escenarios A/B si falta info). Pros: el traductor `construir_segmento_texto` produce el formato exacto que Streamlit espera; la validación falla rápido si el modelo se sale del esquema; el `Score_Riesgo_Normalizado` queda anclado en el análisis como cierre verificable.
+
+**Deuda registrada (cierre, 2026-07-19).** La descripción del campo `bloques` en el código dice "Crítico, Medio o Bajo" mientras `nivel_riesgo` exige literalmente "Alto, Medio o Bajo" — vocabulario inconsistente entre dos campos del mismo esquema Pydantic. Corregirlo es cambio de código, fuera del alcance de esta reconciliación documental.
 
 **Manejo de homogeneidad — forzar diferenciación entre entidades similares (descartado).** Cuando todas las entidades de un bloque operan en zona saludable y homogénea, forzar diferencias produce hallazgos espurios.
 
@@ -49,7 +53,7 @@ La solución no es *o* LLM *o* estadística: es un pipeline donde la estadístic
 3. **Diccionario de columnas** para que el modelo sepa qué significa cada campo.
 4. **Metodología de 8 pasos** (comportamiento general, impulsores, relaciones, consistencia, implicaciones operativas, impacto de negocio, recomendaciones, detección de homogeneidad) explícitamente marcada como "razonamiento interno, no mostrar".
 5. **Reglas de redacción**: análisis ejecutivo en viñetas (prohibido párrafo compacto), sin describir la tabla, sin mencionar umbrales, sin inventar correlaciones.
-6. **Prohibiciones enumeradas**: 14 puntos que cubren los modos de falla observados en pruebas (mencionar umbrales, ignorar `n_POs_total`, tratar el `Nivel_Riesgo_Absoluto` como verdad absoluta, forzar diferencias inexistentes, etc.).
+6. **Prohibiciones enumeradas**: 12 puntos que cubren los modos de falla observados en pruebas (mencionar umbrales, ignorar `n_POs_total`, tratar el `Nivel_Riesgo_Absoluto` como verdad absoluta, forzar diferencias inexistentes, etc.).
 7. **Excepción de homogeneidad**: cuando todas las entidades son prácticamente iguales, ese es el hallazgo clave.
 8. **Formato de salida**: apego estricto al esquema Pydantic.
 
@@ -60,14 +64,14 @@ La solución no es *o* LLM *o* estadística: es un pipeline donde la estadístic
 
 ```mermaid
 flowchart TD
-    subgraph "Fase 2: Scorecard Estadístico"
+    subgraph "Scorecard Estadístico (Fase 3)"
         A[df_classified.csv] --> B[scorecard_core.py]
         B --> C[reporte_vendors.json]
         B --> D[reporte_carriers.json]
         B --> E[reporte_dcs.json]
     end
 
-    subgraph "Fase 4: Pipeline Secuencial de Agentes"
+    subgraph "Pipeline Secuencial de Agentes (Fase 3)"
         C --> F[Agente 1: Vendor]
         F -->|ACTOR_CONFIG vendor<br>temperature=0.1<br>max_tokens=1200| G[Output Pydantic<br>ReporteEspecialista]
         
@@ -107,7 +111,7 @@ flowchart TD
 **Positivas:**
 
 - **Defendibilidad**: cada análisis del LLM se apoya en un scorecard con metodología estadística, no en el juicio crudo del modelo sobre POs ruidosas.
-- **Reproducibilidad**: el mismo `df_classified.csv` produce el mismo scorecard; el mismo scorecard con `temperature=0.1` produce narrativas muy estables.
+- **Reproducibilidad**: el mismo `df_classified.csv` produce el mismo scorecard (`report_date` se deriva del dato, no de la fecha de ejecución, así que el JSON es byte-idéntico entre corridas). La narrativa del LLM es estable en tono y estructura gracias a `temperature=0.1`, pero **no está anclada con `seed`** — a diferencia de la superficie por-PO (`llm_config.json`, `seed: 42`, ADR-13) — así que la reproducibilidad byte a byte del texto no está garantizada. **Deuda menor (cierre, 2026-07-19):** añadir `seed` a `ModelSettings` si se requiere esa garantía; hoy no se ha medido evidencia de que la variación del texto cambie el diagnóstico.
 - **Separación de responsabilidades**: la estadística diagnostica, el LLM interpreta. Si el scorecard está mal, se arregla en `scorecard_core.py` sin tocar prompts; si el análisis es malo, se arregla en el prompt sin tocar estadística.
 - **Frontend estable**: el traductor Pydantic → texto garantiza que Streamlit recibe siempre el formato esperado, incluso si el modelo varía el contenido.
 
@@ -122,3 +126,5 @@ flowchart TD
 ## Relación con otras decisiones
 
 - **No supera ningún ARD previo**: es una capa nueva de análisis holístico que consume salidas de decisiones vigentes (scorecard de Fase 2) y las orquesta en una narrativa ejecutiva.
+- **Entrega parte del carril 3 de [ARD-16](ARD-16.md)** ("El LLM como capa analítica sobre la base determinista validada"), que reservó ese carril para "síntesis ejecutiva del portafolio de retrasos y Q&A sobre el dataset". Esta decisión cubre la síntesis ejecutiva por actor (Vendor/Carrier/DC); no cubre el Q&A conversacional (ver [ARD-20](ARD-20.md), que lo distingue del chatbot diferido de #160). No supera a ARD-16: el carril 2 agéntico y la calibración del juez local siguen abiertos ahí.
+- Reusa la salida de **ADR-10** (severidad auditada) indirectamente vía `df_classified.csv`, y sirve a las personas de **ADR-09** (Diego/Ravi) como una de las dos vistas de producción de Fase 4.

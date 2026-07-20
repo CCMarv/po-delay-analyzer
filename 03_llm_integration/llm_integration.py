@@ -14,23 +14,18 @@ Uso:
     # Modo local (Qwen con Ollama)
     python llm_integration.py --mode test --backend local
 
-    # Modo cloud (Claude con API key)
-    python llm_integration.py --mode test --backend claude --api-key sk-ant-...
-
-    # Modo cloud (DeepSeek con API key)
-    python llm_integration.py --mode test --backend deepseek --api-key sk-...
-
-    # Modo cloud (OpenAI con API key)
-    python llm_integration.py --mode test --backend openai --api-key sk-proj-...
+    # Modo cloud (Claude, DeepSeek u OpenAI; requiere la API key en .env)
+    python llm_integration.py --mode test --backend claude
+    python llm_integration.py --mode test --backend deepseek
+    python llm_integration.py --mode test --backend openai
 
     # Modo producción con Claude
     python llm_integration.py --mode full --backend claude
 
-Variables de entorno (recomendado):
+Variables de entorno (obligatorio para los backends cloud; ver ARD-11):
     ANTHROPIC_API_KEY=sk-ant-...
     DEEPSEEK_API_KEY=sk-...
     OPENAI_API_KEY=sk-proj-...
-    OLLAMA_URL=http://localhost:11434/api/generate
 """
 
 import argparse
@@ -80,9 +75,9 @@ DEFAULT_ACTION_QA_RETRIES = 2
 # --- Operativo (despliegue) ---
 # Cambia por entorno, no por lógica del producto: se lee de .env con default en
 # código. Documentadas en .env.example.
-DEFAULT_DELAY_SECONDS = float(os.environ.get("LLM_DELAY_SECONDS", "0.5"))
-RETRY_SLEEP_SECONDS = float(os.environ.get("LLM_RETRY_SLEEP_SECONDS", "2"))
-DEFAULT_SAVE_EVERY = int(os.environ.get("LLM_SAVE_EVERY", "50"))
+DEFAULT_DELAY_SECONDS = float(os.environ.get("LLM_DELAY_SECONDS") or "0.5")
+RETRY_SLEEP_SECONDS = float(os.environ.get("LLM_RETRY_SLEEP_SECONDS") or "2")
+DEFAULT_SAVE_EVERY = int(os.environ.get("LLM_SAVE_EVERY") or "50")
 
 # --- Fallbacks del parser (_parse_llm_json) ---
 # Rutas de degradación cuando el modelo no devuelve JSON usable; no son config
@@ -1902,7 +1897,8 @@ def create_backend(
     (p. ej. --claude-model) por encima del de llm_config.json.
 
     La API key se resuelve en este orden de prioridad:
-        1. Argumento explícito (--api-key en CLI)
+        1. Argumento explícito (llamada programática a create_backend(); no expuesto en la
+           CLI de este script — ARD-11 descarta pasar la key por un flag de terminal)
         2. Variable de entorno (ANTHROPIC_API_KEY / DEEPSEEK_API_KEY / OPENAI_API_KEY)
 
     Args:
@@ -1910,7 +1906,8 @@ def create_backend(
         ollama_model/claude_model/deepseek_model/openai_model: override del modelo;
             None usa el de llm_config.json["models"].
         ollama_url: URL de Ollama (endpoint operativo, no en el JSON de inferencia).
-        claude_api_key/deepseek_api_key/openai_api_key: API key (opcional si está en .env).
+        claude_api_key/deepseek_api_key/openai_api_key: override programático de la API key
+            (opcional si está en .env); no llega desde la CLI de este script.
         temperature: override de temperatura para esta corrida; None usa llm_config.json.
         max_tokens: override de tokens de salida; None usa llm_config.json. Lo usa la
             llamada de acción (ARD-16): su contrato híbrido no cabe en los 512 default.
@@ -1937,7 +1934,7 @@ def create_backend(
         if not api_key:
             raise ValueError(
                 "❌ Se requiere API key de Claude. "
-                "Pásala con --api-key o define ANTHROPIC_API_KEY en .env"
+                "Define ANTHROPIC_API_KEY en .env"
             )
         model = claude_model or models["claude"]
         print(f"🔑 Usando Claude API (modelo: {model})")
@@ -1948,7 +1945,7 @@ def create_backend(
         if not api_key:
             raise ValueError(
                 "❌ Se requiere API key de DeepSeek. "
-                "Pásala con --api-key o define DEEPSEEK_API_KEY en .env"
+                "Define DEEPSEEK_API_KEY en .env"
             )
         model = deepseek_model or models["deepseek"]
         print(f"🔑 Usando DeepSeek API (modelo: {model})")
@@ -1959,7 +1956,7 @@ def create_backend(
         if not api_key:
             raise ValueError(
                 "❌ Se requiere API key de OpenAI. "
-                "Pásala con --api-key o define OPENAI_API_KEY en .env"
+                "Define OPENAI_API_KEY en .env"
             )
         model = openai_model or models["openai"]
         print(f"🔑 Usando OpenAI API (modelo: {model})")
@@ -2387,13 +2384,6 @@ def main() -> None:
         help="Modelo de OpenAI (override; default desde llm_config.json)"
     )
     parser.add_argument(
-        "--api-key", type=str, default=None,
-        help=(
-            "API key del backend seleccionado. "
-            "Alternativa: ANTHROPIC_API_KEY, DEEPSEEK_API_KEY u OPENAI_API_KEY en .env"
-        )
-    )
-    parser.add_argument(
         "--from-csv", action="store_true",
         help=(
             "Leer el handoff de Fase 2 desde data/processed/df_classified.csv en vez de "
@@ -2436,22 +2426,14 @@ def main() -> None:
 
     repo_root = Path(__file__).resolve().parent.parent
 
-    # Resolver API key según el backend elegido
-    claude_api_key = args.api_key if args.backend == "claude" else None
-    deepseek_api_key = args.api_key if args.backend == "deepseek" else None
-    openai_api_key = args.api_key if args.backend == "openai" else None
-
     try:
         backend = create_backend(
             backend_type=args.backend,
             ollama_model=args.ollama_model,
             ollama_url=args.ollama_url,
             claude_model=args.claude_model,
-            claude_api_key=claude_api_key,
             deepseek_model=args.deepseek_model,
-            deepseek_api_key=deepseek_api_key,
             openai_model=args.openai_model,
-            openai_api_key=openai_api_key
         )
     except ValueError as e:
         print(e)
@@ -2467,11 +2449,8 @@ def main() -> None:
             ollama_model=args.ollama_model,
             ollama_url=args.ollama_url,
             claude_model=args.claude_model,
-            claude_api_key=claude_api_key,
             deepseek_model=args.deepseek_model,
-            deepseek_api_key=deepseek_api_key,
             openai_model=args.openai_model,
-            openai_api_key=openai_api_key,
             max_tokens=cfg.get("max_tokens_action", DEFAULT_MAX_TOKENS_ACTION),
         )
 

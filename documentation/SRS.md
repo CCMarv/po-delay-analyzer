@@ -1,6 +1,9 @@
 # Especificación de Requisitos de Software (SRS)
 ## Sistema: PO Delay Root Cause Analyzer
 
+> `SRS.md` es la fuente de verdad versionada de este documento; `SRS.docx` es una copia
+> derivada/exportada para entrega, no se edita directamente.
+
 ---
 
 ### Índice
@@ -281,7 +284,7 @@ Cada bloque de RF se valida mediante un archivo de pruebas dedicado en `tests/` 
 *   **RNF-06 (Criterios de calidad validados):** Métricas medidas y publicadas como evidencia de aceptación (ver `README.md`, sección de estado de fases):
     *   Stage accuracy: 100% (208/208) — meta del mentor > 80%.
     *   Reason agreement (AI vs. humano): 88.8% (174/196) — referencia, sin umbral de aceptación.
-    *   LLM Explanation Quality: 4.75/5 (configuración few-shot C3) — meta del mentor > 4/5.
+    *   LLM Explanation Quality: 5/5 (20/20), few-shot C3 revalidado a la temperatura de producción (0.9) — meta del mentor > 4/5. (4.75/5 fue la cifra del benchmark inicial que seleccionó la configuración C3 frente a C1/C2, no la cifra final del entregable; ver `documentation/validacion-y-qa.md`.)
     *   Severity Ranking: 100% (14/14) — meta del mentor > 95%.
 
 #### 3.3 Requisitos de interfaz

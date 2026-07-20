@@ -8,10 +8,13 @@ cifras citadas correctas). Por eso viven como DATO versionado en `fewshot_pool.j
 —revisable en PRs sin leer Python— y este módulo solo los carga y selecciona.
 
 Selección ESTÁTICA (alcance de #99): `select_examples(n)` devuelve N ejemplos fijos en
-orden determinista (por `po_origen`), de modo que C1/C2/C3 del benchmark son reproducibles
-y el resultado del benchmark es el resultado de producción. Mantener la selección estática
-evita mezclar dos variables en la métrica (¿mejoró por los ejemplos o por una regla de
-selección?).
+orden determinista (por `po_origen`), de modo que C1/C2/C3 del benchmark son reproducibles:
+los ejemplos que gana el benchmark son exactamente los que usa producción, sin una regla
+dinámica que pudiera derivar entre una corrida y otra. (La *cifra* de calidad sí se
+re-validó después a otra temperatura —ADR-13— pero la selección de ejemplos no cambió; ver
+`../documentation/metricas-proyecto.md` para la progresión completa.) Mantener la selección
+estática evita mezclar dos variables en la métrica (¿mejoró por los ejemplos o por una regla
+de selección?).
 
 FUTURO (fuera de #99, ver ADR-12): una `select_examples_for_po(row, pool, n)` DINÁMICA que
 excluya `row.PO_NBR` del pool y elija por etapa/similitud al PO que se explica. Cambiaría

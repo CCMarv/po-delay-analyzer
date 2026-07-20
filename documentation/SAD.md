@@ -1,6 +1,9 @@
 # Documento de Arquitectura de Software (SAD)
 ## Sistema: PO Delay Root Cause Analyzer
 
+> `SAD.md` es la fuente de verdad versionada de este documento; `SAD.docx` es una copia
+> derivada/exportada para entrega, no se edita directamente.
+
 ---
 
 ### Índice
@@ -253,7 +256,7 @@ La organización física del código fuente sigue un orden estructurado por fase
 
 *   `01_data_pipeline_and_eda/`: Capa de extracción, tipado y limpieza de timestamps. Contiene el script core de Fase 1.
 *   `02_clasif_reglas_negocio/`: Capa lógica de reglas determinísticas y métricas de validación analítica. Contiene las reglas vigentes en JSON y los cálculos de precisión.
-*   `03_llm_integration/`: Capa de auditoría semántica y modelado estadístico. Contiene las fábricas de backends de LLM, el pool de ejemplos few-shot de discrepancias, y el **motor de scorecards de desempeño y riesgo (`scorecard_core.py`)**. Incluye además `llm_integration_network_intelligence_view.py`, un **componente experimental/POC** que usa un SDK distinto (`openai-agents`, multi-agente) para generar reportes ejecutivos por Vendor/Carrier/DC; no tiene referencias desde el resto del código ni del README y no forma parte del flujo de producción F1→F4.
+*   `03_llm_integration/`: Capa de auditoría semántica y modelado estadístico. Contiene las fábricas de backends de LLM, el pool de ejemplos few-shot de discrepancias, y el **motor de scorecards de desempeño y riesgo (`scorecard_core.py`)**. Incluye además `llm_integration_network_intelligence_view.py`, el generador de la síntesis ejecutiva de red por actor (Vendor/Carrier/DC) sobre los scorecards estadísticos de `scorecard_core.py`, gobernado por [ADR-19](decisiones/ARD-19.md): usa un SDK distinto (`openai-agents`, arquitectura multi-agente de tres agentes especializados en secuencia) y consolida su salida en `data/processed/agente1_raw.txt`, que consume en producción la página `Network Intelligence` (`04_app/pages/2_📊_Network_Intelligence.py`). Es una dependencia real de Fase 3→Fase 4, no un componente aislado (corregido conforme a [ARD-21](decisiones/ARD-21.md), que señaló la caracterización anterior de este documento como incorrecta).
 *   `04_app/`: Interfaz interactiva de usuario. Dividida en assets (CSS), componentes reutilizables (Navbar), la Landing Page (`app.py`), servicios de datos y páginas de usuario.
 *   `tests/`: Suite global de pytest para validación unitaria y de contratos de datos.
 *   `requirements.txt`: Declaración explícita y fijada de las librerías dependientes, incluyendo pandas, numpy, streamlit, plotly, requests, tqdm, pytest y las dependencias de scorecards implicitamente vinculadas (`scikit-learn` y `scipy`).
@@ -298,7 +301,7 @@ flowchart TB
 
 #### 3.5 Vista de escenarios
 1.  **Escenario 1: Diego enruta una excepción (Caso de discrepancia):** Diego abre el Exception Workbench. Selecciona una orden marcada en "Desacuerdo" (ej: el humano culpó a "Yard congestion" pero el clasificador temporal marca "Carrier" por exceso de tránsito de 30h). Diego lee la explicación del LLM ("El exceso se concentra en el transportista, contradiciendo el motivo registrado..."). Diego abre un ticket con transporte y marca la excepción como resuelta.
-2.  **Escenario 2: Ravi audita el reliability trimestral de la red:** Ravi accede a Network Intelligence. Visualiza el gráfico de distribución y nota que el 53% de los retrasos provienen de Vendor. Analiza la tasa agregada de acuerdo de la AI (del 80%) y extrae el listado de las POs en desacuerdo. Esto le da evidencia reproducible para negociar penalizaciones con los proveedores en la próxima junta.
+2.  **Escenario 2: Ravi audita el reliability trimestral de la red:** Ravi accede a Network Intelligence. Visualiza el gráfico de distribución y nota que el 53% de los retrasos provienen de Vendor. Analiza la tasa agregada de acuerdo de la AI (del 88.8%) y extrae el listado de las POs en desacuerdo. Esto le da evidencia reproducible para negociar penalizaciones con los proveedores en la próxima junta.
 3.  **Escenario 3: Evaluación de Scorecard de Proveedores por Ravi:** Ravi ingresa al panel de agregados en Network Intelligence. El sistema lee el archivo `reporte_vendors.json` (calculado por `scorecard_core.py`). Ravi visualiza que el proveedor 'MEDIQ' tiene un score normalizado de riesgo de 85.5 (Riesgo Alto). Ravi observa que el Delay Promedio es de 5.5 días, y que su tasa de reschedule es del 10%. Esto le da a Ravi argumentos científicos sólidos para citar al proveedor a una reunión de revisión, sabiendo que la métrica está protegida contra el ruido de muestras pequeñas.
 
 ---

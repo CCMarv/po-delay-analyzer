@@ -4,7 +4,7 @@ Genera explicaciones de causa raíz para Purchase Orders (POs) retrasados, usand
 
 ## Qué hace
 
-Toma el DataFrame ya limpio y clasificado (fases 1 y 2), filtra los POs con retraso (`delay_days_calc > 0`), y para cada uno construye un prompt con el contexto completo (fechas, métricas de yard/dock, clasificación automática, reason code del DC) que envía a un LLM. La respuesta se parsea a JSON y se agregan estas columnas al DataFrame:
+Toma el DataFrame ya limpio y clasificado (fases 1 y 2), filtra los POs con retraso (`delay_days_calc > 0`), y para cada uno construye un prompt con el contexto completo (fechas, métricas de yard/dock, clasificación automática, reason code del DC) que envía a un LLM. La respuesta se parsea a JSON y se agregan estas columnas al DataFrame (la primera llamada, siempre; con `--action-call` también las de tier-2 — ver [Salida](#salida) para el contrato completo de 33 columnas):
 
 | Columna | Descripción |
 |---|---|
@@ -48,7 +48,6 @@ Las keys **nunca** se escriben en el código ni se pasan como argumento en produ
    ANTHROPIC_API_KEY=sk-ant-...
    OPENAI_API_KEY=sk-...
    DEEPSEEK_API_KEY=sk-...
-   OLLAMA_URL=http://localhost:11434/api/generate
    ```
 3. Confirma que `.env` está en `.gitignore`:
    ```bash
@@ -93,7 +92,7 @@ python llm_integration.py --mode custom --limit 50 --backend deepseek
 ### Modo producción (todos los POs retrasados)
 
 ```bash
-python llm_integration.py --mode full --backend claude
+python llm_integration.py --mode full --backend openai
 ```
 
 ### Parámetros adicionales
@@ -102,7 +101,7 @@ python llm_integration.py --mode full --backend claude
 |---|---|---|
 | `--mode` | `test` | `test` (10 POs), `full` (todos), `custom` (usa `--limit`) |
 | `--limit` | `50` | Cantidad de POs en modo `custom` |
-| `--backend` | `local` | `local`, `claude` o `deepseek` |
+| `--backend` | `local` | `local`, `claude`, `openai` o `deepseek` |
 | `--api-key` | `None` | Override manual de la key (no recomendado; usa `.env`) |
 | `--claude-model` | `claude-sonnet-4-6` | Modelo de Claude a usar |
 | `--deepseek-model` | `deepseek-chat` | Modelo de DeepSeek (`deepseek-chat` o `deepseek-reasoner`) |
@@ -121,7 +120,7 @@ La corrida produce dos artefactos en `../data/processed/`:
 
 Es el insumo de trabajo y auditoría (incluye, p. ej., la `severity` determinística de F2 junto a la `llm_severidad`). También se generan guardados parciales cada 50 POs (configurable vía `DEFAULT_SAVE_EVERY`) para no perder progreso en corridas largas.
 
-**2. CSV-entregable** — `po_output.csv`, el artefacto del **contrato F3→F4** (#100): el único input de Fase 4. Tiene dos bloques de columnas, en este orden.
+**2. CSV-entregable** — `po_output.csv`, el artefacto del **contrato F3→F4** (#100): el único input de Fase 4. Tiene **33 columnas** en cuatro bloques, en este orden: el contrato base (16, sin numeración tier) y las ampliaciones tier-1/tier-2 que fija [ARD-21](../documentation/decisiones/ARD-21.md). La copia operativa verificada exacta 33/33 vive en [`04_app/README.md`](../04_app/README.md#1-entrada-el-contrato-f3f4-100); esta sección explica el origen, ARD-21 es el registro de diseño.
 
 **Bloque 1 — Contrato del mentor (las 5 columnas que evalúa, primero y en orden):**
 
@@ -141,15 +140,52 @@ Es el insumo de trabajo y auditoría (incluye, p. ej., la `severity` determinís
 | Agravantes | `HOT_PO_FLAG, is_short_ship` | marcar hot PO / short ship en la vista |
 | Concordancia | `REASON_DSC, llm_coincide_con_reason` | mostrar si el diagnóstico coincide con la anotación humana |
 
+Bloque 1 (5) + Bloque 2 (11) = las **16 columnas del contrato base** (ARD-21). Las siguientes
+17 amplían ese contrato en dos rondas:
+
+**Tier-1 (8 columnas, #158)** — enriquecimiento con datos ya computados aguas arriba, sin llamada LLM adicional:
+
+| Columnas | Para qué |
+|---|---|
+| `llm_confianza, VENDOR_NAME, CARRIER_PARTY_NAME, DC_LOC_NAME, delay_days_calc, excess_vendor_hrs, excess_carrier_hrs, excess_dc_hrs` | confianza del diagnóstico, entidades responsables y exceso de horas por etapa (contexto de la vista individual, Diego) |
+
+**Tier-2 (9 columnas, #161, PR #174)** — salida híbrida de la llamada de acción ([ADR-16](../documentation/decisiones/ARD-16.md) carril 1, opt-in vía `--action-call`; sin el flag estas 9 columnas salen **vacías, no ausentes** — el contrato de 33 es estable con o sin él):
+
+| Columnas | Para qué |
+|---|---|
+| `llm_razonamiento, llm_hipotesis, llm_hipotesis_evidencia, llm_accion_inmediata, llm_accion_correctiva, llm_accion_preventiva, llm_hipotesis_alt, llm_paso_discriminante, llm_confianza_hipotesis` | hipótesis principal con evidencia y plan escalonado, hipótesis alternativa con su paso discriminante, y una segunda confianza específica de la hipótesis |
+
 **Alcance de filas:** solo los **POs tardíos** (`delay_days_calc > 0`) — los que el LLM explica y los que la app ofrece en el selector. Los on-time no entran.
 
 **Regla del contrato F3→F4:** Fase 4 **lee** `po_output.csv` y nada más; **no recomputa** las reglas de F1/F2 ni vuelve a llamar al LLM. Por eso el artefacto trae ya el timeline y los agravantes: todo lo que la app necesita está en el CSV. (Una demo opcional de "regenerar este PO en vivo" sería la única excepción y va por separado del flujo principal.) El contrato está blindado por `tests/test_handoff_f3.py`.
 
-El `po_output.csv` del entregable se genera con el backend oficial, **OpenAI**:
+El `po_output.csv` del entregable se genera con el backend oficial, **OpenAI**. Añade
+`--action-call` para poblar también el tier-2 (segunda llamada, gasta API adicional por PO):
 
 ```bash
-python llm_integration.py --mode full --backend openai
+python llm_integration.py --mode full --backend openai --action-call
 ```
+
+## Síntesis ejecutiva de red (`llm_integration_network_intelligence_view.py`)
+
+Script aparte, gobernado por [ADR-19](../documentation/decisiones/ARD-19.md): no genera
+`po_output.csv` ni pertenece a su contrato. Lee los scorecards por entidad ya calculados por
+`scorecard_core.py` (`data/processed/scorecards/reporte_{vendors,carriers,dcs}.json`) y corre
+tres agentes especializados en secuencia (SDK `openai-agents`, distinto del backend de
+`llm_integration.py`), uno por actor (Vendor/Carrier/DC), para producir una síntesis narrativa
+de reliability por entidad.
+
+```bash
+# --actor: vendor | carrier | dc | all
+python llm_integration_network_intelligence_view.py --actor all
+```
+
+Solo `--actor all` consolida los tres análisis y escribe
+`data/processed/agente1_raw.txt`, el artefacto que consume en producción la página
+`Network Intelligence` (`04_app/pages/2_📊_Network_Intelligence.py`, persona Ravi). Es una
+dependencia real de Fase 3→Fase 4 —no un componente aislado ni un POC— formalizada en
+[ARD-21](../documentation/decisiones/ARD-21.md). Requiere que el paso de scorecards haya
+corrido antes (lee sus JSON de entrada) y gasta API en cada corrida.
 
 ## Diseño del prompt
 
@@ -232,7 +268,7 @@ El script espera el CSV crudo en `../data/raw/po_root_cause_synthetic.csv` relat
 - **Lineamiento del prompt (#91).** `build_prompt()` sigue el template del mentor (kickoff §03 / README §5): toda la aritmética llega ya resuelta (timeline + MÉTRICAS CALCULADAS) y el modelo solo **interpreta**. El prompt prohíbe explícitamente recalcular fechas/horas o inventar cifras, y exige **citar textualmente** las cifras dadas (p. ej. "un retraso de 4.2 días") para que la explicación sea auditable contra los datos. La explicación pedida (`causa_raiz`) son **2-3 oraciones** con los elementos del mentor: etapa exacta del retraso (Vendor/Carrier/DC), delay cuantificado citado, coincidencia con `REASON_DSC` y agravantes (hot PO, short ship); la acción debe ser operable y nombrar al responsable, no genérica. El contrato JSON de salida (5 claves) no cambió. Decisiones de diseño: se exige citar la cifra (auditabilidad); el short ship se mantiene como booleano "Sí/No" (el `{short_ship_pct}%` del template del mentor queda como follow-up). El umbral de severidad sigue en `> 3 días` (ADR-10); externalizarlo a `rules_config.json` es trabajo de #121.
 - **Reprogramación de cita como contexto (#67).** El prompt incluye `is_rescheduled` (de F2) como dato de **contexto neutro** ("¿Se reprogramó la cita de entrega? Sí/No"), no como etapa ni como agravante automático. Razón: el mentor (06-16) descartó la reprogramación como *señal de vendor* porque describe un evento, no la causa; meterla como agravante reintroduciría el sesgo pro-vendor que el cierre de F2 corrigió. El LLM la usa para juzgar mejor la coincidencia con `REASON_DSC` (varios reason codes humanos son "Rescheduled by vendor"), sin que la etapa se fuerce a Vendor por ello — la etapa la sigue marcando `stage_primary`.
 - **Fuente única del prompt (#99 / ADR-12).** El prompt que se envía al modelo lo arma `build_prompt()` en `llm_integration.py`: es la **única** fuente del prompt, interpola los datos de cada PO y opcionalmente antepone ejemplos few-shot (parámetro `examples`). El antiguo borrador `prompt_template.txt` se **eliminó**: no se cargaba desde el código y había divergido (taxonomía de 6 etapas que no son los 4 estados de F2, instrucciones que invitaban a calcular contra el lineamiento de #91, y un umbral de severidad `> 7 días` contradictorio con ADR-10). Conservarlo arriesgaba que se reutilizara sin contexto y revirtiera decisiones vigentes. El diseño del prompt (few-shot que enseña el razonamiento, fuente única) queda registrado en ADR-12.
-- **Few-shot validado (#99).** Contra el benchmark de 20 POs (`eval_quality_20pos.md`, semilla 42) se compararon zero-shot y tres combinaciones few-shot con ejemplos del pool auditado (`fewshot_pool.json`, estratificado: el mismatch más fuerte de cada etapa). Ganó **C3** (3 ejemplos): veredicto **19/20 (4.75/5)** frente a 13/20 del zero-shot, superando la meta del mentor (4/5), sin degradar (a)/(b). El few-shot ataca el déficit de (c): convierte acciones genéricas en acciones específicas que citan la señal medida y dirigen al responsable correcto. **C3 es la configuración de producción**: `main()` puebla `examples` con `select_examples(3, stages=["Vendor","Carrier","DC"])`, `add_llm_explanations` lo pasa a `build_prompt`, y el `po_output.csv` del entregable se genera con C3. Se re-validó a la temperatura de producción en `fixtures/eval_quality_20pos_C3_t09.md` (20/20 a 0.9, sin regresión vs 0.3); el flag `--zero-shot` reproduce el baseline C0. Ver la sección [Diseño del prompt](#diseño-del-prompt).
+- **Few-shot validado (#99).** Contra el benchmark de 20 POs (`eval_quality_20pos.md`, semilla 42) se compararon zero-shot y tres combinaciones few-shot con ejemplos del pool auditado (`fewshot_pool.json`, estratificado: el mismatch más fuerte de cada etapa). Ganó **C3** (3 ejemplos): veredicto **19/20 (4.75/5)** frente a 13/20 del zero-shot, superando la meta del mentor (4/5), sin degradar (a)/(b). El few-shot ataca el déficit de (c): convierte acciones genéricas en acciones específicas que citan la señal medida y dirigen al responsable correcto. **C3 es la configuración de producción**: `main()` puebla `examples` con `select_examples(3, stages=["Vendor","Carrier","DC"])`, `add_llm_explanations` lo pasa a `build_prompt`, y el `po_output.csv` del entregable se genera con C3. El 4.75/5 es el benchmark que seleccionó a C3 frente a C1/C2, no la cifra final: el endurecimiento del prompt en #143 cerró el único fallo restante (aún a temp 0.3), y la re-validación a la temperatura real de producción en `fixtures/eval_quality_20pos_C3_t09.md` confirma **20/20 (5/5)** a 0.9, sin regresión. **La cifra titular del entregable es 5/5** — la que describe la configuración que produce `po_output.csv` hoy; ver [documentation/metricas-proyecto.md](../documentation/metricas-proyecto.md) para la progresión completa con procedencia. El flag `--zero-shot` reproduce el baseline C0. Ver la sección [Diseño del prompt](#diseño-del-prompt).
 - El parseo de la respuesta JSON del LLM está centralizado en `_parse_llm_json()` para evitar duplicar lógica entre backends.
 - El backend `local` (Qwen) tiene fallback a texto libre si el modelo no devuelve JSON válido; los backends cloud (`claude`, `deepseek`) no, porque se espera que sigan instrucciones de formato de forma más confiable.
 - Los tres backends comparten la misma interfaz (`call(prompt, max_retries)`), por lo que agregar un nuevo proveedor solo requiere implementar una clase nueva y registrarla en `create_backend()`.

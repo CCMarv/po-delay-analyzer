@@ -69,7 +69,7 @@ cp .env.example .env                                 # Windows: Copy-Item .env.e
 # Correr el pipeline y la suite:
 python 01_data_pipeline_and_eda/pipeline_core.py     # F1 — limpieza + validación
 python 02_clasif_reglas_negocio/classifier_core.py   # F2 — clasificación por etapa
-pytest                                                # 249 tests, sin API
+pytest                                                # 251 tests, sin API
 
 # Abrir la app (Fase 4). Sin correr Fase 3 localmente, cae a la muestra
 # versionada (data/samples/); el artefacto completo vive en
@@ -88,8 +88,8 @@ comandos.
 |---|---|---|
 | F1 — Data pipeline + EDA | cerrada | Pipeline de ingesta, limpieza y validación cruzada + EDA. Determinista, sin costo de API. |
 | F2 — Clasificación por etapa | cerrada | Clasificador determinista por exceso sobre umbral; umbrales externalizados en `rules_config.json`. |
-| F3 — Integración LLM | en curso | Producción cableada: few-shot C3 sobre `gpt-4o-mini` (OpenAI, backend oficial); `po_output.csv` generado. Pendiente: evaluación a nivel dataset y juez local ([ADR-16](documentation/decisiones/ARD-16.md)); alcance del model card en deliberación (Discussion #80). |
-| F4 — App + evaluación | en curso | App Streamlit; dos vistas —individual (#163) y agregada (#164)— reconstruidas sobre el sistema de diseño de la fase. Chatbot diferido. |
+| F3 — Integración LLM | cerrada | Producción cableada: few-shot C3 sobre `gpt-4o-mini` (OpenAI, backend oficial); `po_output.csv` generado. Continúa como trabajo diferido: carriles 2 (agéntico) y 3 (juez local) de [ADR-16](documentation/decisiones/ARD-16.md); alcance del model card en deliberación (Discussion #80). |
+| F4 — App + evaluación | cerrada | App Streamlit con dos vistas —individual (#163) y agregada (#164)— reconstruidas sobre el sistema de diseño de la fase (ARD-17/ARD-22/ARD-23), más un **bot de Telegram** ([ADR-20](documentation/decisiones/ARD-20.md)) como segundo canal de comandos fijos sobre el mismo contrato. Diferido: el chatbot *conversacional* (#160, carril 3 de ADR-16) — capacidad distinta al bot de Telegram, que ya está construido. |
 
 Reparto de etapas sobre los **247 POs tardíos**: Vendor 131 (53.0%) · Carrier 40 (16.2%) ·
 DC 37 (15.0%) · Indeterminado 39 (15.8%).
@@ -101,7 +101,7 @@ Resultados cabecera (población, umbral y fuente reproducible de cada cifra en
 |---|---|---|
 | Stage accuracy | 100% (208/208) | > 80% ✅ |
 | Reason agreement | 88.8% (174/196) | referencia (no umbral) |
-| LLM Explanation Quality | 4.75/5 (few-shot C3) | > 4/5 ✅ |
+| LLM Explanation Quality | 5/5 (few-shot C3, revalidado a temp. 0.9) | > 4/5 ✅ |
 | Severity Ranking | 100% (14/14) | > 95% ✅ |
 
 ## Estructura del repositorio
@@ -118,8 +118,9 @@ Resultados cabecera (población, umbral y fuente reproducible de cada cifra en
 │   ├── rules_config.json         #   umbrales externalizados (leídos por nombre)
 │   ├── clasif_etapa.ipynb
 │   └── README.md
-├── 03_llm_integration/           # F3 — capa LLM sobre la base determinista
-│   ├── llm_integration.py        #   build_prompt + backends (OpenAI/Claude/DeepSeek/Qwen)
+├── 03_llm_integration/            # F3 — capa LLM sobre la base determinista
+│   ├── llm_integration.py         #   build_prompt + backends (OpenAI/Claude/DeepSeek/Qwen)
+│   ├── llm_integration_network_intelligence_view.py  # síntesis por actor (ADR-19) → agente1_raw.txt
 │   ├── fewshot.py                 #   selección determinista del few-shot C3
 │   ├── fewshot_pool.json          #   pool auditado de ejemplos (mismatches de F2)
 │   ├── scorecard_core.py          #   scorecards por entidad (offline, sin API)
@@ -128,12 +129,17 @@ Resultados cabecera (población, umbral y fuente reproducible de cada cifra en
 │   ├── MODEL_CARD.md
 │   └── README.md
 ├── 04_app/                       # F4 — app Streamlit (lee el contrato F3→F4)
-│   ├── app.py
-│   ├── config.py
+│   ├── app.py                     #   landing
+│   ├── config.py                  #   columnas canónicas + paleta Okabe-Ito
+│   ├── assets/styles.css
+│   ├── components/                #   navbar, metrics_cards, badges, timeline
+│   ├── pages/                     #   1 Exception Workbench (Diego) · 2 Network Intelligence (Ravi)
+│   ├── services/data_service.py
+│   ├── telegram_bot/              #   segundo canal de consumo (ADR-20): bot.py, handlers/, services/
 │   └── README.md
 ├── data/                         # raw/ y processed/ (gitignored; solo .gitkeep)
 ├── documentation/
-│   ├── decisiones/               # ADRs (ARD-01 … ARD-18) + README (log índice)
+│   ├── decisiones/               # ADRs (ARD-01 … ARD-23) + README (log índice)
 │   ├── data_dictionary.md        #   las 39 columnas + data card del dataset
 │   ├── metricas-proyecto.md      #   tabla única de métricas cabecera
 │   ├── validacion-y-qa.md        #   método de validación por capas
@@ -143,7 +149,7 @@ Resultados cabecera (población, umbral y fuente reproducible de cada cifra en
 │   ├── convenciones-issues.md    #   acuerdos de gestión del equipo
 │   ├── SAD.md · SRS.md           #   especificaciones de arquitectura y requisitos
 │   └── kickoff_po_root_cause.html
-├── tests/                        # suite pytest (244 tests): F1/F2/F3, handoff, few-shot, evals
+├── tests/                        # suite pytest (251 tests): F1/F2/F3, handoff, few-shot, evals, app
 ├── CONTRIBUTING.md               # setup, reproducibilidad, flujo, qué no se commitea, tests/CI
 ├── requirements.txt
 ├── pyproject.toml                # config de pytest (pythonpath, testpaths)
@@ -170,6 +176,9 @@ el porqué y qué resuelve una tarea.
 
 ### Explicación — entender el porqué
 
+- [Explicación del proyecto](documentation/explicacion-proyecto.md) — síntesis narrativa de
+  principio a fin, organizada por fase: conecta el porqué de cada decisión (ADRs) con la lógica
+  resultante y su implementación. Punto de entrada para leer de corrido; no sustituye al SAD/SRS.
 - [Registro de decisiones (ADRs)](documentation/decisiones/README.md) — el rastro histórico de
   taxonomía, umbrales y contratos; las decisiones superadas se encadenan a las vigentes.
 - [Validación y QA](documentation/validacion-y-qa.md) — el método de validación por capas
@@ -194,7 +203,7 @@ el porqué y qué resuelve una tarea.
 - LLM: el entregable (`po_output.csv`) se genera con `gpt-4o-mini` (OpenAI, backend oficial);
   `claude-sonnet-4-6` (Anthropic), `deepseek-chat` (DeepSeek) y `qwen2.5:7b` (local vía Ollama)
   son backends alternos con la misma interfaz de prompt y parseo.
-- Pruebas: `pytest` (244 tests) en CI (GitHub Actions), en cada push y cada PR.
+- Pruebas: `pytest` (251 tests) en CI (GitHub Actions), en cada push y cada PR.
 - Las variables y columnas del dominio (`IS_LATE`, `REASON_DSC`, `HOT_PO_FLAG`, los timestamps
   del lifecycle, …) se documentan en el [data dictionary](documentation/data_dictionary.md).
 

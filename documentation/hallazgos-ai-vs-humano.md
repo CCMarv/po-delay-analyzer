@@ -70,9 +70,12 @@ puede medir: lo marca Indeterminado y lo deja para revisión humana.
 
 Del lado del LLM, la calidad de las explicaciones no es gratuita: depende del diseño del
 prompt. El baseline zero-shot obtuvo 3.25/5 (13/20) y la variante few-shot ganadora (C3)
-subió a 4.75/5 (19/20) contra el mismo benchmark. La diferencia es la ingeniería del prompt,
-no el modelo. Esto implica un riesgo operativo: cambiar el prompt puede degradar la calidad
-sin aviso, y las explicaciones de baja confianza siguen requiriendo criterio humano.
+subió a 4.75/5 (19/20) contra el mismo benchmark; el endurecimiento posterior del prompt
+(#143) y la revalidación a la temperatura de producción (ADR-13) llevaron esa misma
+configuración a 5/5 (20/20), la cifra titular del entregable hoy. La diferencia es la
+ingeniería del prompt, no el modelo. Esto implica un riesgo operativo: cambiar el prompt
+puede degradar la calidad sin aviso, y las explicaciones de baja confianza siguen requiriendo
+criterio humano.
 
 Referencias: desglose de Indeterminado (15 `sin_datos` + 24 `sin_causa_dominante`) y los 208
 evaluables en `documentation/metricas-proyecto.md` (filas 1 y 5, sección de poblaciones); la

@@ -1,26 +1,30 @@
-"""Entry point de la aplicación Streamlit — Landing Page Fase 4 (User Personas)."""
+"""Entry point de la aplicación Streamlit — Landing Page Fase 4 (User Personas).
+
+Restilada desde el mockup "Home Landing" (ARD-23): hero con KPIs, 2 cards de
+vista con acento superior, card de canal adicional (Telegram, ARD-20) y pie
+de procedencia (ARD-22 §7 T3).
+"""
 from pathlib import Path
 import streamlit as st
-from config import COLORS
+from config import COL_SEVERITY, TELEGRAM_BOT_USERNAME, dataset_cutoff_date
 from services.data_service import load_po_output
+from services.qr_service import telegram_qr_png
 from components.navbar import render_navbar
+from components.theme_toggle import inject_theme_css
 
 # ── Configuración de página ─────────────────────────────────────────────────
 st.set_page_config(
     page_title="Home",
     page_icon="📱",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="collapsed",
 )
 
 # ── Navbar superior ─────────────────────────────────────────────────────────
 render_navbar(active_page="home")
 
-# ── Cargar CSS personalizado ────────────────────────────────────────────────
-css_file = Path(__file__).parent / "assets" / "styles.css"
-if css_file.exists():
-    with open(css_file, encoding="utf-8") as f:
-        st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+# ── CSS de tema (tokens del sistema de diseño, ARD-17) ──────────────────────
+inject_theme_css()
 
 # ── Carga de datos ──────────────────────────────────────────────────────────
 df = load_po_output()
@@ -28,7 +32,7 @@ df = load_po_output()
 # ── Header con título ──────────────────────────────────────────────────────
 st.markdown(
     """
-    <div class="page-header">
+    <div class="page-header" style="text-align:center;">
         <h1>PO Delay Root Cause Analyzer</h1>
         <p style="color: var(--text-muted); font-size: 1.1rem;">
             Herramienta de análisis de causas raíz para POs tardíos
@@ -38,16 +42,32 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ── KPIs globales ───────────────────────────────────────────────────────────
-st.markdown("### Resumen del Dataset")
+# ── KPIs globales (hero) ────────────────────────────────────────────────────
+total_pos = len(df)
+severity_counts = df[COL_SEVERITY].value_counts()
+high_pct = (severity_counts.get("HIGH", 0) / total_pos * 100) if total_pos > 0 else 0.0
+
 col1, col2 = st.columns(2)
 with col1:
-    st.metric(label="POs tardíos procesados", value=len(df))
+    st.markdown(
+        f"""
+        <div class="landing-kpi">
+            <div class="landing-kpi__value">{total_pos}</div>
+            <div class="landing-kpi__label">POs tardíos procesados</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 with col2:
-    # Distribución por severidad
-    severity_counts = df["severity"].value_counts()
-    high_pct = (severity_counts.get("HIGH", 0) / len(df) * 100) if len(df) > 0 else 0
-    st.metric(label="% Severidad Alta", value=f"{high_pct:.1f}%")
+    st.markdown(
+        f"""
+        <div class="landing-kpi">
+            <div class="landing-kpi__value">{high_pct:.0f}%</div>
+            <div class="landing-kpi__label">% Severidad Alta</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 st.markdown("---")
 
@@ -72,19 +92,17 @@ col_diego, col_ravi = st.columns(2)
 with col_diego:
     st.markdown(
         """
-        <div class="dashboard-card" style="min-height: 320px; display: flex; flex-direction: column;">
+        <div class="dashboard-card">
             <h3>🔍 Exception Workbench</h3>
-            <h4>Consulta Individual de POs</h4>
+            <h4>Consulta Individual de POs · Diego, coordinador de excepciones inbound</h4>
             <p style="flex-grow: 1;">
-                Dirigida a coordinadores de excepciones inbound. Analiza un PO tardío a la
-                vez: timeline reconstruido, diagnóstico del LLM, validación de causa raíz y
-                acciones recomendadas. Cierra excepciones caso por caso con evidencia completa.
+                Revisión caso por caso de cada PO tardío: qué pasó, dónde y qué explica el LLM.
             </p>
             <ul style="color: var(--text-secondary); font-size: 0.9rem; margin: 1rem 0; padding-left: 1.5rem;">
                 <li>Timeline del lifecycle del PO</li>
-                <li>Explicación y acción del LLM</li>
-                <li>Flag de desacuerdo con reason humano</li>
-                <li>Indicador de confianza del diagnóstico</li>
+                <li>Explicación y acción sugerida del LLM</li>
+                <li>Flag de desacuerdo con el reason humano</li>
+                <li>Indicador de confianza</li>
             </ul>
         </div>
         """,
@@ -95,19 +113,23 @@ with col_diego:
 
 # ── Vista Ravi: Network Intelligence ────────────────────────────────────────
 with col_ravi:
+    stage_bullet = " / ".join(
+        f'<span class="stage-chip"><span class="stage-chip__dot stage-chip__dot--{key}"></span>{label}</span>'
+        for key, label in (
+            ("vendor", "Vendor"), ("carrier", "Carrier"),
+            ("dc", "DC"), ("indeterminado", "Indeterminado"),
+        )
+    )
     st.markdown(
-        """
-        <div class="dashboard-card" style="min-height: 320px; display: flex; flex-direction: column;">
+        f"""
+        <div class="dashboard-card">
             <h3>📊 Network Intelligence</h3>
-            <h4>Inteligencia Agregada de Red</h4>
+            <h4>Inteligencia Agregada de Red · Ravi, analista de supply chain</h4>
             <p style="flex-grow: 1;">
-                Dirigida a analistas de supply chain y reporting. Visualiza patrones
-                sistémicos en la población de POs tardíos: distribución por etapa, severidad,
-                tasa de desacuerdo y tendencias. Produce inteligencia accionable para
-                decisiones estructurales.
+                Patrones sistémicos sobre toda la población de POs tardíos del corte.
             </p>
             <ul style="color: var(--text-secondary); font-size: 0.9rem; margin: 1rem 0; padding-left: 1.5rem;">
-                <li>Distribución Vendor/Carrier/DC/Indeterminado</li>
+                <li>Distribución {stage_bullet}</li>
                 <li>Scorecards por entidad</li>
                 <li>Tasa de desacuerdo AI vs humano</li>
                 <li>Drill-down a casos individuales</li>
@@ -119,13 +141,44 @@ with col_ravi:
     if st.button("Abrir Network Intelligence →", key="btn_ravi", width="stretch"):
         st.switch_page("pages/2_📊_Network_Intelligence.py")
 
-# ── Footer ──────────────────────────────────────────────────────────────────
-st.markdown("---")
+# ── Canal adicional: bot de Telegram (ARD-20, enlace de solo lectura) ───────
+if TELEGRAM_BOT_USERNAME:
+    telegram_link = (
+        f'<a href="https://t.me/{TELEGRAM_BOT_USERNAME}" target="_blank" '
+        f'class="telegram-card__link">Consultar por Telegram</a>'
+    )
+else:
+    telegram_link = ""
+
 st.markdown(
-    """
-    <div class="simple-footer">
-        <p>Supply Chain AI · Fase 4 — Demo + Evaluación Final</p>
-        <p>Artefacto: po_output.csv (247 POs tardíos) · Contrato F3→F4</p>
+    f"""
+    <div class="telegram-card">
+        <span style="font-size:1.5rem;">✈️</span>
+        <div style="flex:1;">
+            <div class="telegram-card__title">Canal adicional: bot de Telegram</div>
+            <div class="telegram-card__desc">
+                Comandos fijos de lectura para consultar un PO o métricas del corte desde
+                Telegram. No es un chat conversacional.
+            </div>
+        </div>
+        {telegram_link}
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+if TELEGRAM_BOT_USERNAME:
+    with st.expander("Mostrar QR para abrir el bot en Telegram"):
+        st.image(telegram_qr_png(TELEGRAM_BOT_USERNAME), width=160)
+
+# ── Footer de procedencia (ARD-22 §7 T3) ────────────────────────────────────
+cutoff = dataset_cutoff_date(df)
+cutoff_str = cutoff.strftime("%Y-%m-%d") if cutoff is not None else "N/A"
+st.markdown(
+    f"""
+    <div class="simple-footer simple-footer--split">
+        <span>Corte del dataset: <span class="timestamp">{cutoff_str}</span> ·
+            Origen: po_output.csv (Fase 3, corte histórico)</span>
+        <span>Solo lectura</span>
     </div>
     """,
     unsafe_allow_html=True,

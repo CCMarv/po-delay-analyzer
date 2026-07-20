@@ -18,7 +18,7 @@ from telegram.ext import (
     ContextTypes,
 )
 
-from config import TELEGRAM_BOT_TOKEN
+from config import TELEGRAM_BOT_TOKEN, TELEGRAM_USER_WHITELIST, DEMO_MODE
 from services.auth import is_authorized, get_profile, get_profile_name
 from handlers.common import start, help_command
 from handlers.diego import cmd_po, cmd_timeline, cmd_alertas, cmd_hot
@@ -187,6 +187,19 @@ def main() -> None:
             "TELEGRAM_BOT_TOKEN=tu_token_aqui"
         )
         sys.exit(1)
+
+    if DEMO_MODE:
+        logger.warning(
+            "DEMO_MODE activo: is_authorized() acepta cualquier usuario. "
+            "El bot NO tiene restricción de acceso mientras este flag esté activo. "
+            "Desactívalo en .env (DEMO_MODE=false o vacío) fuera de una demo."
+        )
+    elif not TELEGRAM_USER_WHITELIST:
+        logger.warning(
+            "TELEGRAM_USER_WHITELIST está vacía: el bot arrancará pero "
+            "rechazará todos los comandos (fail-closed). Define la variable "
+            "en .env con los IDs de Telegram autorizados para habilitar acceso."
+        )
 
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 

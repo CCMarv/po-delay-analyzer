@@ -1,6 +1,6 @@
 # Temperatura de inferencia del LLM: evaluación 0.3–0.9 y decisión de ancla
 
-* **Estatus:** 🔵 **BORRADOR** (lo cierra el equipo)
+* **Estatus:** 🟢 **Vigente** (cerrado 2026-07-19)
 * **Contexto Técnico:** Fase 3 / Integración LLM — parámetro de temperatura en `llm_config.json`
 * **Referencias:** Issue #137; #94 (benchmark de calidad, 20 POs); #143 / ADR-14 (endurecimiento del prompt few-shot); ADR-12 (diseño del prompt few-shot); `03_llm_integration/llm_config.json`; `03_llm_integration/eval_quality.py` (andamio `--temperature`); `03_llm_integration/eval_diversity.py` (métrica de diversidad); `03_llm_integration/fixtures/eval_quality_20pos_C3*.md`
 
@@ -51,7 +51,7 @@ La decisión acepta de forma explícita estos costos:
 * Menor reproducibilidad que 0.3 en la corrida de producción (#97, 247 POs).
 * Riesgo, evidenciado a 0.7 sobre el PO 100182, de que algún Indeterminado cuyo REASON_DSC nombre una etapa reincida en el fallo de (a) que ADR-14 corrige; a 0.9 el benchmark no lo mostró, pero el muestreo a temperatura alta no lo garantiza.
 * Reescrituras causales más laxas en algunas acciones Vendor ("exceso de gestión", "envío tardío"), a vigilar en la validación de (c).
-* (c) sobre el fixture 0.9 no se validó a mano de forma completa (solo 0.3 lo está); queda como paso pendiente si se requiere el sello de calidad sobre el ancla nueva.
+* (c) sobre el fixture 0.9 no se validó a mano de forma completa al fijar el ancla (solo 0.3 lo estaba). **Cierre (2026-07-19):** la validación manual se completó (#148, commit `51afebb`, `eval_quality_20pos_C3_t09.md`) y es la misma medición que fija la cifra titular de calidad del entregable (5/5, 20/20) en `documentation/metricas-proyecto.md`.
 
 ## Consecuencias
 
