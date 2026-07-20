@@ -214,6 +214,13 @@ sección 6):
   documental de G8, no de G7.
 - Endurecimiento del parser regex de `agente1_raw.txt` — fragilidad conocida, no bloqueante
   para esta ronda; el contenido que produce está protegido (sección 6).
+- Observabilidad/logging de llamadas LLM en producción (costos, latencia, tasa de
+  reintento del pase de autocrítica de la Decisión 7 de [ARD-16](ARD-16.md)) — hoy son
+  `print()` sin estructura en `03_llm_integration/llm_integration.py`; fuera de scope de
+  G7 (retrabajo de `04_app`), pertenece al pipeline de Fase 3, no a la interfaz.
+- Deployment-quality / hosting real de la app (hoy solo `streamlit run` local) — sin ARD
+  de arquitectura ni patrón de secrets vía `st.secrets` en el repo; requiere decisión de
+  plataforma propia antes de ejecutarse, no un ajuste de G7.
 
 ## Consecuencias
 
