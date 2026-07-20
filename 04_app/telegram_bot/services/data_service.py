@@ -10,7 +10,7 @@ from typing import Optional
 
 import pandas as pd
 
-from config import PO_OUTPUT_CSV, PO_OUTPUT_SAMPLE_CSV, SCORECARDS_DIR, COL_PO
+from config import PO_OUTPUT_CSV, PO_OUTPUT_SAMPLE_CSV, SCORECARDS_DIR, COL_PO, load_po_output_df
 
 logger = logging.getLogger(__name__)
 
@@ -34,52 +34,16 @@ def load_po_output(force_reload: bool = False) -> pd.DataFrame:
     if not force_reload and "df" in _cache:
         return _cache["df"]
 
-    if PO_OUTPUT_CSV.exists():
-        target = PO_OUTPUT_CSV
-    elif PO_OUTPUT_SAMPLE_CSV.exists():
-        target = PO_OUTPUT_SAMPLE_CSV
+    def _avisar_fallback(sample_path):
         logger.warning(
             "Mostrando la muestra versionada (%s, no el artefacto completo). "
             "Las cifras agregadas no son las canónicas del entregable. "
             "El artefacto completo se genera corriendo la Fase 3 — ver "
             "03_llm_integration/README.md.",
-            target.name,
-        )
-    else:
-        raise FileNotFoundError(
-            f"No se encontró po_output.csv en:\n{PO_OUTPUT_CSV}\n"
-            f"ni la muestra versionada en:\n{PO_OUTPUT_SAMPLE_CSV}\n\n"
-            "El primero es el artefacto de handoff de Fase 3; la muestra "
-            "viene en el repo y no debería faltar salvo que se haya borrado "
-            "(restaurarla con: git checkout -- data/samples/po_output_sample.csv).\n\n"
-            "Para generar el artefacto completo (gasta API):\n"
-            "  cd 03_llm_integration\n"
-            "  python llm_integration.py --mode full --backend openai\n"
-            "Detalle en 03_llm_integration/README.md."
+            sample_path.name,
         )
 
-    # Intentar múltiples codificaciones
-    encodings = ["utf-8", "cp1252", "latin-1", "iso-8859-1"]
-    df = None
-    for enc in encodings:
-        try:
-            df = pd.read_csv(target, low_memory=False, encoding=enc)
-            break
-        except UnicodeDecodeError:
-            continue
-
-    if df is None:
-        df = pd.read_csv(target, low_memory=False, encoding="utf-8", errors="replace")
-
-    # Parsear fechas
-    date_cols = [
-        "PO_DT", "STA_DT", "APPROVED_DT", "TRAILER_ARRIVE_DT",
-        "CHECKIN_DT", "CHECKOUT_DT", "RECPT_DT",
-    ]
-    for col in date_cols:
-        if col in df.columns:
-            df[col] = pd.to_datetime(df[col], errors="coerce")
-
+    df = load_po_output_df(PO_OUTPUT_CSV, PO_OUTPUT_SAMPLE_CSV, on_fallback=_avisar_fallback)
     _cache["df"] = df
     return df
 
