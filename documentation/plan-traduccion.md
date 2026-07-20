@@ -1,55 +1,51 @@
 # Plan de traducción ES→EN de los entregables
 
-Este documento fija el plan de traducción de la documentación del proyecto al inglés. No
-traduce nada: define el alcance, el orden, el disparador y el método de mantenimiento, y
-deja constancia de que la traducción se difiere de forma deliberada.
+Este documento fija el plan de traducción de la documentación del proyecto al inglés: el
+alcance, el orden, el disparador y el método de mantenimiento. El alcance descrito abajo ya
+se ejecutó; este documento queda como el registro vivo del método (el `.en.md` se re-deriva
+cuando su fuente ES cambia).
 
 La rúbrica de evaluación (audiencia mixta) y el kickoff del mentor piden entregables
 bilingües ES + EN; el propio repositorio del mentor publica el kickoff en ambos idiomas como
-artefactos paralelos. Hoy toda la documentación está en español. Traducir antes de que los
-mentores validen la doc ES duplicaría el trabajo cada vez que se corrija el original, por lo
-que la decisión del equipo es diferir la traducción hasta que el fuente ES esté validado y
-estable (probable Fase 4). Este plan existe para que ese diferimiento sea una decisión
-consciente y no un olvido, y para que la traducción se active en el momento correcto.
+artefactos paralelos. Originalmente la decisión del equipo fue diferir la traducción hasta que
+el fuente ES estuviera validado y estable, para no duplicar trabajo re-traduciendo cada
+corrección. La traducción se ejecutó como parte del cierre del proyecto, una vez que el ES
+alcanzó ese estado estable (ver "Disparador" abajo).
 
 ## Alcance
 
-El alcance mínimo viable es lo que el mentor lee primero para evaluar:
+El alcance ejecutado cubre la documentación versionada de autoría humana del repositorio:
 
-- Reporte final.
-- Presentación.
-- README raíz.
+- Portada (`README.md`, `CONTRIBUTING.md`).
+- READMEs de fase (F1–F4) y model card de Fase 3.
+- Reportes legibles de evaluación de Fase 3 (`eval_differentiation.md`, `eval_quality_20pos.md`,
+  `eval_severity_ranking.md`, `mismatches_ai_vs_humano.md`).
+- Documentación general (`SAD.md`, `SRS.md`, `data_dictionary.md`, `explicacion-proyecto.md`,
+  `hallazgos-ai-vs-humano.md`, `metricas-proyecto.md`, `plan-traduccion.md`, `user_personas.md`,
+  `validacion-y-qa.md`, `convenciones-issues.md`).
+- Registro de decisiones (`decisiones/README.md` + `ARD-01.md` … `ARD-23.md`, 27 archivos).
+- Presentación (ES + EN, producida aparte del flujo de este documento).
 
-El alcance ideal añade, si el tiempo lo permite tras completar el mínimo:
-
-- README de fase.
-- Data dictionary (`documentation/data_dictionary.md`).
-
-Queda fuera de alcance la documentación interna de proceso: notas locales de trabajo,
-registros de decisiones (ADRs) y el código. Estos sirven al equipo, no a la evaluación
-bilingüe, y su traducción no aporta al entregable.
+Queda fuera de alcance: los fixtures crudos de corridas de benchmark
+(`03_llm_integration/fixtures/*.md`, salvo su `README.md`), las plantillas internas de
+proceso (`documentation/plantillas-cli/*.md`, `.github/pull_request_template.md`), y las
+salidas del LLM por PO (explicación y acción recomendada de `po_output.csv`) — ver ADR-18 y
+el cierre del issue #96 para el porqué de este último descarte.
 
 ## Orden
 
-La traducción avanza de afuera hacia adentro, empezando por lo que el mentor evalúa primero:
-
-1. Portada / README raíz.
-2. Reporte final y presentación.
-3. README de fase.
-4. Data dictionary.
-
-El orden prioriza que, si el tiempo se agota, lo traducido sea siempre lo más visible y
-evaluado, y no un documento interno.
+La traducción avanzó de afuera hacia adentro, empezando por lo que el mentor evalúa primero:
+portada → documentación general → decisiones (ADRs) → READMEs de fase y model card →
+reportes de evaluación.
 
 ## Disparador (gate)
 
-La traducción no arranca en una fecha fija, sino cuando se cumple una condición: los mentores
-validan la documentación en español y hay confianza razonable de que no cambiará. Traducir
-antes de esa validación implica re-traducir cada corrección del fuente.
-
-Este gate gobierna la ejecución de la traducción (issue #96) y de todo documento en inglés
-del proyecto: ningún `.en.md` se produce antes de que su fuente ES pase el gate. La condición
-se estima alcanzable en Fase 4, pero la fecha es consecuencia del gate, no su definición.
+El gate original de este plan era la validación de los mentores sobre la documentación en
+español. En la práctica, la traducción se ejecutó como parte del cierre del proyecto (2026-07),
+una vez que el ES alcanzó un estado estable tras la síntesis documental de cierre (G0–G8 de la
+orquestación de cierre), sin esperar una validación formal explícita de los mentores. El
+principio del gate se mantiene para cualquier documento nuevo o remanente: no se deriva un
+`.en.md` de un fuente ES que aún esté en discusión activa.
 
 ## Método de mantenimiento
 
@@ -72,6 +68,7 @@ paralelo independiente vs. tooling i18n) está registrado en
 
 ## Estado del issue
 
-El issue #88 documenta este plan pero permanece abierto, en espera de que se cumpla el gate y
-se ejecute la traducción. La ejecución vive en el issue #96, que depende de este gate: no se
-traduce lo que aún no está escrito ni validado.
+El issue #88 (que documentó este plan) está cerrado: su alcance —documentar el plan, no
+traducir— se cumplió. El issue #96 (explicaciones bilingües del LLM) se cerró descartado: esa
+salida permanece en español (ver ADR-18). Las traducciones del alcance descrito arriba ya
+existen como archivos `.en.md` hermanos en el repositorio.
