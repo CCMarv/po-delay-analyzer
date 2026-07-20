@@ -4,7 +4,7 @@ Genera explicaciones de causa raíz para Purchase Orders (POs) retrasados, usand
 
 ## Qué hace
 
-Toma el DataFrame ya limpio y clasificado (fases 1 y 2), filtra los POs con retraso (`delay_days_calc > 0`), y para cada uno construye un prompt con el contexto completo (fechas, métricas de yard/dock, clasificación automática, reason code del DC) que envía a un LLM. La respuesta se parsea a JSON y se agregan estas columnas al DataFrame:
+Toma el DataFrame ya limpio y clasificado (fases 1 y 2), filtra los POs con retraso (`delay_days_calc > 0`), y para cada uno construye un prompt con el contexto completo (fechas, métricas de yard/dock, clasificación automática, reason code del DC) que envía a un LLM. La respuesta se parsea a JSON y se agregan estas columnas al DataFrame (la primera llamada, siempre; con `--action-call` también las de tier-2 — ver [Salida](#salida) para el contrato completo de 33 columnas):
 
 | Columna | Descripción |
 |---|---|

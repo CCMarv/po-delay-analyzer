@@ -39,6 +39,7 @@ Tras la aplicación rigurosa de los criterios de los ADRs vigentes (especialment
 | [ADR-21](ARD-21.md) | Contrato de datos tier-1/tier-2 de `po_output.csv` (incl. `agente1_raw.txt`) | 🔵 Borrador | Issue #158 (tier 1), Issue #161 (tier 2), PR #174; ADR-09/10, ADR-16 (carril 1); `04_app/config.py`, `llm_integration_network_intelligence_view.py` |
 | [ADR-22](ARD-22.md) | Spec de retrabajo de la interfaz F4: información clave por persona y checklist ejecutable | 🔵 Borrador | Issue #130; ADR-09, ARD-17, ARD-21; issue #197 |
 | [ADR-23](ARD-23.md) | Mockups como base de diseño del retrabajo de interfaz F4 y su reconciliación con ARD-17/ARD-22 | 🔵 Borrador | Mockups locales "Mockups analítica POs tardíos"; ARD-22, ARD-17, ARD-20; `04_app/` |
+| [ADR-24](ARD-24.md) | Regla Late Shipment del README: descartada por columna inexistente | 🟢 Vigente | Issue #17, ADR-03b, README del repo original del mentor |
 
 ## Notas de Proceso e Integración
 *   **Estándar de Documentación:** Todo el registro técnico del proyecto se rige bajo la plantilla **MADR (Markdown Architecture Decision Records)**, elegida formalmente por el equipo tras el debate documentado en la discusión [#79](#).
