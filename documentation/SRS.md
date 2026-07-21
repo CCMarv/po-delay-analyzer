@@ -30,8 +30,9 @@ El **PO Delay Root Cause Analyzer** es una herramienta de auditoría y soporte a
 *   **Capacidades reales del sistema (mapeadas en el código):**
     *   **Pipeline de Datos (Fase 1):** Ingesta de datasets de transacciones logísticas en formato CSV, tipado y limpieza de timestamps, cálculo de métricas de tiempo de ciclo (yard wait, dock time, carrier lag, etc.) y auditoría de calidad de datos mediante flags.
     *   **Clasificador por Reglas de Negocio (Fase 2):** Clasificación determinística de la etapa de retraso primaria (Vendor, Carrier, DC o Indeterminado) basada en el exceso de tiempo medido sobre umbrales configurables en `rules_config.json`. Además, categoriza severidades logísticas y gestiona modificadores contextuales (reschedule, short ship, short lead).
-    *   **Auditoría Cognitiva y Generación de Scorecards de Entidades (Fase 3):** Prompt engineering avanzado con técnicas few-shot estructuradas para generar explicaciones narrativas de causa raíz, proponer acciones operativas concretas al responsable de la etapa medida, evaluar severidades contextuales y auditar la veracidad del código de motivo registrado manualmente por operadores (mismatch analysis). Adicionalmente, implementa un **motor analítico de Scorecards (`scorecard_core.py`)** para evaluar, perfilar y clasificar el riesgo relativo y absoluto de proveedores (`vendors`), transportistas (`carriers`) y centros de distribución (`dcs`).
+    *   **Auditoría Cognitiva y Generación de Scorecards de Entidades (Fase 3):** Prompt engineering avanzado con técnicas few-shot estructuradas para generar explicaciones narrativas de causa raíz, proponer acciones operativas concretas al responsable de la etapa medida, evaluar severidades contextuales y auditar la veracidad del código de motivo registrado manualmente por operadores (mismatch analysis). Adicionalmente, implementa un **motor analítico de Scorecards (`scorecard_core.py`)** para evaluar, perfilar y clasificar el riesgo relativo y absoluto de proveedores (`vendors`), transportistas (`carriers`) y centros de distribución (`dcs`). Una segunda superficie LLM, batch y separada de la explicación por PO ([ADR-19](decisiones/ARD-19.md)), interpreta esos scorecards con tres agentes especializados (uno por actor) y consolida una síntesis ejecutiva de red en `agente1_raw.txt`, consumida por la vista Network Intelligence.
     *   **Interfaz de Usuario Web (Fase 4):** Dashboard en Streamlit que ofrece dos vistas de consumo especializadas basadas en perfiles de usuario: consulta individual detallada de excepciones (Exception Workbench) e inteligencia agregada de la red logística (Network Intelligence).
+    *   **Canal Adicional: Bot de Telegram (Fase 4, [ADR-20](decisiones/ARD-20.md)):** Comandos fijos de solo lectura (`/po`, `/timeline`, `/kpi`, `/scorecards`, entre otros) que exponen los mismos artefactos ya calculados (`po_output.csv`, scorecards) a Diego y Ravi desde Telegram, sin invocar al LLM en tiempo de consulta. No es el chatbot conversacional diferido (issue #160, carril 3 de [ADR-16](decisiones/ARD-16.md)): no hay razonamiento libre ni Q&A abierta, solo lectura estructurada de datos ya resueltos.
 *   **Límites del sistema:**
     *   El sistema es **retrospectivo y de auditoría**, no realiza predicciones o forecasting de futuros retrasos.
     *   Operaba originalmente en procesamiento por lotes (batch) utilizando archivos CSV como fuente de persistencia. Con la inclusión de `scorecard_core.py`, introduce salidas analíticas intermedias estructuradas en formato JSON para el perfilado de actores.
@@ -55,7 +56,7 @@ El **PO Delay Root Cause Analyzer** es una herramienta de auditoría y soporte a
 
 
 #### 1.4 Referencias y visión general del documento
-*   **ADR Log (Architecture Decision Records):** Ubicado en `documentation/decisiones/`. Define decisiones críticas como la prioridad de timestamps frente a campos precalculados (ADR-01), asimetría de vendor (ADR-06b) y la arquitectura híbrida de severidades (ADR-10).
+*   **ADR Log (Architecture Decision Records):** Ubicado en `documentation/decisiones/`. Define decisiones críticas como la prioridad de timestamps frente a campos precalculados (ADR-01), asimetría de vendor (ADR-06b), la arquitectura híbrida de severidades (ADR-10), la síntesis ejecutiva de red (ADR-19) y el bot de Telegram como canal adicional (ADR-20).
 *   **Data Dictionary:** Ubicado en `documentation/data_dictionary.md`. Detalla las 39 columnas del CSV de entrada.
 *   **User Personas:** Ubicado en `documentation/user_personas.md`. Describe los casos de uso prácticos para Diego y Ravi.
 
@@ -88,6 +89,7 @@ El sistema **PO Delay Root Cause Analyzer** actúa como un módulo auditor autó
 │               Interfaz Streamlit (App)                  │
 │  - Diego (Exception Workbench)                          │
 │  - Ravi (Network Intelligence con Scorecards)           │
+│  - Bot de Telegram (canal adicional, mismos datos)      │
 └─────────────────────────────────────────────────────────┘
 ```
 
@@ -107,6 +109,7 @@ Las macro-funcionalidades implementadas en el código son:
 4.  **Auditoría y Validación AI vs Humano:** Evaluación semántica realizada por el LLM para contrastar el veredicto físico de tiempos contra la anotación de los operadores, identificando el porcentaje de error analítico de la red.
 5.  **Motor de Scorecards de Riesgo de Entidades (`scorecard_core.py`):** Generación de perfiles analíticos y de confiabilidad de Vendor, Carrier y DC aplicando regularizaciones estadísticas para estimar riesgos absolutos y relativos de forma auditable.
 6.  **Presentación Visual Bifocal:** Pantallas interactivas optimizadas independientemente para el seguimiento diario de excepciones individuales y para el análisis estadístico trimestral de la red de suministro.
+7.  **Canal Adicional de Consumo vía Bot de Telegram:** Comandos fijos de lectura que sirven a las mismas dos personas fuera del navegador, sobre el mismo contrato de datos que la app Streamlit, con autenticación por whitelist fail-closed.
 
 #### 2.3 Características y perfiles de usuarios
 Según las especificaciones de diseño implementadas en `documentation/user_personas.md` y en las rutas de la app (`04_app/pages/`), se identifican dos roles principales:
@@ -115,13 +118,15 @@ Según las especificaciones de diseño implementadas en `documentation/user_pers
     *   **Foco:** Excepciones individuales, caso por caso.
     *   **Necesidad:** Analizar un PO tardío específico, reconstruir su timeline detallado, leer el diagnóstico narrativo redactado por la AI, verificar la acción correctiva sugerida, comprobar el desacuerdo con el motivo humano y enrutar las tareas al área correspondiente.
     *   **Consumo en App:** `pages/1_🔍_Exception_Workbench.py`.
+    *   **Consumo en Bot:** `04_app/telegram_bot/handlers/diego.py` (`/po`, `/timeline`, `/alertas`, `/hot`).
 2.  **Ravi (Supply-Chain Analyst / Network RCA):**
     *   **Foco:** Agregaciones, tendencias, scorecards de entidades.
     *   **Necesidad:** Identificar patrones sistémicos en toda la red, evaluar qué proveedores o carriers acumulan más días de retraso o severidades altas, analizar la tasa de error humana agregada (tasa de desacuerdo de la AI), evaluar scorecards de riesgo por proveedor/carrier/DC y exportar reportes para juntas ejecutivas.
     *   **Consumo en App:** `pages/2_📊_Network_Intelligence.py`.
+    *   **Consumo en Bot:** `04_app/telegram_bot/handlers/ravi.py` (`/kpi`, `/distribucion`, `/tendencia`, `/scorecards`, `/mismatches`, `/mismatches_chart`).
 
 #### 2.4 Diagrama UML de Casos de Uso
-El siguiente diagrama detalla cómo interactúan Diego, Ravi y el LLM (actor del sistema, en su rol de generador batch de los diagnósticos que ambos consumen) con las funciones principales de la aplicación, construidas a partir de las personas (§2.3) y los requisitos funcionales RF-14 a RF-16 (§3.1):
+El siguiente diagrama detalla cómo interactúan Diego, Ravi y el LLM (actor del sistema, en su rol de generador batch de los diagnósticos que ambos consumen) con las funciones principales de la aplicación, construidas a partir de las personas (§2.3) y los requisitos funcionales RF-14 a RF-16 (§3.1). El bot de Telegram (RF-17) se representa como canal alterno de acceso a un subconjunto de los mismos casos de uso, sin invocar al LLM en tiempo de consulta:
 
 ```mermaid
 flowchart LR
@@ -166,6 +171,14 @@ flowchart LR
 
     LLM -.->|genera batch, F3| UC5
     LLM -.->|genera batch, F3| UC9
+
+    subgraph Bot["Bot de Telegram (RF-17, canal alterno)"]
+        UC11(["/po, /timeline, /alertas, /hot — mismos datos que Workbench"])
+        UC12(["/kpi, /distribucion, /scorecards, /mismatches — mismos datos que Network"])
+    end
+
+    Diego -.->|canal alterno, sin LLM en consulta| UC11
+    Ravi -.->|canal alterno, sin LLM en consulta| UC12
 ```
 
 #### 2.5 Restricciones generales
@@ -179,6 +192,7 @@ flowchart LR
 *   **Formato de entrada:** El CSV crudo en `data/raw/` debe poseer las 39 columnas y los nombres exactos detallados en el diccionario de datos. De lo contrario, la validación del contrato de entrada fallará arrojando un error controlado.
 *   **Conexión de red:** Se asume conexión activa a internet para llamadas a backends Cloud (Claude de Anthropic, GPT de OpenAI, DeepSeek). En modo sin conexión, se depende de una instancia local de Ollama escuchando en `http://localhost:11434` con el modelo `qwen2.5:7b` instalado.
 *   **Handoff de datos:** Se asume que el proceso batch de Fase 3 genera el archivo `po_output.csv` y los archivos `reporte_vendors.json`, `reporte_carriers.json` y `reporte_dcs.json` en `data/processed/` antes de iniciar la aplicación Streamlit.
+*   **Autorización del bot:** Se asume que `TELEGRAM_USER_WHITELIST` (variable de entorno) define los IDs de Telegram autorizados. Vacía por default: el modelo es fail-closed, nadie está autorizado hasta configurarla explícitamente. `DEMO_MODE` es una excepción documentada que desactiva el gate por completo, pensada solo para demostraciones.
 
 ---
 
@@ -250,6 +264,14 @@ flowchart LR
     *   Scorecards por entidad (Vendor/Carrier/DC), leídos de `data/processed/scorecards/reporte_*.json` (generados offline por `scorecard_core.py`, sin costo de API).
     *   Drill-down master-detail: desde un scorecard o registro, navegar directamente al Exception Workbench de esa PO específica (`st.switch_page`).
 
+##### Fase 4 (canal adicional): Bot de Telegram
+*   **RF-17 (Bot de Telegram — Canal Adicional de Consumo, [ADR-20](decisiones/ARD-20.md)):** El sistema debe exponer comandos fijos de Telegram que lean los mismos artefactos ya calculados de Fase 3 (`po_output.csv`, scorecards), sin invocar al LLM en tiempo de consulta:
+    *   Perfil Diego: `/po`, `/timeline`, `/alertas`, `/hot`.
+    *   Perfil Ravi: `/kpi`, `/distribucion`, `/tendencia`, `/scorecards`, `/mismatches`, `/mismatches_chart`.
+    *   Comunes: `/start`, `/help`.
+    *   Autenticación fail-closed por whitelist de IDs de Telegram (`TELEGRAM_USER_WHITELIST`): vacía, ningún usuario autorizado. `DEMO_MODE` es un bypass explícito solo para demostraciones.
+    *   Distinción explícita con el chatbot conversacional diferido (issue #160, carril 3 de [ADR-16](decisiones/ARD-16.md)): el bot no razona en lenguaje libre ni sostiene Q&A abierta, solo lee datos ya calculados con comandos fijos.
+
 ##### Trazabilidad de Requisitos Funcionales a Pruebas
 Cada bloque de RF se valida mediante un archivo de pruebas dedicado en `tests/` (suite pytest, ejecutada en CI en cada push/PR):
 
@@ -259,8 +281,9 @@ Cada bloque de RF se valida mediante un archivo de pruebas dedicado en `tests/` 
 | RF-05 – RF-09 (Clasificación por reglas) | `tests/test_classifier_core.py`, `tests/test_metrics_core.py` |
 | RF-10 (Construcción del prompt, ejemplos few-shot) | `tests/test_fewshot.py` |
 | RF-11 – RF-12 (Backends, parseo y calidad de la respuesta LLM) | `tests/test_llm_integration.py`, `tests/test_eval_quality.py`, `tests/test_eval_diversity.py` |
-| RF-13 (Exportación y contrato F3→F4) | `tests/test_handoff_contract.py`, `tests/test_handoff_f3.py` |
-| RF-14 – RF-16 (Interfaz Streamlit) | Sin suite de pruebas automatizada dedicada; validación manual (ver §4.1 para los comandos de ejecución). |
+| RF-13 (Exportación y contrato F3→F4) | `tests/test_handoff_contract.py`, `tests/test_handoff_f3.py`, `tests/test_sample_artifact.py` (forma de la muestra versionada de fallback) |
+| RF-14 – RF-16 (Interfaz Streamlit) | `tests/test_app_smoke.py` (smoke de ambas páginas vía `streamlit.testing.v1.AppTest`, sin excepción); validación manual complementaria de contenido/layout (ver §4.1 para los comandos de ejecución). |
+| RF-17 (Bot de Telegram) | `tests/test_telegram_auth.py` (autenticación fail-closed y bypass de demo), `tests/test_qr_service.py` (servicio de QR de la landing) |
 
 #### 3.2 Requisitos no funcionales
 
