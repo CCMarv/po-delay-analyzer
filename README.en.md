@@ -163,6 +163,10 @@ Organized by purpose (lens [Diátaxis](https://diataxis.fr)): what is consulted,
 - Phase READMEs: [F1](01_data_pipeline_and_eda/README.en.md) ·
   [F2](02_clasif_reglas_negocio/README.en.md) · [F3](03_llm_integration/README.en.md) ·
   [F4](04_app/README.en.md) — methodology and "how to run" of each phase.
+- [SAD](documentation/SAD.en.md) — Software Architecture Document: layers, class and
+  deployment diagrams, external interfaces.
+- [SRS](documentation/SRS.en.md) — Software Requirements Specification: functional/non-functional
+  requirements, use cases, traceability matrix against the test suite.
 
 ### Explanation — understand why
 
@@ -182,6 +186,10 @@ Organized by purpose (lens [Diátaxis](https://diataxis.fr)): what is consulted,
 
 - [Contribution guide](CONTRIBUTING.en.md) — set up the environment, run the project, what not to
   commit, tests and CI, and the workflow with git.
+- [Final presentation](documentation/presentacion-final.en.md) — slide-by-slide outline and
+  speaker notes for the colloquium.
+- [Demo script](documentation/guion-demo.en.md) — step-by-step live demo, with the PO case to
+  use and the pre-requisites so it does not fail live.
 
 ## Technologies
 

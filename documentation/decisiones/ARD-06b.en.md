@@ -22,7 +22,7 @@ It was definitively set **`vendor_gap_hrs = 24h`** in the **`rules_config.json` 
 2. **Mathematical robustness:** Falling exactly within the empty gap of the distribution (6-18h), any minor adjustment to the threshold does not destabilize or alter the final distribution.
 3. **Respect for the data:** The model organically reduces Vendor attribution to 53.0% (131 POs), complying with the mentor’s directive not to force an "artificial 20% kickoff".
 
-The calculation of the variable `_primary_stage` was normalized to `max(0, push − 24)`, making it symmetric with other actors and releasing changes through the PR stack [#62](#), [#66](#), and [#64](#).
+The calculation of the variable `_primary_stage` was normalized to `max(0, push − 24)`, making it symmetric with other actors and releasing changes through the PR stack [#62](https://github.com/CCMarv/po-delay-analyzer/pull/62), [#66](https://github.com/CCMarv/po-delay-analyzer/pull/66), and [#64](https://github.com/CCMarv/po-delay-analyzer/pull/64).
 
 ## Consequences
 * **Positive:** Definitive elimination of the construction asymmetry and high stability of the pipeline. It was verified that hardening the threshold increased agreement with human annotation (*Reason agreement*) from 88.7% to 89.7%.

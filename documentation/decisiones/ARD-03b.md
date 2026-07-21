@@ -19,7 +19,7 @@ Medición directa del desfase temporal utilizando los eventos de auditoría nati
 ## Decisión Definitiva
 Elegimos la **Opción 1**. Tras la validación con el mentor el 2026-06-16, se adopta de forma definitiva la **señal directa STA push** como el estándar para medir a Vendor. 
 
-Para corregir la asimetría de construcción detectada en la discusión [#57](#), esta decisión evolucionó posteriormente e integró un umbral restrictivo de tolerancia (`vendor_gap_hrs = 24h`), el cual se detalla por separado en el [ADR-06b](ARD-06b.md). El código final fue desplegado mediante un stack de Pull Requests ([PR #62](#), [PR #66](#), [PR #64](#)).
+Para corregir la asimetría de construcción detectada en la discusión [#57](https://github.com/CCMarv/po-delay-analyzer/discussions/57), esta decisión evolucionó posteriormente e integró un umbral restrictivo de tolerancia (`vendor_gap_hrs = 24h`), el cual se detalla por separado en el [ADR-06b](ARD-06b.md). El código final fue desplegado mediante un stack de Pull Requests ([PR #62](https://github.com/CCMarv/po-delay-analyzer/pull/62), [PR #66](https://github.com/CCMarv/po-delay-analyzer/pull/66), [PR #64](https://github.com/CCMarv/po-delay-analyzer/pull/64)).
 
 ## Consecuencias
 * **Positivas:** El clasificador es robusto, seguro y capaz de evaluar el 100% de las POs del dataset (incluyendo las 27 sin tráiler). Cumple con las directrices de diseño limpio validadas por la mentoría.

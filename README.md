@@ -173,6 +173,10 @@ el porqué y qué resuelve una tarea.
 - READMEs de fase: [F1](01_data_pipeline_and_eda/README.md) ·
   [F2](02_clasif_reglas_negocio/README.md) · [F3](03_llm_integration/README.md) ·
   [F4](04_app/README.md) — metodología y "cómo correr" de cada fase.
+- [SAD](documentation/SAD.md) — Documento de Arquitectura de Software: capas, diagramas de
+  clases y despliegue, interfaces externas.
+- [SRS](documentation/SRS.md) — Especificación de Requisitos de Software: requisitos
+  funcionales/no funcionales, casos de uso, matriz de trazabilidad contra la suite de tests.
 
 ### Explicación — entender el porqué
 
@@ -194,6 +198,10 @@ el porqué y qué resuelve una tarea.
 
 - [Guía de contribución](CONTRIBUTING.md) — montar el entorno, correr el proyecto, qué no se
   commitea, tests y CI, y el flujo de trabajo con git.
+- [Presentación final](documentation/presentacion-final.md) — outline slide por slide y notas
+  del orador para el colloquium.
+- [Guion de demo](documentation/guion-demo.md) — paso a paso de la demo en vivo, con el caso
+  de PO a usar y los pre-requisitos para que no falle en vivo.
 
 ## Tecnologías
 

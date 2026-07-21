@@ -20,7 +20,7 @@ Medición directa del desfase temporal utilizando los eventos de auditoría nati
 * **Contras:** Si se aplica de forma directa y laxa sin un umbral de tolerancia, genera una sobreatribución masiva.
 
 ## Decisión Inicial
-Se eligió la **Opción 1** debido a la simplicidad del cierre matemático aditivo. Fue implementada provisionalmente en el [PR #59](#).
+Se eligió la **Opción 1** debido a la simplicidad del cierre matemático aditivo. Fue implementada provisionalmente en el [PR #59](https://github.com/CCMarv/po-delay-analyzer/pull/59).
 
 ## Consecuencias de su Caída
 * **Falla de Integridad:** Se constató que la asunción de tramos aditivos rompe el análisis en los 27 POs sin tráiler. 

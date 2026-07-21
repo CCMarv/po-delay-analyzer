@@ -16,7 +16,7 @@ Tras la caída del umbral de 4 horas por exceso de ruido en los datos (detallado
 *(Nota: Mantener las 4 horas fue descartado por los problemas de falsos positivos descritos).*
 
 ## Decisión Definitiva
-Elegimos la **Opción 1**. Tras la sugerencia del mentor el 2026-06-16 en la discusión [#53](#), se establece de forma definitiva un **umbral de 8 horas** para el Carrier. 
+Elegimos la **Opción 1**. Tras la sugerencia del mentor el 2026-06-16 en la discusión [#53](https://github.com/CCMarv/po-delay-analyzer/discussions/53), se establece de forma definitiva un **umbral de 8 horas** para el Carrier. 
 
 Este parámetro quedó desacoplado del código duro y se persistió formalmente en el archivo de configuración centralizado **`rules_config.json`**. El cambio analítico demostró la estabilización de la atribución logística.
 
