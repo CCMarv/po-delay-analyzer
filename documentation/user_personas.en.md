@@ -1,6 +1,6 @@
 # User Personas — PO Delay Root Cause Analyzer
 
-> Versioned design document (`documentation/`). Defines the two user profiles that consume the tool and the design decisions (prompt and interface) that each determines. It arises from the mentors' recommendation (sync 2026-06-26) to use user personas to guide the design of Phase 4. Each persona defines a **view** of the program. Spanish version; the English version will be added at the end of development, according to the repository's bilingual convention.
+> Versioned design document (`documentation/`). Defines the two user profiles that consume the tool and the design decisions (prompt and interface) that each determines. It arises from the mentors' recommendation (sync 2026-06-26) to use user personas to guide the design of Phase 4. Each persona defines a **view** of the program. Spanish is the source of truth; this English version is derived from it, per the repository's bilingual convention (ADR-18).
 
 ## What are these personas and why two
 
@@ -30,7 +30,7 @@ The entities measured by the system —vendors and carriers— are not users: th
 - Objective (JTBD): close each exception with the confirmed correct cause, quickly, without propagating the human coding error to the aggregate.
 - Question to the tool: "What exactly happened in this PO, is the cause true, and what should proceed now?"
 - Trigger: a late PO enters his queue, or someone queries a specific PO. Reactive, high frequency, case by case.
-- What he consumes: the complete PO bundle — reconstructed timeline, `stage_primary`, the explanation in prose (`llm_causa_raiz`), the action (`llm_accion_recomendada`), `llm_severidad`, and critical for validation: `llm_coincide_con_reason` and `llm_confianza`. It is the surface where the prose of the LLM delivers its value.
+- What he consumes: the complete PO bundle — reconstructed timeline, `stage`, the explanation in prose (`explanation`), the action (`action`), `severity`, and critical for validation: `llm_coincide_con_reason` and `llm_confianza`. It is the surface where the prose of the LLM delivers its value.
 
 Activities:
 
@@ -52,7 +52,7 @@ Activities:
 - Objective (JTBD): convert the historical data of late POs into actionable and auditable intelligence, separating the structural problem from the noise at once, through the three causes.
 - Question to the tool: "Where is the systemic pattern in the network — which stage, which entity — with how much evidence, and is it reproducible to defend it?"
 - Trigger: reporting cycle (monthly/quarterly), preparation of an executive review, or a management question ("Why did inbound reliability fall?"). Proactive, low frequency, network level.
-- What he consumes: structured aggregates across the three causes — distribution of `stage_primary` (Vendor / Carrier / DC / Indeterminate; today 53.0 / 16.2 / 15.0 / 15.8 % across 247 delays), counts by entity (vendor, carrier, DC), severity distribution, disagreement rate vs. `REASON_DSC`, and temporal trend. The prose of the LLM is almost irrelevant; what matters is that the attribution is consistent and reproducible from timestamps. The batch is deterministic aggregation.
+- What he consumes: structured aggregates across the three causes — distribution of `stage` (Vendor / Carrier / DC / Indeterminate; today 53.0 / 16.2 / 15.0 / 15.8 % across 247 delays), counts by entity (vendor, carrier, DC), severity distribution, disagreement rate vs. `REASON_DSC`, and temporal trend. The prose of the LLM is almost irrelevant; what matters is that the attribution is consistent and reproducible from timestamps. The batch is deterministic aggregation.
 
 Activities:
 
@@ -88,22 +88,22 @@ The handoff contract F3→F4 (issue #100, verified in `../tests/test_handoff_con
 
 | Persona | Columns Consumed | Purpose |
 |---|---|---|
-| Diego (individual) | `PO_DT … RECPT_DT` (timestamps of the lifecycle), `stage_primary`, `severity`, `llm_causa_raiz`, `llm_accion_recomendada`, `llm_confianza`, `llm_coincide_con_reason` | Reconstruct the PO timeline and read the diagnosis in prose + validation indicators |
-| Ravi (batch) | `stage_primary`, `VENDOR_NAME` / `CARRIER_PARTY_NAME` / `DC_LOC_NAME`, `severity`, `llm_coincide_con_reason` vs `REASON_DSC` | Split by stage, counts by entity, severity distribution, and aggregated disagreement rate |
+| Diego (individual) | `PO_DT … RECPT_DT` (timestamps of the lifecycle), `stage`, `severity`, `explanation`, `action`, `llm_confianza`, `llm_coincide_con_reason` | Reconstruct the PO timeline and read the diagnosis in prose + validation indicators |
+| Ravi (batch) | `stage`, `VENDOR_NAME` / `CARRIER_PARTY_NAME` / `DC_LOC_NAME`, `severity`, `llm_coincide_con_reason` vs `REASON_DSC` | Split by stage, counts by entity, severity distribution, and aggregated disagreement rate |
 
-Operational implication: Diego’s view depends on columns that Phase 3 still produces (`llm_*`; the `llm_out.csv` does not yet exist in the repo) and a reconstructed timeline from the timestamps — which the current app placeholder does not compile. Ravi’s view elevates the disagreement rate (`llm_coincide_con_reason` aggregated) to a first-class metric, which maps directly to the threshold of the Reason Code Agreement mentor. The personas do not request new columns to the contract; they establish **which cut of the artifact delivers value for each view**, and thus guide the final Phase 4 once Phase 3 closes its output.
+Operational implication: Diego's view consumes the deliverable CSV `po_output.csv` (F3→F4 contract, [ARD-21](decisiones/ARD-21.en.md)), which already brings the reconstructed timeline and the prose diagnosis — the app reads this artifact, it does not recompute anything. Ravi's view elevates the disagreement rate (`llm_coincide_con_reason` aggregated) to a first-class metric, which maps directly to the threshold of the Reason Code Agreement mentor. The personas do not request new columns to the contract; they establish **which cut of the artifact delivers value for each view**, and that criterion is what ended up guiding the real redesign of Phase 4.
 
 ## Traceability: persona → view → issue
 
-Each persona defines a view of the program. The objective of Phase 4 is two views by mode of consumption (individual and aggregated); how the screens by entity of the placeholder fit within them is an open redesign decision.
+Each persona defines a view of the program. The objective of Phase 4 is two views by mode of consumption (individual and aggregated), already built on this criterion.
 
 | Persona | View | Board Issue | Status |
 |---|---|---|---|
-| Diego | Individual consultation of a PO (timeline + diagnosis + LLM prose) | #102 (`fundamental`) | Placeholder in `../04_app/app.py`; to be redone after closing Phase 3 |
-| Ravi | Aggregated batch report (split, counts, severity, disagreement rate) | #103 | Placeholder in dashboards by entity; to be redone after closing Phase 3 |
-| Bridge Ravi → Diego | Drill-down from an aggregate to an individual PO | Shared scope of #102/#103 | Pending design |
+| Diego | Individual consultation of a PO (timeline + diagnosis + LLM prose) | #102 (`fundamental`) | Built: `../04_app/pages/1_🔍_Exception_Workbench.py` |
+| Ravi | Aggregated batch report (split, counts, severity, disagreement rate) | #103 | Built: `../04_app/pages/2_📊_Network_Intelligence.py` |
+| Bridge Ravi → Diego | Drill-down from an aggregate to an individual PO | Shared scope of #102/#103 | Implemented (`st.session_state`, `st.switch_page`) |
 
-The current app (`../04_app/`) is an advanced placeholder, organized by entity of the chain (Vendor / Carrier / DC), built to have a presentable output before Phase 3 sets its output. These personas are the criteria by which Phase 4 will be redesigned, not a justification for the placeholder. The decision that fixes this axis is recorded in `decisiones/ARD-09.en.md`.
+The current app (`../04_app/`) is a multipage Streamlit app organized by persona, not by chain entity (Vendor/Carrier/DC): `app.py` is the landing page and the two views live under `pages/`, exactly the design axis these personas prescribe. A second channel, the Telegram bot ([ADR-20](decisiones/ARD-20.en.md), `../04_app/telegram_bot/`), serves the same two personas outside the browser with fixed read-only commands (`handlers/diego.py`, `handlers/ravi.py`) over the same data contract, without invoking the LLM at query time. The decision that fixes the per-persona axis is recorded in `decisiones/ARD-09.en.md`.
 
 ## Scope and Traceability
 
