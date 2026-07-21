@@ -22,8 +22,14 @@ reparte por fase: `tests/test_pipeline_core.py` cubre la limpieza, las flags de 
 deltas de F1; `tests/test_classifier_core.py` cubre la etapa primaria, la severidad y las
 subclases de F2; `tests/test_metrics_core.py` cubre stage accuracy, reason agreement y los
 análisis de sensibilidad; `tests/test_llm_integration.py` cubre la construcción del prompt y
-el parseo del JSON de respuesta de F3 sin tocar la red. Los fixtures son sintéticos, con
-valores conocidos, de modo que el resultado esperado es determinístico.
+el parseo del JSON de respuesta de F3 sin tocar la red; `tests/test_fewshot.py` cubre la
+selección determinista del pool few-shot; `tests/test_eval_quality.py` y
+`tests/test_eval_diversity.py` cubren los benchmarks de calidad y diversidad de la explicación.
+De F4, `tests/test_app_smoke.py` cubre que las páginas de la app Streamlit cargan sin excepción,
+`tests/test_qr_service.py` cubre el servicio de QR del bot y `tests/test_telegram_auth.py` cubre
+la autenticación fail-closed y el bypass de demo del bot de Telegram; `tests/test_sample_artifact.py`
+cubre la forma de la muestra versionada que la app usa cuando no hay artefacto real. Los fixtures
+son sintéticos, con valores conocidos, de modo que el resultado esperado es determinístico.
 
 Qué rompe si falla. Una regresión en una función deja el CI en rojo antes del merge. Sin esta
 capa, un cambio podría alterar el reparto de etapas o una métrica cabecera sin que nadie lo
@@ -41,8 +47,9 @@ pytest tests/test_classifier_core.py    # una fase en aislamiento
 Qué garantiza. La frontera entre dos fases es un contrato, no un supuesto. `tests/test_handoff_contract.py`
 verifica la regla de oro: el CSV que produce una fase es funcionalmente idéntico al DataFrame
 que esa fase deja en memoria, de modo que la fase siguiente lo relee y reconstruye el mismo
-estado que tendría si la cadena corriera de una sola vez. Cubre las dos fronteras, F1→F2 y
-F2→F3. La identidad es funcional, no de tipado: un CSV escribe las fechas como texto, así que
+estado que tendría si la cadena corriera de una sola vez. Cubre las fronteras F1→F2 y F2→F3;
+`tests/test_handoff_f3.py` cubre la tercera frontera, F3→F4, sobre el CSV-entregable
+`po_output.csv` en vez del DataFrame completo. La identidad es funcional, no de tipado: un CSV escribe las fechas como texto, así que
 el contrato se cumple cuando el valor es el mismo, no cuando el dtype coincide. El test
 reparsea las columnas de fecha y unifica las formas de faltante (NaN, cadena vacía) a un
 centinela común antes de comparar el frame completo.
@@ -104,10 +111,11 @@ documento las cita, no las recalcula.
 
 ## Capa D — CI como gate de merge
 
-Qué garantiza. `.github/workflows/ci.yml` corre en cada pull request y en cada push a main un
-smoke de import de los tres módulos (`pipeline_core`, `classifier_core`, `llm_integration`)
-seguido de `pytest`. La convención del equipo permite mergear sin esperar revisión humana
-bloqueante, así que el gate de merge es la palomita verde: reemplaza al "en mi compu sí jala".
+Qué garantiza. `.github/workflows/ci.yml` corre en cada pull request y en cada push a main cinco
+pasos de import-smoke aislados (`pipeline_core`, `classifier_core`, `llm_integration`,
+`llm_integration_network_intelligence_view` y el bot de Telegram) seguidos de `pytest`. La
+convención del equipo permite mergear sin esperar revisión humana bloqueante, así que el gate de
+merge es la palomita verde: reemplaza al "en mi compu sí jala".
 
 Qué rompe si falla. El check queda en rojo si un módulo no importa —por una dependencia
 faltante, por ejemplo— o si cualquier test falla, y el PR no se debe mergear. El CI no incluye
@@ -125,13 +133,13 @@ con el dataset en `data/raw/`) ejecutando:
 ```
 python 01_data_pipeline_and_eda/pipeline_core.py      # F1 → df_clean
 python 02_clasif_reglas_negocio/classifier_core.py    # F2 → reparto + df_classified
-pytest                                                 # 251 passed
+pytest                                                 # 266 passed
 ```
 
 Las cifras ancla que debe obtener:
 
-- Suite de tests: 251 pasando. La suite creció con cada fase (de 57 a 99 a 114 a 244 a 251);
-  el valor vigente es 251.
+- Suite de tests: 266 pasando. La suite creció con cada fase (de 57 a 99 a 114 a 244 a 251 a
+  266); el valor vigente es 266.
 - Stage accuracy 100% (208/208), reason agreement 88.8% (174/196), severity ranking 100%
   (14/14, severidad = LLM).
 - Reparto de etapas sobre los 247 tardíos: Vendor 131 (53.0%), Carrier 40 (16.2%), DC 37

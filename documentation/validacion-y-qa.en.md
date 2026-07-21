@@ -8,7 +8,7 @@ Validation is organized into four layers. Each one is described with the same th
 
 ## Layer A — Unit Tests by Phase
 
-What it guarantees. Each function of the pipeline does what it says, isolated from the others. The suite is divided by phase: `tests/test_pipeline_core.py` covers cleaning, quality flags, and F1 deltas; `tests/test_classifier_core.py` covers the primary stage, severity, and F2 subclasses; `tests/test_metrics_core.py` covers stage accuracy, reason agreement, and sensitivity analyses; `tests/test_llm_integration.py` covers the construction of the prompt and parsing of the JSON response of F3 without touching the network. The fixtures are synthetic, with known values, making the expected result deterministic.
+What it guarantees. Each function of the pipeline does what it says, isolated from the others. The suite is divided by phase: `tests/test_pipeline_core.py` covers cleaning, quality flags, and F1 deltas; `tests/test_classifier_core.py` covers the primary stage, severity, and F2 subclasses; `tests/test_metrics_core.py` covers stage accuracy, reason agreement, and sensitivity analyses; `tests/test_llm_integration.py` covers the construction of the prompt and parsing of the JSON response of F3 without touching the network; `tests/test_fewshot.py` covers the deterministic selection of the few-shot pool; `tests/test_eval_quality.py` and `tests/test_eval_diversity.py` cover the explanation quality and diversity benchmarks. From F4, `tests/test_app_smoke.py` covers that the Streamlit app pages load without an exception, `tests/test_qr_service.py` covers the bot's QR service, and `tests/test_telegram_auth.py` covers the Telegram bot's fail-closed authentication and demo bypass; `tests/test_sample_artifact.py` covers the shape of the versioned sample the app falls back to when the real artifact is absent. The fixtures are synthetic, with known values, making the expected result deterministic.
 
 What it breaks if it fails. A regression in a function leaves CI red before the merge. Without this layer, a change could alter the breakdown of stages or a header metric without anyone noticing, because the number would continue to "come out."
 
@@ -21,7 +21,7 @@ pytest tests/test_classifier_core.py    # one phase in isolation
 
 ## Layer B — Handoff Contract Between Phases
 
-What it guarantees. The boundary between two phases is a contract, not an assumption. `tests/test_handoff_contract.py` verifies the golden rule: the CSV produced by a phase is functionally identical to the DataFrame that that phase leaves in memory, so the subsequent phase reads it and reconstructs the same state that it would have if the chain had run all at once. It covers both boundaries, F1→F2 and F2→F3. Identity is functional, not of typing: a CSV writes dates as text, so the contract is fulfilled when the value is the same, not when the dtype matches. The test reparses the date columns and unifies missing forms (NaN, empty string) to a common sentinel before comparing the full frame.
+What it guarantees. The boundary between two phases is a contract, not an assumption. `tests/test_handoff_contract.py` verifies the golden rule: the CSV produced by a phase is functionally identical to the DataFrame that that phase leaves in memory, so the subsequent phase reads it and reconstructs the same state that it would have if the chain had run all at once. It covers the F1→F2 and F2→F3 boundaries; `tests/test_handoff_f3.py` covers the third boundary, F3→F4, over the deliverable CSV `po_output.csv` instead of the full DataFrame. Identity is functional, not of typing: a CSV writes dates as text, so the contract is fulfilled when the value is the same, not when the dtype matches. The test reparses the date columns and unifies missing forms (NaN, empty string) to a common sentinel before comparing the full frame.
 
 What it breaks if it fails. Running the phases separately would yield a different result than running them together, and F3 would read a state that F2 never produced. The contract allows executing the pipeline in segments — or resuming from an intermediate CSV — with the guarantee that the result does not change.
 
@@ -51,7 +51,7 @@ How it is reproduced. Run `classifier_core.py` to generate `df_classified`, and 
 
 ## Layer D — CI as Merge Gate
 
-What it guarantees. `.github/workflows/ci.yml` runs on every pull request and on every push to main a smoke of import from the three modules (`pipeline_core`, `classifier_core`, `llm_integration`) followed by `pytest`. The team convention allows merging without waiting for blocking human review, so the merge gate is the green checkmark: it replaces "it works on my machine."
+What it guarantees. `.github/workflows/ci.yml` runs on every pull request and on every push to main five isolated import-smoke steps (`pipeline_core`, `classifier_core`, `llm_integration`, `llm_integration_network_intelligence_view`, and the Telegram bot) followed by `pytest`. The team convention allows merging without waiting for blocking human review, so the merge gate is the green checkmark: it replaces "it works on my machine."
 
 What it breaks if it fails. The check remains red if a module fails to import — due to a missing dependency, for example — or if any test fails, and the PR should not be merged. The CI does not include a lint, format, or type-check gate; that absence is a conscious decision for the scope of the project, documented in the workflow itself, not an oversight.
 
@@ -64,12 +64,12 @@ A reviewer reproduces the live figures in a clean environment (a `venv` from `re
 ```
 python 01_data_pipeline_and_eda/pipeline_core.py      # F1 → df_clean
 python 02_clasif_reglas_negocio/classifier_core.py    # F2 → breakdown + df_classified
-pytest                                                 # 251 passed
+pytest                                                 # 266 passed
 ```
 
 The anchor figures that must be obtained:
 
-- Test suite: 251 passing. The suite grew with each phase (from 57 to 99 to 114 to 244 to 251); the current value is 251.
+- Test suite: 266 passing. The suite grew with each phase (from 57 to 99 to 114 to 244 to 251 to 266); the current value is 266.
 - Stage accuracy 100% (208/208), reason agreement 88.8% (174/196), severity ranking 100% (14/14, severity = LLM).
 - Breakdown of stages over the 247 late: Vendor 131 (53.0%), Carrier 40 (16.2%), DC 37 (15.0%), Indeterminate 39 (15.8%).
 - LLM Explanation Quality 5/5 (20/20), few-shot C3 at temperature 0.9 (production configuration; requires API — see detail and progression in `documentation/metricas-proyecto.md`).

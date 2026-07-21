@@ -23,7 +23,7 @@ El alcance ejecutado cubre la documentación versionada de autoría humana del r
 - Documentación general (`SAD.md`, `SRS.md`, `data_dictionary.md`, `explicacion-proyecto.md`,
   `hallazgos-ai-vs-humano.md`, `metricas-proyecto.md`, `plan-traduccion.md`, `user_personas.md`,
   `validacion-y-qa.md`, `convenciones-issues.md`).
-- Registro de decisiones (`decisiones/README.md` + `ARD-01.md` … `ARD-23.md`, 27 archivos).
+- Registro de decisiones (`decisiones/README.md` + `ARD-01.md` … `ARD-25.md`, 28 archivos).
 - Presentación (ES + EN, producida aparte del flujo de este documento).
 
 Queda fuera de alcance: los fixtures crudos de corridas de benchmark

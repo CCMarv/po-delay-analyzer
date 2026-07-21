@@ -118,12 +118,13 @@ en comandos de git vive en la
 ## Tests y CI
 
 ```bash
-pytest      # 251 tests; configuración en pyproject.toml
+pytest      # 266 tests; configuración en pyproject.toml
 ```
 
 La suite cubre el pipeline (Fase 1), el clasificador y las métricas (Fase 2), el contrato de
-handoff entre fases y la integración LLM (Fase 3). No requiere API: los tests de LLM usan
-fixtures y stubs, no llamadas reales.
+handoff entre fases, la integración LLM y el few-shot (Fase 3), y la app Streamlit y el bot de
+Telegram — smoke de páginas, servicio de QR, autenticación fail-closed (Fase 4). No requiere API:
+los tests de LLM usan fixtures y stubs, no llamadas reales.
 
 El CI (`.github/workflows/ci.yml`) corre `pytest` en cada push y cada PR. El gate de merge
 vigente es **self-review + CI en verde**: mergeas tú mismo cuando ambos pasan, sin esperar

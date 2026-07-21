@@ -61,7 +61,7 @@ cp .env.example .env                                 # Windows: Copy-Item .env.e
 # Run the pipeline and the suite:
 python 01_data_pipeline_and_eda/pipeline_core.py     # F1 — cleaning + validation
 python 02_clasif_reglas_negocio/classifier_core.py   # F2 — stage classification
-pytest                                                # 251 tests, no API
+pytest                                                # 266 tests, no API
 
 # Open the app (Phase 4). Without running Phase 3 locally, it falls back to the
 # versioned sample (data/samples/); the complete artifact resides in
@@ -130,7 +130,7 @@ Header results (population, threshold, and reproducible source of each figure in
 │   └── README.md
 ├── data/                         # raw/ and processed/ (gitignored; only .gitkeep)
 ├── documentation/
-│   ├── decisiones/               # ADRs (ARD-01 … ARD-23) + README (log index)
+│   ├── decisiones/               # ADRs (ARD-01 … ARD-25) + README (log index)
 │   ├── data_dictionary.md        #   the 39 columns + data card of the dataset
 │   ├── metricas-proyecto.md      #   unique table of header metrics
 │   ├── validacion-y-qa.md        #   layer validation method
@@ -140,7 +140,7 @@ Header results (population, threshold, and reproducible source of each figure in
 │   ├── convenciones-issues.md    #   team management agreements
 │   ├── SAD.md · SRS.md           #   architecture and requirements specifications
 │   └── kickoff_po_root_cause.html
-├── tests/                        # pytest suite (251 tests): F1/F2/F3, handoff, few-shot, evals, app
+├── tests/                        # pytest suite (266 tests): F1/F2/F3, handoff, few-shot, evals, app, bot
 ├── CONTRIBUTING.md               # setup, reproducibility, workflow, what not to commit, tests/CI
 ├── requirements.txt
 ├── pyproject.toml                # pytest config (pythonpath, testpaths)
@@ -191,7 +191,7 @@ Organized by purpose (lens [Diátaxis](https://diataxis.fr)): what is consulted,
 - LLM: the deliverable (`po_output.csv`) is generated with `gpt-4o-mini` (OpenAI, official backend);
   `claude-sonnet-4-6` (Anthropic), `deepseek-chat` (DeepSeek), and `qwen2.5:7b` (local via Ollama)
   are alternate backends with the same prompt and parsing interface.
-- Testing: `pytest` (251 tests) in CI (GitHub Actions), on every push and every PR.
+- Testing: `pytest` (266 tests) in CI (GitHub Actions), on every push and every PR.
 - Domain variables and columns (`IS_LATE`, `REASON_DSC`, `HOT_PO_FLAG`, lifecycle timestamps, …) are documented in the [data dictionary](documentation/data_dictionary.en.md).
 
 ## Contribution
