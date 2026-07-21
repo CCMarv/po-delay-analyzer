@@ -85,6 +85,15 @@ Steps 3 and 5 use API credits — confirm the provider and count before launchin
 [`03_llm_integration/README.en.md`](03_llm_integration/README.en.md) and
 [`04_app/README.en.md`](04_app/README.en.md).
 
+### Telegram Bot (additional channel, ADR-20)
+
+The bot is a second read-only channel over the same contract (`po_output.csv`, scorecards) —
+it does not recompute anything or use API credits. It has its own dependency file
+(`04_app/telegram_bot/requirements-bot.txt`, not covered by the `pip install` in step 3
+above) and its own environment variables in `.env.example` (`TELEGRAM_BOT_TOKEN`,
+`TELEGRAM_USER_WHITELIST`, `TELEGRAM_RAVI_USER_IDS`, `DEMO_MODE`). Full setup and startup
+instructions in [`04_app/telegram_bot/README.md`](04_app/telegram_bot/README.md).
+
 ## Workflow
 
 The cycle of a change: gap → issue → branch → commits → PR + self-review → CI green →

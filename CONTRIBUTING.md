@@ -96,6 +96,15 @@ paso 5 para su panel completo. Detalle del contrato y de cada script en
 [`03_llm_integration/README.md`](03_llm_integration/README.md) y
 [`04_app/README.md`](04_app/README.md).
 
+### Bot de Telegram (canal adicional, ADR-20)
+
+El bot es un segundo canal de solo lectura sobre el mismo contrato (`po_output.csv`,
+scorecards) — no recomputa nada ni gasta API. Tiene su propio archivo de dependencias
+(`04_app/telegram_bot/requirements-bot.txt`, no cubierto por el `pip install` del paso 3 de
+arriba) y sus propias variables de entorno en `.env.example` (`TELEGRAM_BOT_TOKEN`,
+`TELEGRAM_USER_WHITELIST`, `TELEGRAM_RAVI_USER_IDS`, `DEMO_MODE`). Setup y arranque completos
+en [`04_app/telegram_bot/README.md`](04_app/telegram_bot/README.md).
+
 ## Flujo de trabajo
 
 El ciclo de un cambio: gap → issue → rama → commits → PR + self-review → CI en verde →
