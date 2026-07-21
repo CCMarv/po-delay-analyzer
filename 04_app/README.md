@@ -55,9 +55,11 @@ Detalle de las personas en `../documentation/user_personas.md`.
 
 Streamlit no es el único canal: `telegram_bot/` ([ADR-20](../documentation/decisiones/ARD-20.md))
 expone un segundo front-end con comandos fijos por persona (`/po`, `/timeline`, `/alertas`,
-`/hot` para Diego; `/kpi`, `/scorecards`, `/distribucion`, `/mismatches` para Ravi) sobre el
-mismo contrato F3→F4 — sin razonamiento libre ni llamada a LLM en tiempo de consulta, distinto
-del chatbot conversacional diferido (#160). Cómo correr el bot: `telegram_bot/README.md`.
+`/hot` para Diego; `/kpi`, `/distribucion`, `/tendencia`, `/scorecards`, `/mismatches`,
+`/mismatches_chart` para Ravi) sobre el mismo contrato F3→F4 — sin razonamiento libre ni
+llamada a LLM en tiempo de consulta, distinto del chatbot conversacional diferido (#160). La
+landing (`app.py`) enlaza al bot con un QR generado en memoria (`services/qr_service.py`), sin
+escribir el PNG a disco. Cómo correr el bot: `telegram_bot/README.md`.
 
 ## 3. Cómo correr
 

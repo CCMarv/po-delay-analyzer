@@ -16,7 +16,7 @@ Following the drop of the 4-hour threshold due to excessive noise in the data (d
 *(Note: Maintaining the 4 hours was discarded due to the false positive issues described).*
 
 ## Final Decision
-Option **1** was chosen. Following the mentor's suggestion on 2026-06-16 in discussion [#53](#), an **8-hour threshold** for the Carrier is definitively established.
+Option **1** was chosen. Following the mentor's suggestion on 2026-06-16 in discussion [#53](https://github.com/CCMarv/po-delay-analyzer/discussions/53), an **8-hour threshold** for the Carrier is definitively established.
 
 This parameter was decoupled from hard coding and was formally persisted in the centralized configuration file **`rules_config.json`**. The analytical change demonstrated stabilization of logistical attribution.
 

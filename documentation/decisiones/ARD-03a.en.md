@@ -20,7 +20,7 @@ Direct measurement of the time offset using the business's native audit events: 
 * **Cons:** If applied directly and loosely without a tolerance threshold, it generates massive overattribution.
 
 ## Initial Decision
-**Option 1** was chosen due to the simplicity of the additive mathematical closure. It was provisionally implemented in [PR #59](#).
+**Option 1** was chosen due to the simplicity of the additive mathematical closure. It was provisionally implemented in [PR #59](https://github.com/CCMarv/po-delay-analyzer/pull/59).
 
 ## Consequences of Its Failure
 * **Integrity Failure:** It was found that the assumption of additive segments breaks the analysis in the 27 POs without trailers. 

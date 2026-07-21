@@ -59,10 +59,12 @@ El sistema está diseñado bajo el estilo **Layered Architecture (Arquitectura e
                ▼                                              ▼
                └───────────────────────┬──────────────────────┘
                                        ▼ (Handoff F3->F4)
-┌──────────────────────────────┐
-│  Capa 4: Dashboard Streamlit │ (04_app/app.py)
-└──────────────────────────────┘
+┌──────────────────────────────┐                ┌──────────────────────────────┐
+│  Capa 4: Dashboard Streamlit │ (04_app/app.py)│  Capa 4: Bot de Telegram     │ (telegram_bot/bot.py)
+└──────────────────────────────┘                └──────────────────────────────┘
 ```
+
+El bot de Telegram ([ADR-20](decisiones/ARD-20.md)) es un segundo consumidor de la Capa 4, en paralelo al dashboard Streamlit: lee el mismo handoff F3→F4 (`po_output.csv`, scorecards) sin recomputar nada ni invocar al LLM en tiempo de consulta, y sin depender de que el dashboard esté abierto.
 
 Este desacoplamiento permite ejecutar de manera aislada cualquier componente o probarlo de forma independiente mediante tests automatizados (aislamiento de fronteras de handoff).
 
@@ -166,6 +168,14 @@ classDiagram
         +Network_Intelligence.py
     }
 
+    class TelegramBot {
+        <<page>>
+        +bot.py
+        +handlers/diego.py
+        +handlers/ravi.py
+        -is_authorized(user_id) bool
+    }
+
     ClassifierCore ..> CleanPoData : consumes
     MetricsCore ..> ClassifierCore : analyzes
     LLMIntegration ..> ClassifierCore : consumes
@@ -179,6 +189,8 @@ classDiagram
     DataService ..> LLMIntegration : loads po_output.csv
     StreamlitApp --> DataService : queries
     StreamlitApp ..> ScorecardCore : displays JSON scorecards
+    TelegramBot --> DataService : queries (own data_service.py, duplicated contract)
+    TelegramBot ..> ScorecardCore : reads JSON scorecards
 ```
 
 #### 3.2 Vista de proceso
@@ -257,7 +269,7 @@ La organización física del código fuente sigue un orden estructurado por fase
 *   `01_data_pipeline_and_eda/`: Capa de extracción, tipado y limpieza de timestamps. Contiene el script core de Fase 1.
 *   `02_clasif_reglas_negocio/`: Capa lógica de reglas determinísticas y métricas de validación analítica. Contiene las reglas vigentes en JSON y los cálculos de precisión.
 *   `03_llm_integration/`: Capa de auditoría semántica y modelado estadístico. Contiene las fábricas de backends de LLM, el pool de ejemplos few-shot de discrepancias, y el **motor de scorecards de desempeño y riesgo (`scorecard_core.py`)**. Incluye además `llm_integration_network_intelligence_view.py`, el generador de la síntesis ejecutiva de red por actor (Vendor/Carrier/DC) sobre los scorecards estadísticos de `scorecard_core.py`, gobernado por [ADR-19](decisiones/ARD-19.md): usa un SDK distinto (`openai-agents`, arquitectura multi-agente de tres agentes especializados en secuencia) y consolida su salida en `data/processed/agente1_raw.txt`, que consume en producción la página `Network Intelligence` (`04_app/pages/2_📊_Network_Intelligence.py`). Es una dependencia real de Fase 3→Fase 4, no un componente aislado (corregido conforme a [ARD-21](decisiones/ARD-21.md), que señaló la caracterización anterior de este documento como incorrecta).
-*   `04_app/`: Interfaz interactiva de usuario. Dividida en assets (CSS), componentes reutilizables (Navbar), la Landing Page (`app.py`), servicios de datos y páginas de usuario.
+*   `04_app/`: Interfaz interactiva de usuario. Dividida en assets (CSS), componentes reutilizables (Navbar), la Landing Page (`app.py`), servicios de datos y páginas de usuario. Incluye además `telegram_bot/` ([ADR-20](decisiones/ARD-20.md)): un segundo canal de consumo del mismo contrato F3→F4, con su propio `bot.py`, `handlers/` (uno por persona, `diego.py`/`ravi.py`) y `services/` (autenticación fail-closed, carga de datos) — hoy una copia paralela de la capa de datos de `04_app/`, no compartida, deuda documentada en el propio ADR.
 *   `tests/`: Suite global de pytest para validación unitaria y de contratos de datos.
 *   `requirements.txt`: Declaración explícita y fijada de las librerías dependientes, incluyendo pandas, numpy, streamlit, plotly, requests, tqdm, pytest y las dependencias de scorecards implicitamente vinculadas (`scikit-learn` y `scipy`).
 *   `pyproject.toml`: Configuración de ejecución de pytest y de directorios raíces a incluir en el Python path.
@@ -268,8 +280,9 @@ El repositorio no contiene artefactos de containerización (`Dockerfile`, `docke
 *   **Entorno de ejecución:** Un entorno virtual de Python (`.venv`) sobre un solo equipo (estación de trabajo o laptop del analista). No hay separación de procesos por fase: el pipeline batch (F1-F3) y la app (F4) corren como scripts/procesos independientes lanzados manualmente en secuencia, no como servicios persistentes.
 *   **Componente batch (F1-F3):** Se ejecuta bajo demanda vía CLI (`python 01_data_pipeline_and_eda/pipeline_core.py`, etc.), con dependencia de las bibliotecas científicas `pandas`, `numpy`, `scikit-learn` y `scipy` instaladas en el mismo entorno.
 *   **Componente interactivo (F4):** Servido localmente por el servidor de desarrollo de Streamlit (`streamlit run 04_app/app.py`), expuesto por defecto en `localhost` a un único usuario a la vez; no está diseñado para concurrencia multi-usuario ni balanceo de carga.
-*   **Persistencia:** Archivos planos en `data/processed/` (CSV y JSON), compartidos por lectura/escritura directa entre los procesos batch y la app — no hay una capa de servicio de datos independiente.
-*   **Estado conocido:** Elevar esta configuración a un despliegue de calidad de producción (empaquetado, hosting, multi-usuario) es trabajo identificado como pendiente, no implementado a la fecha de este documento.
+*   **Componente bot (F4, [ADR-20](decisiones/ARD-20.md)):** Proceso independiente de larga duración (`python 04_app/telegram_bot/bot.py`, `python-telegram-bot` con polling contra la API de Telegram), de forma de despliegue materialmente distinta al dashboard: no está acotado a un único usuario local — cualquier usuario cuyo ID de Telegram esté en `TELEGRAM_USER_WHITELIST` puede alcanzarlo de forma remota, en paralelo y desde fuera de la estación de trabajo, a través de los servidores de Telegram. Comparte el mismo entorno virtual y los mismos archivos de `data/processed/` que el resto de F4, pero corre como un proceso separado del servidor de Streamlit.
+*   **Persistencia:** Archivos planos en `data/processed/` (CSV y JSON), compartidos por lectura/escritura directa entre los procesos batch, la app y el bot — no hay una capa de servicio de datos independiente.
+*   **Estado conocido:** Elevar esta configuración a un despliegue de calidad de producción (empaquetado, hosting, multi-usuario del dashboard) es trabajo identificado como pendiente, no implementado a la fecha de este documento. El bot ya opera con múltiples usuarios remotos por diseño (vía Telegram), pero como proceso local lanzado a mano, sin supervisión de proceso (systemd, contenedor) ni reinicio automático ante caída.
 
 ```mermaid
 flowchart TB
@@ -284,10 +297,15 @@ flowchart TB
         subgraph App["Proceso interactivo"]
             St["Streamlit dev server\n(streamlit run 04_app/app.py)"]
         end
+        subgraph BotProc["Proceso del bot (larga duración)"]
+            Bot["telegram_bot/bot.py\n(polling)"]
+        end
         Browser["Navegador local\n(un usuario)"]
     end
     Cloud["APIs LLM externas\n(Anthropic / OpenAI / DeepSeek, HTTPS)"]
     Ollama["Ollama local\n(localhost:11434, opcional)"]
+    TgAPI["Telegram Bot API\n(servidores de Telegram)"]
+    Users["Usuarios remotos autorizados\n(TELEGRAM_USER_WHITELIST, N usuarios)"]
 
     F1 --> Disk
     F2 --> Disk
@@ -297,12 +315,16 @@ flowchart TB
     F3b --> Disk
     Disk --> St
     St --> Browser
+    Disk --> Bot
+    Bot <-->|polling HTTPS| TgAPI
+    TgAPI <-->|mensajes| Users
 ```
 
 #### 3.5 Vista de escenarios
 1.  **Escenario 1: Diego enruta una excepción (Caso de discrepancia):** Diego abre el Exception Workbench. Selecciona una orden marcada en "Desacuerdo" (ej: el humano culpó a "Yard congestion" pero el clasificador temporal marca "Carrier" por exceso de tránsito de 30h). Diego lee la explicación del LLM ("El exceso se concentra en el transportista, contradiciendo el motivo registrado..."). Diego abre un ticket con transporte y marca la excepción como resuelta.
 2.  **Escenario 2: Ravi audita el reliability trimestral de la red:** Ravi accede a Network Intelligence. Visualiza el gráfico de distribución y nota que el 53% de los retrasos provienen de Vendor. Analiza la tasa agregada de acuerdo de la AI (del 88.8%) y extrae el listado de las POs en desacuerdo. Esto le da evidencia reproducible para negociar penalizaciones con los proveedores en la próxima junta.
 3.  **Escenario 3: Evaluación de Scorecard de Proveedores por Ravi:** Ravi ingresa al panel de agregados en Network Intelligence. El sistema lee el archivo `reporte_vendors.json` (calculado por `scorecard_core.py`). Ravi visualiza que el proveedor 'MEDIQ' tiene un score normalizado de riesgo de 85.5 (Riesgo Alto). Ravi observa que el Delay Promedio es de 5.5 días, y que su tasa de reschedule es del 10%. Esto le da a Ravi argumentos científicos sólidos para citar al proveedor a una reunión de revisión, sabiendo que la métrica está protegida contra el ruido de muestras pequeñas.
+4.  **Escenario 4: Diego consulta un PO desde el bot de Telegram fuera del navegador:** Diego está en una llamada con el transportista y no tiene el dashboard abierto. Envía `/po 100280` al bot. El bot verifica su ID contra la whitelist, lee `po_output.csv` (mismo artefacto que consume Streamlit, sin recomputar nada ni invocar al LLM) y responde en texto el diagnóstico, la acción recomendada y la concordancia con el motivo humano — la misma información que vería en el Exception Workbench, sin abrir el navegador.
 
 ---
 
@@ -394,6 +416,7 @@ El sistema integra y depende de las siguientes APIs e interfaces de terceros:
 3.  **DeepSeek API:** Endpoint `https://api.deepseek.com/v1/chat/completions`. Requiere `DEEPSEEK_API_KEY` y consume el modelo `deepseek-chat`.
 4.  **Ollama Local Engine:** Servicio HTTP local en `http://localhost:11434/api/generate`. Consume por defecto el modelo local `qwen2.5:7b`.
 5.  **Bibliotecas Científicas locales:** Dependencia del runtime local de Python de las librerías `scikit-learn` y `scipy` para realizar la calibración de pesos (Ridge), agrupaciones gaussianas (GMM) y normalizaciones.
+6.  **Telegram Bot API ([ADR-20](decisiones/ARD-20.md)):** Servicio externo de mensajería vía `python-telegram-bot`, con polling saliente (sin webhook expuesto). Requiere `TELEGRAM_BOT_TOKEN` (obtenido de `@BotFather`). Es la única dependencia externa de F4 que expone el sistema a usuarios remotos fuera de la estación de trabajo local.
 
 De los 4 backends soportados, la **configuración de producción vigente** (`03_llm_integration/llm_config.json`) fija: backend **OpenAI**, modelo `gpt-4o-mini`, `temperature=0.9`, `seed=42` (reproducibilidad best-effort), `max_tokens=512` (diagnóstico base) / `max_tokens_action=1536` (diagnóstico diferencial Tier 2), `timeout_seconds=60`, `max_retries=3`, con selección de ejemplos few-shot en la variante "C3" del pool curado (`fewshot_pool.json`).
 
@@ -404,3 +427,8 @@ De los 4 backends soportados, la **configuración de producción vigente** (`03_
 *   `LLM_DELAY_SECONDS`: Delay de seguridad entre llamadas a la API del LLM.
 *   `LLM_RETRY_SLEEP_SECONDS`: Espera antes de volver a intentar una llamada fallida.
 *   `LLM_SAVE_EVERY`: Intervalo de guardado parcial en el procesamiento batch.
+*   `TELEGRAM_BOT_TOKEN`: Token del bot, obtenido de `@BotFather` (secreto).
+*   `TELEGRAM_BOT_USERNAME`: Handle público del bot (no secreto), usado en el enlace de la landing.
+*   `TELEGRAM_USER_WHITELIST`: IDs de Telegram autorizados, separados por coma; vacía = fail-closed, nadie autorizado.
+*   `TELEGRAM_RAVI_USER_IDS`: IDs de Telegram con perfil Ravi; el resto son Diego por default.
+*   `DEMO_MODE`: Bypass explícito del gate de autorización, solo para demostraciones (vacío/false por default).

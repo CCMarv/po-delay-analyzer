@@ -23,7 +23,7 @@ The executed scope covers the versioned, human-authored documentation of the rep
 - General documentation (`SAD.md`, `SRS.md`, `data_dictionary.md`, `explicacion-proyecto.md`,
   `hallazgos-ai-vs-humano.md`, `metricas-proyecto.md`, `plan-traduccion.md`, `user_personas.md`,
   `validacion-y-qa.md`, `convenciones-issues.md`).
-- Decision log (`decisiones/README.md` + `ARD-01.md` … `ARD-23.md`, 27 files).
+- Decision log (`decisiones/README.md` + `ARD-01.md` … `ARD-25.md`, 28 files).
 - Presentation (ES + EN, produced separately from this document's flow).
 
 Out of scope: raw benchmark run fixtures (`03_llm_integration/fixtures/*.md`, except its

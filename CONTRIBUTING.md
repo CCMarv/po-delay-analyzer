@@ -96,6 +96,15 @@ paso 5 para su panel completo. Detalle del contrato y de cada script en
 [`03_llm_integration/README.md`](03_llm_integration/README.md) y
 [`04_app/README.md`](04_app/README.md).
 
+### Bot de Telegram (canal adicional, ADR-20)
+
+El bot es un segundo canal de solo lectura sobre el mismo contrato (`po_output.csv`,
+scorecards) — no recomputa nada ni gasta API. Tiene su propio archivo de dependencias
+(`04_app/telegram_bot/requirements-bot.txt`, no cubierto por el `pip install` del paso 3 de
+arriba) y sus propias variables de entorno en `.env.example` (`TELEGRAM_BOT_TOKEN`,
+`TELEGRAM_USER_WHITELIST`, `TELEGRAM_RAVI_USER_IDS`, `DEMO_MODE`). Setup y arranque completos
+en [`04_app/telegram_bot/README.md`](04_app/telegram_bot/README.md).
+
 ## Flujo de trabajo
 
 El ciclo de un cambio: gap → issue → rama → commits → PR + self-review → CI en verde →
@@ -118,12 +127,13 @@ en comandos de git vive en la
 ## Tests y CI
 
 ```bash
-pytest      # 251 tests; configuración en pyproject.toml
+pytest      # 266 tests; configuración en pyproject.toml
 ```
 
 La suite cubre el pipeline (Fase 1), el clasificador y las métricas (Fase 2), el contrato de
-handoff entre fases y la integración LLM (Fase 3). No requiere API: los tests de LLM usan
-fixtures y stubs, no llamadas reales.
+handoff entre fases, la integración LLM y el few-shot (Fase 3), y la app Streamlit y el bot de
+Telegram — smoke de páginas, servicio de QR, autenticación fail-closed (Fase 4). No requiere API:
+los tests de LLM usan fixtures y stubs, no llamadas reales.
 
 El CI (`.github/workflows/ci.yml`) corre `pytest` en cada push y cada PR. El gate de merge
 vigente es **self-review + CI en verde**: mergeas tú mismo cuando ambos pasan, sin esperar

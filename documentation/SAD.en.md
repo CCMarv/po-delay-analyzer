@@ -59,10 +59,12 @@ The system is designed under the **Layered Architecture** style coupled with a *
                ▼                                              ▼
                └───────────────────────┬──────────────────────┘
                                        ▼ (Handoff F3->F4)
-┌──────────────────────────────┐
-│ Layer 4: Streamlit Dashboard  │ (04_app/app.py)
-└──────────────────────────────┘
+┌──────────────────────────────┐                ┌──────────────────────────────┐
+│ Layer 4: Streamlit Dashboard  │ (04_app/app.py)│  Layer 4: Telegram Bot       │ (telegram_bot/bot.py)
+└──────────────────────────────┘                └──────────────────────────────┘
 ```
+
+The Telegram bot ([ADR-20](decisiones/ARD-20.en.md)) is a second consumer of Layer 4, in parallel with the Streamlit dashboard: it reads the same F3→F4 handoff (`po_output.csv`, scorecards) without recomputing anything or invoking the LLM at query time, and without depending on the dashboard being open.
 
 This decoupling allows any component to be executed or tested independently using automated tests (isolation of handoff boundaries).
 
@@ -166,6 +168,14 @@ classDiagram
         +Network_Intelligence.py
     }
 
+    class TelegramBot {
+        <<page>>
+        +bot.py
+        +handlers/diego.py
+        +handlers/ravi.py
+        -is_authorized(user_id) bool
+    }
+
     ClassifierCore ..> CleanPoData : consumes
     MetricsCore ..> ClassifierCore : analyzes
     LLMIntegration ..> ClassifierCore : consumes
@@ -179,6 +189,8 @@ classDiagram
     DataService ..> LLMIntegration : loads po_output.csv
     StreamlitApp --> DataService : queries
     StreamlitApp ..> ScorecardCore : displays JSON scorecards
+    TelegramBot --> DataService : queries (own data_service.py, duplicated contract)
+    TelegramBot ..> ScorecardCore : reads JSON scorecards
 ```
 
 #### 3.2 Process View
@@ -257,7 +269,7 @@ The physical organization of the source code follows a structured order by the p
 *   `01_data_pipeline_and_eda/`: Extraction, typing, and cleaning of timestamps layer. Contains the core script for Phase 1.
 *   `02_clasif_reglas_negocio/`: Logical layer of deterministic rules and analytical validation metrics. Contains the active rules in JSON and precision calculations.
 *   `03_llm_integration/`: Semantic auditing layer and statistical modeling. Contains the LLM backend factories, the pool of few-shot examples for discrepancies, and the **scorecards performance and risk engine (`scorecard_core.py`)**. It also includes `llm_integration_network_intelligence_view.py`, the generator of the executive network synthesis by actor (Vendor/Carrier/DC) based on the statistical scorecards of `scorecard_core.py`, governed by [ADR-19](decisiones/ARD-19.en.md): it uses a different SDK (`openai-agents`, a multi-agent architecture of three specialized agents in sequence) and consolidates its output in `data/processed/agente1_raw.txt`, which the `Network Intelligence` page (`04_app/pages/2_📊_Network_Intelligence.py`) consumes in production. It is a real dependency from Phase 3→Phase 4, not an isolated component (corrected as per [ARD-21](decisiones/ARD-21.en.md), which pointed out the previous characterization of this document as incorrect).
-*   `04_app/`: Interactive user interface. Divided into assets (CSS), reusable components (Navbar), the Landing Page (`app.py`), data services, and user pages.
+*   `04_app/`: Interactive user interface. Divided into assets (CSS), reusable components (Navbar), the Landing Page (`app.py`), data services, and user pages. Also includes `telegram_bot/` ([ADR-20](decisiones/ARD-20.en.md)): a second consumption channel for the same F3→F4 contract, with its own `bot.py`, `handlers/` (one per persona, `diego.py`/`ravi.py`), and `services/` (fail-closed authentication, data loading) — today a parallel, unshared copy of `04_app/`'s data layer, a debt documented in the ADR itself.
 *   `tests/`: Global pytest suite for unit validation and data contract validation.
 *   `requirements.txt`: Explicitly stated and pinned declaration of dependent libraries, including pandas, numpy, streamlit, plotly, requests, tqdm, pytest, and implicitly linked scorecard dependencies (`scikit-learn` and `scipy`).
 *   `pyproject.toml`: Configuration for pytest execution and root directories to include in the Python path.
@@ -268,8 +280,9 @@ The repository does not contain containerization artifacts (`Dockerfile`, `docke
 *   **Execution Environment:** A virtual Python environment (`.venv`) on a single machine (analyst's workstation or laptop). There is no separation of processes by phase: the batch pipeline (F1-F3) and the app (F4) run as manually launched scripts/processes in sequence, not as persistent services.
 *   **Batch Component (F1-F3):** Executed on demand via CLI (`python 01_data_pipeline_and_eda/pipeline_core.py`, etc.), relying on the scientific libraries `pandas`, `numpy`, `scikit-learn`, and `scipy` installed in the same environment.
 *   **Interactive Component (F4):** Served locally by the Streamlit development server (`streamlit run 04_app/app.py`), exposed by default on `localhost` to a single user at a time; it is not designed for multi-user concurrency or load balancing.
-*   **Persistence:** Flat files in `data/processed/` (CSV and JSON), shared by direct read/write between batch processes and the app — there is no independent data service layer.
-*   **Known State:** Elevating this configuration to a production-quality deployment (packaging, hosting, multi-user) is identified as pending work, not implemented as of the date of this document.
+*   **Bot Component (F4, [ADR-20](decisiones/ARD-20.en.md)):** Independent long-running process (`python 04_app/telegram_bot/bot.py`, `python-telegram-bot` with polling against the Telegram API), a materially different deployment shape from the dashboard: it is not confined to a single local user — any user whose Telegram ID is in `TELEGRAM_USER_WHITELIST` can reach it remotely, in parallel, from outside the workstation, through Telegram's own servers. It shares the same virtual environment and the same `data/processed/` files as the rest of F4, but runs as a process separate from the Streamlit server.
+*   **Persistence:** Flat files in `data/processed/` (CSV and JSON), shared by direct read/write between batch processes, the app, and the bot — there is no independent data service layer.
+*   **Known State:** Elevating this configuration to a production-quality deployment (packaging, hosting, multi-user dashboard) is identified as pending work, not implemented as of the date of this document. The bot already operates with multiple remote users by design (via Telegram), but as a manually launched local process, with no process supervision (systemd, container) or automatic restart on crash.
 
 ```mermaid
 flowchart TB
@@ -284,10 +297,15 @@ flowchart TB
         subgraph App["Interactive process"]
             St["Streamlit dev server\n(streamlit run 04_app/app.py)"]
         end
+        subgraph BotProc["Bot process (long-running)"]
+            Bot["telegram_bot/bot.py\n(polling)"]
+        end
         Browser["Local browser\n(one user)"]
     end
     Cloud["External LLM APIs\n(Anthropic / OpenAI / DeepSeek, HTTPS)"]
     Ollama["Local Ollama\n(localhost:11434, optional)"]
+    TgAPI["Telegram Bot API\n(Telegram's servers)"]
+    Users["Authorized remote users\n(TELEGRAM_USER_WHITELIST, N users)"]
 
     F1 --> Disk
     F2 --> Disk
@@ -297,12 +315,16 @@ flowchart TB
     F3b --> Disk
     Disk --> St
     St --> Browser
+    Disk --> Bot
+    Bot <-->|HTTPS polling| TgAPI
+    TgAPI <-->|messages| Users
 ```
 
 #### 3.5 Scenario View
 1.  **Scenario 1: Diego routes an exception (Discrepancy Case):** Diego opens the Exception Workbench. He selects an order marked as "Disagreement" (e.g., the human blamed "Yard congestion" but the temporal classifier marks "Carrier" due to excess transit of 30h). Diego reads the LLM's explanation ("The excess is concentrated on the carrier, contradicting the recorded reason..."). Diego opens a ticket with transportation and marks the exception as resolved.
 2.  **Scenario 2: Ravi audits quarterly network reliability:** Ravi accesses Network Intelligence. He views the distribution chart and notes that 53% of delays come from Vendors. He analyzes the AI's aggregated agreement rate (of 88.8%) and extracts the list of POs in disagreement. This gives him reproducible evidence to negotiate penalties with vendors in the next meeting.
 3.  **Scenario 3: Supplier Scorecard Evaluation by Ravi:** Ravi enters the aggregated panel in Network Intelligence. The system reads the file `reporte_vendors.json` (calculated by `scorecard_core.py`). Ravi sees that the supplier 'MEDIQ' has a normalized risk score of 85.5 (High Risk). Ravi observes that the Average Delay is 5.5 days, and that their reschedule rate is 10%. This gives Ravi solid scientific arguments to summon the vendor to a review meeting, knowing that the metric is protected against the noise of small samples.
+4.  **Scenario 4: Diego checks a PO from the Telegram bot outside the browser:** Diego is on a call with the carrier and does not have the dashboard open. He sends `/po 100280` to the bot. The bot checks his ID against the whitelist, reads `po_output.csv` (the same artifact Streamlit consumes, without recomputing anything or invoking the LLM) and replies in text with the diagnosis, the recommended action, and the agreement with the human reason — the same information he would see in the Exception Workbench, without opening the browser.
 
 ---
 
@@ -394,6 +416,7 @@ The system integrates and depends on the following third-party APIs and interfac
 3.  **DeepSeek API:** Endpoint `https://api.deepseek.com/v1/chat/completions`. Requires `DEEPSEEK_API_KEY` and consumes the model `deepseek-chat`.
 4.  **Ollama Local Engine:** Local HTTP service at `http://localhost:11434/api/generate`. Consumes by default the local model `qwen2.5:7b`.
 5.  **Local Scientific Libraries:** Dependency on the local Python runtime for the `scikit-learn` and `scipy` libraries to perform weight calibration (Ridge), gaussian clustering (GMM), and normalizations.
+6.  **Telegram Bot API ([ADR-20](decisiones/ARD-20.en.md)):** External messaging service via `python-telegram-bot`, with outgoing polling (no exposed webhook). Requires `TELEGRAM_BOT_TOKEN` (obtained from `@BotFather`). It is the only external F4 dependency that exposes the system to remote users outside the local workstation.
 
 From the 4 supported backends, the **current production configuration** (`03_llm_integration/llm_config.json`) sets: backend **OpenAI**, model `gpt-4o-mini`, `temperature=0.9`, `seed=42` (best-effort reproducibility), `max_tokens=512` (base diagnosis) / `max_tokens_action=1536` (Tier 2 differential diagnosis), `timeout_seconds=60`, `max_retries=3`, with selection of few-shot examples in the variant "C3" of the curated pool (`fewshot_pool.json`).
 
@@ -404,3 +427,8 @@ From the 4 supported backends, the **current production configuration** (`03_llm
 *   `LLM_DELAY_SECONDS`: Safety delay between calls to the LLM API.
 *   `LLM_RETRY_SLEEP_SECONDS`: Wait before retrying a failed call.
 *   `LLM_SAVE_EVERY`: Partial save interval in batch processing.
+*   `TELEGRAM_BOT_TOKEN`: Bot token, obtained from `@BotFather` (secret).
+*   `TELEGRAM_BOT_USERNAME`: Public bot handle (not secret), used in the landing page's link.
+*   `TELEGRAM_USER_WHITELIST`: Comma-separated authorized Telegram IDs; empty = fail-closed, no one authorized.
+*   `TELEGRAM_RAVI_USER_IDS`: Telegram IDs with the Ravi profile; the rest default to Diego.
+*   `DEMO_MODE`: Explicit bypass of the authorization gate, for demonstrations only (empty/false by default).

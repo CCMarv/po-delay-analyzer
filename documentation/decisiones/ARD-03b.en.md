@@ -19,7 +19,7 @@ Direct measurement of the temporal offset using the native business audit events
 ## Final Decision
 **Option 1** was chosen. After validation with the mentor on 2026-06-16, the **Direct Signal STA Push** is adopted as the standard for measuring Vendor. 
 
-To correct the construction asymmetry identified in discussion [#57](#), this decision evolved later to integrate a restrictive tolerance threshold (`vendor_gap_hrs = 24h`), which is detailed separately in [ADR-06b](ARD-06b.en.md). The final code was deployed through a stack of Pull Requests ([PR #62](#), [PR #66](#), [PR #64](#)).
+To correct the construction asymmetry identified in discussion [#57](https://github.com/CCMarv/po-delay-analyzer/discussions/57), this decision evolved later to integrate a restrictive tolerance threshold (`vendor_gap_hrs = 24h`), which is detailed separately in [ADR-06b](ARD-06b.en.md). The final code was deployed through a stack of Pull Requests ([PR #62](https://github.com/CCMarv/po-delay-analyzer/pull/62), [PR #66](https://github.com/CCMarv/po-delay-analyzer/pull/66), [PR #64](https://github.com/CCMarv/po-delay-analyzer/pull/64)).
 
 ## Consequences
 * **Positive:** The classifier is robust, secure, and capable of assessing 100% of the POs in the dataset (including the 27 without trailers). It complies with the clean design guidelines validated by mentorship.

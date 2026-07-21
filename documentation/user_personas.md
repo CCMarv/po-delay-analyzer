@@ -4,8 +4,8 @@
 > consumen la herramienta y las decisiones de diseño (prompt e interfaz) que cada uno
 > determina. Surge de la recomendación de los mentores (sync 2026-06-26) de usar user
 > personas para guiar el diseño de la Fase 4. Cada persona define una **vista** del
-> programa. Versión en español; la versión en inglés se añade al cierre del desarrollo,
-> según la convención bilingüe del repo.
+> programa. Versión en español, fuente de verdad; la versión en inglés se deriva de esta
+> según la convención bilingüe del repo (ADR-18).
 
 ## Qué son estas personas y por qué dos
 
@@ -35,7 +35,7 @@ Las entidades medidas por el sistema —proveedores y carriers— no son usuario
 - Objetivo (JTBD): cerrar cada excepción con la causa correcta confirmada, rápido, sin propagar el error del código humano hacia el agregado.
 - Pregunta a la herramienta: "¿Qué pasó exactamente en este PO, es cierta la causa, y qué procede ahora?"
 - Disparador: un PO tardío entra a su cola, o alguien consulta un PO específico. Reactivo, alta frecuencia, caso por caso.
-- Qué consume: el bundle por-PO completo — timeline reconstruido, `stage_primary`, la explicación en prosa (`llm_causa_raiz`), la acción (`llm_accion_recomendada`), `llm_severidad`, y crítico para validar: `llm_coincide_con_reason` y `llm_confianza`. Es la superficie donde la prosa del LLM rinde su valor.
+- Qué consume: el bundle por-PO completo — timeline reconstruido, `stage`, la explicación en prosa (`explanation`), la acción (`action`), `severity`, y crítico para validar: `llm_coincide_con_reason` y `llm_confianza`. Es la superficie donde la prosa del LLM rinde su valor.
 
 Actividades:
 
@@ -57,7 +57,7 @@ Actividades:
 - Objetivo (JTBD): convertir el histórico de POs tardíos en inteligencia accionable y auditable, separando el problema estructural del ruido de una sola vez, a través de las tres causas.
 - Pregunta a la herramienta: "¿Dónde está el patrón sistémico en la red —qué etapa, qué entidad—, con cuánta evidencia, y es reproducible para defenderlo?"
 - Disparador: ciclo de reporting (mensual/trimestral), preparación de una revisión ejecutiva, o una pregunta de gerencia ("¿por qué cayó el inbound reliability?"). Proactivo, baja frecuencia, nivel red.
-- Qué consume: agregados estructurados a través de las tres causas — distribución de `stage_primary` (Vendor / Carrier / DC / Indeterminado; hoy 53.0 / 16.2 / 15.0 / 15.8 % sobre 247 tardíos), conteos por entidad (proveedor, carrier, DC), distribución de severidad, tasa de desacuerdo vs. `REASON_DSC`, y tendencia temporal. La prosa del LLM es casi irrelevante; lo que importa es que la atribución sea consistente y reproducible desde timestamps. El lote es agregación determinística.
+- Qué consume: agregados estructurados a través de las tres causas — distribución de `stage` (Vendor / Carrier / DC / Indeterminado; hoy 53.0 / 16.2 / 15.0 / 15.8 % sobre 247 tardíos), conteos por entidad (proveedor, carrier, DC), distribución de severidad, tasa de desacuerdo vs. `REASON_DSC`, y tendencia temporal. La prosa del LLM es casi irrelevante; lo que importa es que la atribución sea consistente y reproducible desde timestamps. El lote es agregación determinística.
 
 Actividades:
 
@@ -93,22 +93,22 @@ El contrato de handoff F3→F4 (issue #100, verificado en `../tests/test_handoff
 
 | Persona | Columnas que consume | Para qué |
 |---|---|---|
-| Diego (individual) | `PO_DT … RECPT_DT` (timestamps del lifecycle), `stage_primary`, `severity`, `llm_causa_raiz`, `llm_accion_recomendada`, `llm_confianza`, `llm_coincide_con_reason` | Reconstruir el timeline del PO y leer el diagnóstico en prosa + los indicadores de validación |
-| Ravi (lote) | `stage_primary`, `VENDOR_NAME` / `CARRIER_PARTY_NAME` / `DC_LOC_NAME`, `severity`, `llm_coincide_con_reason` vs `REASON_DSC` | Split por etapa, conteos por entidad, distribución de severidad y tasa de desacuerdo agregada |
+| Diego (individual) | `PO_DT … RECPT_DT` (timestamps del lifecycle), `stage`, `severity`, `explanation`, `action`, `llm_confianza`, `llm_coincide_con_reason` | Reconstruir el timeline del PO y leer el diagnóstico en prosa + los indicadores de validación |
+| Ravi (lote) | `stage`, `VENDOR_NAME` / `CARRIER_PARTY_NAME` / `DC_LOC_NAME`, `severity`, `llm_coincide_con_reason` vs `REASON_DSC` | Split por etapa, conteos por entidad, distribución de severidad y tasa de desacuerdo agregada |
 
-Implicación operativa: la vista de Diego depende de columnas que Fase 3 aún produce (`llm_*`; el `llm_out.csv` todavía no existe en el repo) y de un timeline reconstruido desde los timestamps —que el placeholder actual de la app no arma. La vista de Ravi eleva la tasa de desacuerdo (`llm_coincide_con_reason` agregado) a métrica de primera clase, que mapea directo al umbral del mentor *Reason Code Agreement*. Las personas no piden columnas nuevas al contrato; fijan **qué corte del artefacto rinde valor en cada vista**, y por tanto guían la Fase 4 definitiva una vez que Fase 3 cierre su salida.
+Implicación operativa: la vista de Diego consume el CSV-entregable `po_output.csv` (contrato F3→F4, [ARD-21](decisiones/ARD-21.md)), que ya trae el timeline reconstruido y el diagnóstico en prosa — la app lee este artefacto, no recomputa nada. La vista de Ravi eleva la tasa de desacuerdo (`llm_coincide_con_reason` agregado) a métrica de primera clase, que mapea directo al umbral del mentor *Reason Code Agreement*. Las personas no piden columnas nuevas al contrato; fijan **qué corte del artefacto rinde valor en cada vista**, y ese criterio es el que terminó guiando el rediseño real de Fase 4.
 
 ## Trazabilidad: persona → vista → issue
 
-Cada persona define una vista del programa. El objetivo de la Fase 4 son dos vistas por modo de consumo (individual y agregada); cómo se acomodan dentro de ellas las pantallas por entidad del placeholder es una decisión abierta del rediseño.
+Cada persona define una vista del programa. El objetivo de la Fase 4 son dos vistas por modo de consumo (individual y agregada), ya construidas sobre este criterio.
 
 | Persona | Vista | Issue del board | Estado |
 |---|---|---|---|
-| Diego | Consulta individual de un PO (timeline + diagnóstico + prosa LLM) | #102 (`fundamental`) | Placeholder en `../04_app/app.py`; rehacer tras cerrar Fase 3 |
-| Ravi | Reporte agregado por lote (split, conteos, severidad, tasa de desacuerdo) | #103 | Placeholder en dashboards por entidad; rehacer tras cerrar Fase 3 |
-| Puente Ravi → Diego | Drill-down de un agregado a un PO individual | Alcance compartido de #102/#103 | Pendiente de diseño |
+| Diego | Consulta individual de un PO (timeline + diagnóstico + prosa LLM) | #102 (`fundamental`) | Construida: `../04_app/pages/1_🔍_Exception_Workbench.py` |
+| Ravi | Reporte agregado por lote (split, conteos, severidad, tasa de desacuerdo) | #103 | Construida: `../04_app/pages/2_📊_Network_Intelligence.py` |
+| Puente Ravi → Diego | Drill-down de un agregado a un PO individual | Alcance compartido de #102/#103 | Implementado (`st.session_state`, `st.switch_page`) |
 
-La app actual (`../04_app/`) es un placeholder adelantado, organizado por entidad de la cadena (Vendor / Carrier / DC), construido para tener un presentable antes de que Fase 3 fije su salida. Estas personas son el criterio con el que esa Fase 4 se rediseñará, no una justificación del placeholder. La decisión que fija este eje se registra en `decisiones/ARD-09.md`.
+La app actual (`../04_app/`) es una app Streamlit multipágina organizada por persona, no por entidad de la cadena (Vendor/Carrier/DC): `app.py` es la landing y las dos vistas viven en `pages/`, exactamente el eje de diseño que estas personas prescriben. Un segundo canal, el bot de Telegram ([ADR-20](decisiones/ARD-20.md), `../04_app/telegram_bot/`), sirve a las mismas dos personas fuera del navegador con comandos fijos de lectura (`handlers/diego.py`, `handlers/ravi.py`) sobre el mismo contrato de datos, sin invocar al LLM en tiempo de consulta. La decisión que fija el eje por persona se registra en `decisiones/ARD-09.md`.
 
 ## Alcance y trazabilidad
 

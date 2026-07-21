@@ -39,9 +39,11 @@ Following the rigorous application of the criteria from the current ADRs (especi
 | [ADR-21](ARD-21.en.md) | Tier-1/tier-2 data contract of `po_output.csv` (incl. `agente1_raw.txt`) | 🔵 Draft | Issue #158 (tier 1), Issue #161 (tier 2), PR #174; ADR-09/10, ADR-16 (track 1); `04_app/config.py`, `llm_integration_network_intelligence_view.py` |
 | [ADR-22](ARD-22.en.md) | Spec for rework of F4 interface: key information per person and executable checklist | 🔵 Draft | Issue #130; ADR-09, ARD-17, ARD-21; issue #197 |
 | [ADR-23](ARD-23.en.md) | Mockups as design basis for rework of F4 interface and its reconciliation with ARD-17/ARD-22 | 🔵 Draft | Local mockups "Mockups analytics delayed POs"; ARD-22, ARD-17, ARD-20; `04_app/` |
+| [ADR-24](ARD-24.en.md) | Late Shipment rule from the README: discarded due to a nonexistent column | 🟢 Current | Issue #17, ADR-03b, README of the mentor's original repo |
+| [ADR-25](ARD-25.en.md) | Future work roadmap: localization, themes/dark mode, and conversational chatbot | 🔵 Draft | Definition session (2026-07-20), ADR-16/17/18/20, `04_app/` |
 
 ## Process and Integration Notes
-*   **Documentation Standard:** The entire technical record of the project is governed by the **MADR (Markdown Architecture Decision Records)** template, formally chosen by the team following the documented debate in discussion [#79](#).
+*   **Documentation Standard:** The entire technical record of the project is governed by the **MADR (Markdown Architecture Decision Records)** template, formally chosen by the team following the documented debate in discussion [#79](https://github.com/CCMarv/po-delay-analyzer/discussions/79).
 *   **Historical Immutability:** According to the adopted standard, superseded decisions (like the initial logic of `ADR-03a`, `ADR-04a`, or `ADR-06a`) are neither edited nor deleted quietly in the repository. Their historical record is preserved (`📘 Superseded`) and linked via relative links to the new records that replace them (`🟢 Current`).
 
 ---

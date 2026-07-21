@@ -53,7 +53,11 @@ Details of the personas in `../documentation/user_personas.en.md`.
 
 Streamlit is not the only channel: `telegram_bot/` ([ADR-20](../documentation/decisiones/ARD-20.en.md))
 exposes a second front-end with fixed commands for each person (`/po`, `/timeline`, `/alertas`,
-`/hot` for Diego; `/kpi`, `/scorecards`, `/distribucion`, `/mismatches` for Ravi) on the same contract F3→F4 — without free reasoning or LLM calls at query time, different from the deferred conversational chatbot (#160).
+`/hot` for Diego; `/kpi`, `/distribucion`, `/tendencia`, `/scorecards`, `/mismatches`,
+`/mismatches_chart` for Ravi) on the same contract F3→F4 — without free reasoning or LLM calls
+at query time, different from the deferred conversational chatbot (#160). The landing
+(`app.py`) links to the bot with an in-memory QR (`services/qr_service.py`), without writing
+the PNG to disk.
 
 ## 3. How to Run
 

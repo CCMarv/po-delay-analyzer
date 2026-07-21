@@ -22,7 +22,7 @@ Se fijó de forma definitiva **`vendor_gap_hrs = 24h`** en el archivo **`rules_c
 2. **Robustez matemática:** Al caer exactamente dentro del hueco vacío de la distribución (6-18h), cualquier ajuste menor en el umbral no desestabiliza ni altera el reparto final.
 3. **Respeto al dato:** El modelo reduce la atribución de Vendor al 53.0% (131 POs) de forma orgánica, cumpliendo la orden del mentor de no forzar un "20% de kickoff artificial".
 
-El cálculo de la variable `_etapa_primaria` se normalizó a `max(0, push − 24)`, haciéndolo simétrico con los demás actores y liberando los cambios mediante el stack de PRs [#62](#), [#66](#) y [#64](#).
+El cálculo de la variable `_etapa_primaria` se normalizó a `max(0, push − 24)`, haciéndolo simétrico con los demás actores y liberando los cambios mediante el stack de PRs [#62](https://github.com/CCMarv/po-delay-analyzer/pull/62), [#66](https://github.com/CCMarv/po-delay-analyzer/pull/66) y [#64](https://github.com/CCMarv/po-delay-analyzer/pull/64).
 
 ## Consecuencias
 * **Positivas:** Eliminación definitiva de la asimetría de construcción y alta estabilidad del pipeline. Se comprobó que endurecer el umbral incrementó el acuerdo con la anotación humana (*Reason agreement*) del 88.7% al 89.7%.

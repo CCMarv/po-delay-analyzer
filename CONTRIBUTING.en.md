@@ -85,6 +85,15 @@ Steps 3 and 5 use API credits — confirm the provider and count before launchin
 [`03_llm_integration/README.en.md`](03_llm_integration/README.en.md) and
 [`04_app/README.en.md`](04_app/README.en.md).
 
+### Telegram Bot (additional channel, ADR-20)
+
+The bot is a second read-only channel over the same contract (`po_output.csv`, scorecards) —
+it does not recompute anything or use API credits. It has its own dependency file
+(`04_app/telegram_bot/requirements-bot.txt`, not covered by the `pip install` in step 3
+above) and its own environment variables in `.env.example` (`TELEGRAM_BOT_TOKEN`,
+`TELEGRAM_USER_WHITELIST`, `TELEGRAM_RAVI_USER_IDS`, `DEMO_MODE`). Full setup and startup
+instructions in [`04_app/telegram_bot/README.md`](04_app/telegram_bot/README.md).
+
 ## Workflow
 
 The cycle of a change: gap → issue → branch → commits → PR + self-review → CI green →
@@ -105,10 +114,10 @@ Complete agreements (when something is an issue/discussion/chat, titles, labels,
 ## Tests and CI
 
 ```bash
-pytest      # 251 tests; configuration in pyproject.toml
+pytest      # 266 tests; configuration in pyproject.toml
 ```
 
-The suite covers the pipeline (Phase 1), the classifier and metrics (Phase 2), the handoff contract between phases, and LLM integration (Phase 3). It does not require API: the LLM tests use fixtures and stubs, not real calls.
+The suite covers the pipeline (Phase 1), the classifier and metrics (Phase 2), the handoff contract between phases, LLM integration and few-shot (Phase 3), and the Streamlit app and Telegram bot — page smoke tests, the QR service, fail-closed authentication (Phase 4). It does not require API: the LLM tests use fixtures and stubs, not real calls.
 
 The CI (`.github/workflows/ci.yml`) runs `pytest` on every push and every PR. The current merge gate is **self-review + CI green**: you merge yourself when both pass, without waiting for blocking review.
 
