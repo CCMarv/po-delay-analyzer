@@ -4,7 +4,7 @@ This document is the content source for the final colloquium presentation (mento
 deliverable [1], issue #106). It is not a `.pptx` file: it is the slide-by-slide outline
 —title, content, and speaker notes— used to build the slides in PowerPoint. It is derived
 from the approved Spanish source, `presentacion-final.md`; if the two ever disagree, the
-Spanish version governs (ARD-18). It extends `documentation/PO_Delay_Analyzer_v1.pptx`
+Spanish version governs (ARD-18). It extends `documentation/exports/PO_Delay_Analyzer_v1.pptx`
 (commit `abe35e2`, 9 slides, Spanish only): it keeps its skeleton and executive framing, and
 adds what was missing against the evaluation rubric and the mentor's demo requirement. The
 demo script lives separately in `guion-demo.en.md`.

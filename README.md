@@ -148,6 +148,7 @@ Resultados cabecera (población, umbral y fuente reproducible de cada cifra en
 │   ├── plan-traduccion.md        #   plan de traducción ES→EN (diferido)
 │   ├── convenciones-issues.md    #   acuerdos de gestión del equipo
 │   ├── SAD.md · SRS.md           #   especificaciones de arquitectura y requisitos
+│   ├── exports/                  #   copias .docx/.pptx para entrega (no son la fuente)
 │   └── kickoff_po_root_cause.html
 ├── tests/                        # suite pytest (266 tests): F1/F2/F3, handoff, few-shot, evals, app, bot
 ├── CONTRIBUTING.md               # setup, reproducibilidad, flujo, qué no se commitea, tests/CI

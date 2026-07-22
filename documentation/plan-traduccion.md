@@ -28,7 +28,7 @@ El alcance ejecutado cubre la documentación versionada de autoría humana del r
 
 Queda fuera de alcance: los fixtures crudos de corridas de benchmark
 (`03_llm_integration/fixtures/*.md`, salvo su `README.md`), las plantillas internas de
-proceso (`documentation/plantillas-cli/*.md`, `.github/pull_request_template.md`), y las
+proceso (`.github/plantillas-cli/*.md`, `.github/pull_request_template.md`), y las
 salidas del LLM por PO (explicación y acción recomendada de `po_output.csv`) — ver ADR-18 y
 el cierre del issue #96 para el porqué de este último descarte.
 

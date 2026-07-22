@@ -1,7 +1,7 @@
 # Software Architecture Document (SAD)
 ## System: PO Delay Root Cause Analyzer
 
-> `SAD.md` is the versioned source of truth for this document; `SAD.docx` is a derived/exported copy for delivery, not edited directly.
+> `SAD.md` is the versioned source of truth for this document; `exports/SAD.docx` is a derived/exported copy for delivery, not edited directly.
 
 ---
 

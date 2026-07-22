@@ -1,7 +1,7 @@
 # Especificación de Requisitos de Software (SRS)
 ## Sistema: PO Delay Root Cause Analyzer
 
-> `SRS.md` es la fuente de verdad versionada de este documento; `SRS.docx` es una copia
+> `SRS.md` es la fuente de verdad versionada de este documento; `exports/SRS.docx` es una copia
 > derivada/exportada para entrega, no se edita directamente.
 
 ---

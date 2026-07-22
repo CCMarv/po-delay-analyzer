@@ -139,6 +139,7 @@ Header results (population, threshold, and reproducible source of each figure in
 │   ├── plan-traduccion.md        #   translation plan ES→EN (deferred)
 │   ├── convenciones-issues.md    #   team management agreements
 │   ├── SAD.md · SRS.md           #   architecture and requirements specifications
+│   ├── exports/                  #   .docx/.pptx copies for delivery (not the source)
 │   └── kickoff_po_root_cause.html
 ├── tests/                        # pytest suite (266 tests): F1/F2/F3, handoff, few-shot, evals, app, bot
 ├── CONTRIBUTING.md               # setup, reproducibility, workflow, what not to commit, tests/CI

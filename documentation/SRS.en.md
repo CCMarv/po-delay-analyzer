@@ -1,7 +1,7 @@
 # Software Requirements Specification (SRS)
 ## System: PO Delay Root Cause Analyzer
 
-> `SRS.md` is the versioned source of truth for this document; `SRS.docx` is a derived/exported copy for delivery and is not edited directly.
+> `SRS.md` is the versioned source of truth for this document; `exports/SRS.docx` is a derived/exported copy for delivery and is not edited directly.
 
 ---
 
