@@ -60,7 +60,10 @@ def telegram_auth_modules(monkeypatch):
 
 
 def test_fail_closed_sin_demo_mode(monkeypatch, telegram_auth_modules):
-    monkeypatch.delenv("DEMO_MODE", raising=False)
+    # setenv("", …) en vez de delenv: si hay un .env real con DEMO_MODE=true, el
+    # reload de config.py vuelve a llamar load_dotenv() y repuebla la var borrada
+    # (override=False no toca una que sigue existiendo, aunque esté vacía).
+    monkeypatch.setenv("DEMO_MODE", "")
     monkeypatch.setenv("TELEGRAM_USER_WHITELIST", "")
     config, auth = telegram_auth_modules
     importlib.reload(config)
