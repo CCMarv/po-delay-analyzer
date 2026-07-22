@@ -802,3 +802,37 @@ Contrastado contra el texto real de [SRS.md](SRS.md) y [SAD.md](SAD.md):
   remoto multi-usuario, sin supervisión de proceso. Esta cobertura se agregó en una sesión de
   correcciones posterior a versiones previas de este mismo documento, que señalaban esto como una
   laguna — ya no lo es.
+
+### Divergencias verificadas entre ADR y código
+
+Auditoría de las 23 decisiones no superadas (🟢 Vigente + 🔵 Borrador) contra el comportamiento real
+del repo: se leyó la sección Decisión completa de cada `ARD-NN.md` y se verificó cada afirmación
+contra código/config/tests, no contra otra documentación. 20 de 23 cumplen sin matices, o —en el caso
+de [ADR-25](decisiones/ARD-25.md), roadmap prospectivo— describen correctamente el estado actual que
+contrastan. Tres tienen una divergencia real entre lo decidido o afirmado y el comportamiento
+verificado del código:
+
+- [ADR-03b](decisiones/ARD-03b.md) (etapa Vendor por señal directa STA push) afirma que la medición
+  **funciona en los 27 POs sin hora de tráiler**. El gate `decidible` de
+  `02_clasif_reglas_negocio/classifier_core.py:144-145` excluye de la atribución a Vendor a toda PO sin
+  `TRAILER_ARRIVE_DT`, aunque el gap de vendor (`excess_vendor_hrs`) no dependa de esa columna. De las
+  15 POs tardías sin tráiler, 8 (53%) tienen un exceso claro (22.6-92.5h, muy por encima del umbral de
+  24h) y caen igual en `Indeterminado/sin_datos` en vez de `Vendor`.
+- [ADR-06b](decisiones/ARD-06b.md) (umbral de vendor = 24h) tiene el umbral bien implementado y
+  verificado (distribución bimodal recomputada: 12 POs ≤6h, hueco 6h-18h vacío, 141 POs ≥18h), pero
+  cita en Consecuencias una mejora de Reason agreement de **88.7% a 89.7%** al adoptarlo. Recalculando
+  la métrica sobre el dataset real, el umbral de 24h efectivamente adoptado da 88.8% (coincide con
+  `02_clasif_reglas_negocio/README.md` §5.4, prácticamente igual al baseline); 89.7% corresponde al
+  escenario de 72h, que el propio ADR descarta a favor de 24h.
+- [ADR-17](decisiones/ARD-17.md) (lenguaje visual y color de la taxonomía) afirma haber **verificado
+  por cálculo de luminancia relativa** que las combinaciones fondo/marca cumplen la razón de contraste
+  3:1 exigida por WCAG 2.1 §1.4.11. Calculando esa misma razón contra los tres fondos reales de
+  `04_app/assets/styles.css`, el swatch de Carrier (`#E69F00`) y el de severidad/confianza Baja
+  (`#A8A8A8`) dan 2.05-2.38:1 — por debajo del umbral, en los tres fondos.
+
+Aparte, dos ADR en Borrador citan un seguimiento propio que ya quedó obsoleto por trabajo posterior —no
+una divergencia de código, sino texto del ADR sin actualizar tras un cierre posterior—:
+[ADR-20](decisiones/ARD-20.md) dice que `04_app/telegram_bot/README.md` está "hoy inexistente"; ya
+existe, agregado el mismo día en un commit posterior. [ADR-21](decisiones/ARD-21.md) dice en Negativas
+que `03_llm_integration/README.md` "sigue con el contrato desactualizado (16/33 columnas)"; ya se
+sincronizó a 33 columnas en un commit posterior del mismo día.
