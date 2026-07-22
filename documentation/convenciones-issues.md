@@ -89,11 +89,11 @@ propósito: la plantilla te guía):
 Las plantillas de arriba son *Issue Forms* (`.yml`): GitHub solo las renderiza en la web
 (con sus desplegables y campos obligatorios). `gh issue create` en terminal **no** puede
 usarlas. Para no improvisar el issue, hay borradores espejo en
-[`documentation/plantillas-cli/`](plantillas-cli/) (`tarea.md` · `decision.md` · `bug.md`)
+[`.github/plantillas-cli/`](../.github/plantillas-cli/) (`tarea.md` · `decision.md` · `bug.md`)
 que reproducen las mismas secciones. El flujo:
 
 ```
-cp documentation/plantillas-cli/tarea.md /tmp/issue.md   # copia y rellena
+cp .github/plantillas-cli/tarea.md /tmp/issue.md   # copia y rellena
 gh issue create --title "[docs] ..." --label docs \
   --milestone "Fase 1 — Pipeline + EDA" --assignee "@me" --body-file /tmp/issue.md
 ```

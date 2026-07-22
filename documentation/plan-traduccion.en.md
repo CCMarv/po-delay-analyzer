@@ -27,7 +27,7 @@ The executed scope covers the versioned, human-authored documentation of the rep
 - Presentation (ES + EN, produced separately from this document's flow).
 
 Out of scope: raw benchmark run fixtures (`03_llm_integration/fixtures/*.md`, except its
-`README.md`), internal process templates (`documentation/plantillas-cli/*.md`,
+`README.md`), internal process templates (`.github/plantillas-cli/*.md`,
 `.github/pull_request_template.md`), and the LLM outputs per PO (explanation and recommended
 action from `po_output.csv`) — see ADR-18 and the closure of issue #96 for why this last one
 was discarded.

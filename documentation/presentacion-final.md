@@ -3,7 +3,7 @@
 Este documento es la fuente de contenido para la presentación final del colloquium
 (entregable [1] del mentor, issue #106). No es un archivo `.pptx`: es el outline slide por
 slide —título, contenido y notas del orador— a partir del cual se arman las slides en
-PowerPoint. Extiende `documentation/PO_Delay_Analyzer_v1.pptx` (commit `abe35e2`, 9 slides,
+PowerPoint. Extiende `documentation/exports/PO_Delay_Analyzer_v1.pptx` (commit `abe35e2`, 9 slides,
 solo español): conserva su esqueleto y su enfoque ejecutivo, y agrega lo que faltaba contra
 la rúbrica de evaluación y el requisito de demo del mentor. La versión en inglés derivada es
 `presentacion-final.en.md`; el guion de demo vive aparte en `guion-demo.md` /

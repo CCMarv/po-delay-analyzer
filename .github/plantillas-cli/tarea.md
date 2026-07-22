@@ -3,7 +3,7 @@ BORRADOR PARA CREAR ISSUES DESDE TERMINAL (no es una plantilla de GitHub).
 Espejo de .github/ISSUE_TEMPLATE/1-tarea.yml para usar con `gh issue create --body-file`.
 Quien crea por WEB no usa esto: usa el formulario (dropdowns + validación).
 Uso:
-  1. Copia este archivo:  cp documentation/plantillas-cli/tarea.md /tmp/issue.md
+  1. Copia este archivo:  cp .github/plantillas-cli/tarea.md /tmp/issue.md
   2. Rellénalo (borra estos comentarios y las opciones que no apliquen).
   3. Crea el issue:
      gh issue create --title "[docs] Verbo + objeto" --label docs --body-file /tmp/issue.md

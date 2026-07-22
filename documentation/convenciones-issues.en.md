@@ -66,10 +66,10 @@ When creating *New issue* in GitHub, you will see three options (blank issues ar
 
 #### If you create the issue from the terminal (`gh`)
 The templates above are *Issue Forms* (`.yml`): GitHub only renders them on the web (with their dropdowns and required fields). `gh issue create` in the terminal **cannot** use them. To avoid improvising the issue, there are mirror drafts in 
-[`documentation/plantillas-cli/`](plantillas-cli/) (`tarea.md` · `decision.md` · `bug.md`) that reproduce the same sections. The flow:
+[`.github/plantillas-cli/`](../.github/plantillas-cli/) (`tarea.md` · `decision.md` · `bug.md`) that reproduce the same sections. The flow:
 
 ```
-cp documentation/plantillas-cli/tarea.md /tmp/issue.md   # copy and fill in
+cp .github/plantillas-cli/tarea.md /tmp/issue.md   # copy and fill in
 gh issue create --title "[docs] ..." --label docs \
   --milestone "Phase 1 — Pipeline + EDA" --assignee "@me" --body-file /tmp/issue.md
 ```
