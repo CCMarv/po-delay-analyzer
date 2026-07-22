@@ -100,11 +100,23 @@ STAGE_EXCESS_COLUMN = {
 # -- Paleta base por etapa (Okabe-Ito, ARD-17) ------------------------------
 # Comun a Streamlit (tema claro) y al bot; el tema oscuro es Streamlit-only y
 # vive en 04_app/config.py.
+# Carrier corregido de #E69F00 a #B88000 (nota de cierre ARD-17, 2026-07-22):
+# el original no alcanzaba 3:1 (WCAG 2.1 SS1.4.11) contra --surface-elevated.
 STAGE_COLORS = {
     "vendor": "#0072B2",         # Blue
-    "carrier": "#E69F00",        # Orange
+    "carrier": "#B88000",        # Orange (oscurecido para 3:1, ARD-17)
     "dc": "#009E73",             # Bluish Green
     "indeterminado": "#767676",  # Gris neutro
+}
+
+# -- Paleta de severidad/confianza (rampa acromatica, ARD-17) ---------------
+# Comun a Streamlit y al bot, mismo motivo que STAGE_COLORS. Baja/Baja
+# corregido de #A8A8A8 a #8A8A8A (nota de cierre ARD-17, 2026-07-22): el
+# original no alcanzaba 3:1 contra --surface-elevated.
+SEVERITY_COLORS = {
+    "alta": "#3D3D3D",
+    "media": "#6B6B6B",
+    "baja": "#8A8A8A",
 }
 
 
