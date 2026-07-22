@@ -812,23 +812,37 @@ de [ADR-25](decisiones/ARD-25.md), roadmap prospectivo— describen correctament
 contrastan. Tres tienen una divergencia real entre lo decidido o afirmado y el comportamiento
 verificado del código:
 
-- [ADR-03b](decisiones/ARD-03b.md) (etapa Vendor por señal directa STA push) afirma que la medición
+- [ADR-03b](decisiones/ARD-03b.md) (etapa Vendor por señal directa STA push) afirmaba que la medición
   **funciona en los 27 POs sin hora de tráiler**. El gate `decidible` de
-  `02_clasif_reglas_negocio/classifier_core.py:144-145` excluye de la atribución a Vendor a toda PO sin
-  `TRAILER_ARRIVE_DT`, aunque el gap de vendor (`excess_vendor_hrs`) no dependa de esa columna. De las
-  15 POs tardías sin tráiler, 8 (53%) tienen un exceso claro (22.6-92.5h, muy por encima del umbral de
-  24h) y caen igual en `Indeterminado/sin_datos` en vez de `Vendor`.
+  `02_clasif_reglas_negocio/classifier_core.py` excluía de la atribución a Vendor a toda PO sin
+  `TRAILER_ARRIVE_DT`, aunque el gap de vendor (`excess_vendor_hrs`) no depende de esa columna. De las
+  15 POs tardías sin tráiler, 8 (53%) tenían un exceso claro (22.6-92.5h, muy por encima del umbral de
+  24h) y caían igual en `Indeterminado/sin_datos` en vez de `Vendor`. **Corregido** (nota de cierre
+  ARD-03b, 2026-07-22): el gate ahora reconoce el exceso de vendor por sí solo; reparto actualizado
+  sobre 247 tardíos: Vendor 139 (56.3%), Indeterminado 31 = 7 `sin_datos` + 24 `sin_causa_dominante`
+  (antes 131/39/15/24). Ver `02_clasif_reglas_negocio/README.md` §2/§5.
 - [ADR-06b](decisiones/ARD-06b.md) (umbral de vendor = 24h) tiene el umbral bien implementado y
   verificado (distribución bimodal recomputada: 12 POs ≤6h, hueco 6h-18h vacío, 141 POs ≥18h), pero
-  cita en Consecuencias una mejora de Reason agreement de **88.7% a 89.7%** al adoptarlo. Recalculando
+  citaba en Consecuencias una mejora de Reason agreement de **88.7% a 89.7%** al adoptarlo. Recalculando
   la métrica sobre el dataset real, el umbral de 24h efectivamente adoptado da 88.8% (coincide con
   `02_clasif_reglas_negocio/README.md` §5.4, prácticamente igual al baseline); 89.7% corresponde al
-  escenario de 72h, que el propio ADR descarta a favor de 24h.
-- [ADR-17](decisiones/ARD-17.md) (lenguaje visual y color de la taxonomía) afirma haber **verificado
+  escenario de 72h, que el propio ADR descarta a favor de 24h. **Corregido** (nota de cierre ARD-06b,
+  2026-07-22, sin reabrir la decisión del umbral).
+- [ADR-17](decisiones/ARD-17.md) (lenguaje visual y color de la taxonomía) afirmaba haber **verificado
   por cálculo de luminancia relativa** que las combinaciones fondo/marca cumplen la razón de contraste
   3:1 exigida por WCAG 2.1 §1.4.11. Calculando esa misma razón contra los tres fondos reales de
   `04_app/assets/styles.css`, el swatch de Carrier (`#E69F00`) y el de severidad/confianza Baja
-  (`#A8A8A8`) dan 2.05-2.38:1 — por debajo del umbral, en los tres fondos.
+  (`#A8A8A8`) daban 2.05-2.38:1 — por debajo del umbral, en los tres fondos. **Corregido** (nota de
+  cierre ARD-17, 2026-07-22): recoloreados a `#B88000` (Carrier) y `#8A8A8A` (Baja), ≈3.1-3.5:1 en los
+  tres fondos; también se corrigió la pill de texto del timeline, antes limitada al primer segmento
+  resaltado de un PO.
+
+*(Nota: los tres reflejan cifras y valores ya corregidos en el código/ADRs correspondientes al cierre
+de esta misma auditoría, 2026-07-22. Las cifras que dependen de la clasificación de Vendor —Reparto de
+etapas, Reason agreement, Stage accuracy, sensibilidad de vendor/carrier— quedan actualizadas aquí y en
+`02_clasif_reglas_negocio/README.md` y `documentation/metricas-proyecto.md`; su propagación al resto de
+los ~25-28 archivos que las citan (SRS, data dictionary, hallazgos-ai-vs-humano, presentación final,
+model cards, reportes de evaluación de Fase 3) queda diferida como seguimiento explícito.)*
 
 Aparte, dos ADR en Borrador citan un seguimiento propio que ya quedó obsoleto por trabajo posterior —no
 una divergencia de código, sino texto del ADR sin actualizar tras un cierre posterior—:

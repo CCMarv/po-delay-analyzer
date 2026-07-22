@@ -70,11 +70,15 @@ def test_gap_dominante_carrier_en_carrier_late(df_clean):
 
 
 def test_stage_accuracy_fixture_perfecto(df_clean):
-    # Los 4 evaluables del fixture (PO-TS-STA, CARRIER/DOCK/VENDOR-LATE) tienen el gap
-    # dominante alineado con stage_primary → accuracy 1.0 y pasa el umbral >80%.
+    # Los 5 evaluables del fixture (PO-TS-STA, CARRIER/DOCK/VENDOR-LATE,
+    # NULLTRAILER-VENDOR) tienen el gap dominante alineado con stage_primary →
+    # accuracy 1.0 y pasa el umbral >80%. PO-NULLTRAILER-VENDOR se sumó a los
+    # evaluables con la nota de cierre ARD-03b (2026-07-22): antes gap_dominante ya
+    # la calculaba Vendor pero stage_primary decía Indeterminado (el bug), así que
+    # quedaba fuera del denominador pese a tener gap calculable; el fix la alinea.
     out = classify_po_stages(df_clean)
     res = mc.stage_accuracy(out)
-    assert res["n_evaluables"] == 4
+    assert res["n_evaluables"] == 5
     assert res["accuracy"] == 1.0
     assert res["passes"] is True
 

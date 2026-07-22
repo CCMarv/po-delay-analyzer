@@ -172,6 +172,29 @@ def _build_raw() -> pd.DataFrame:
             YARD_WAIT_HRS=0.0, DOCK_HRS=4.0, DELAY_DAYS=1.0,
             HOT_PO_FLAG=0, IS_LATE="Y",
         ),
+        # ── PO-NULLTRAILER-VENDOR: TRAILER_ARRIVE vacío (no decidible por
+        #    carrier/DC) PERO con push de vendor de 72h, muy sobre el umbral
+        #    de 24h (exc=48h). Nota de cierre ARD-03b (2026-07-22): el gate
+        #    `decidible` ignoraba el exceso de vendor —que no depende de
+        #    TRAILER_ARRIVE_DT— y mandaba estos casos a Indeterminado/
+        #    sin_datos por descarte. Es el control positivo de
+        #    test_indeterminado_intercepta_a_vendor (ese caso queda con
+        #    push=0, este con push=72h) ────────────────────────────────────
+        dict(
+            PO_NBR="PO-NULLTRAILER-VENDOR",
+            PO_DT="2024-01-01 00:00", STA_DT="2024-01-01 00:00",
+            APPROVED_DT="2024-01-04 00:00",  # STA-APPROVED = -3d → push 72h
+            DT_APPT_FIRST_APPROVED="2024-01-04 00:00",
+            DT_APPT_CURRENT_APPROVED="2024-01-04 00:00",
+            TRAILER_ARRIVE_DT=NaT,           # ← el nulo
+            CHECKIN_DT="2024-01-04 05:00", CHECKOUT_DT="2024-01-04 09:00",
+            RECPT_DT="2024-01-06 00:00",     # RECPT > STA → tardío
+            REQUESTED_DT="2024-01-01 00:00", FIRST_SUBMITTED_DT="2024-01-01 00:00",
+            PREVIOUS_REQUEST_DT=NaT, TRAILER_DEPART_DT="2024-01-04 10:00",
+            NUM_CASES_ORDERED=100, NUM_CASES_SHIPPED=100,
+            YARD_WAIT_HRS=0.0, DOCK_HRS=4.0, DELAY_DAYS=5.0,
+            HOT_PO_FLAG=0, IS_LATE="Y",
+        ),
         # ── PO-ZEROORD: NUM_CASES_ORDERED=0 → _fill_rate NaN, sin crash ─────
         dict(
             PO_NBR="PO-ZEROORD",

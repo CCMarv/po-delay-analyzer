@@ -43,3 +43,5 @@ Al corregir lo anterior y revisar la salida completa de Fase 2 (39 indeterminado
 ## Relación con otras decisiones
 
 Forward de **ADR-12**: ejecuta y refuerza su mitigación nombrada del riesgo de copia de plantilla, sin superarla (el few-shot sigue vigente). Consume **ADR-07** (taxonomía de Indeterminado) y se enlaza con **ADR-13** (#143 desbloqueó el cierre de #137, que fijó 0.9 como ancla de temperatura en su ronda 2). No supera ni reabre **ADR-03b / ADR-06b** (medición de Vendor).
+
+**Nota (2026-07-22):** los 8 `sin_datos` con `excess_vendor_hrs` medible que este ADR documentó desde el ángulo de presentación (punto 3 de Decisión) tenían, en realidad, una causa raíz en el clasificador: el gate `decidible` de `classifier_core.py` los excluía de la atribución a Vendor. La nota de cierre de [ADR-03b](ARD-03b.md) (2026-07-22) corrige ese gate; los 8 POs pasan a Vendor. Este ADR no se reabre — la Opción B (presentación del exceso solo para etapas atribuidas) sigue vigente y correcta para Vendor/Carrier/DC reales.

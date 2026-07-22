@@ -54,15 +54,18 @@ consulta de atribución (2026-06-17). Cada decisión con su porqué:
 
 | Etapa | % | n |
 |-------|---|---|
-| Vendor | 53.0% | 131 |
+| Vendor | 56.3% | 139 |
 | Carrier | 16.2% | 40 |
 | DC | 15.0% | 37 |
-| Indeterminado | 15.8% | 39 |
+| Indeterminado | 12.6% | 31 |
 
-Los 39 Indeterminados se desglosan en **15 `sin_datos`** (sin hora de tráiler) + **24
-`sin_causa_dominante`** (medibles pero sin ningún exceso sobre umbral).
+Los 31 Indeterminados se desglosan en **7 `sin_datos`** (sin hora de tráiler) + **24
+`sin_causa_dominante`** (medibles pero sin ningún exceso sobre umbral). *(Nota de cierre
+ARD-03b, 2026-07-22: el gate `decidible` excluía a vendor sin condición propia — 8 POs sin
+tráiler pero con exceso de vendor medible (22.6-92.5h) quedaban en `sin_datos` por descarte;
+ver [ADR-03b](../documentation/decisiones/ARD-03b.md).)*
 
-Vendor domina (53%) por encima del ~20% del kickoff. Tras la consulta del mentor (06-17),
+Vendor domina (56%) por encima del ~20% del kickoff. Tras la consulta del mentor (06-17),
 vendor lleva **umbral propio (24h)** para corregir la *asimetría de construcción*: antes
 disparaba con cualquier push positivo mientras carrier/DC exigían 8/4/6h, así que absorbía por
 default. El 53% **lo soporta el dato, no la regla de disparo**: la distribución del push es
@@ -109,8 +112,8 @@ Reparto (247 tardíos): MEDIUM 131 · LOW 82 · HIGH 34.
 
 | Métrica | Resultado | Umbral | Estado |
 |---------|-----------|--------|--------|
-| **Stage accuracy** (#46) | 100% (208/208 evaluables) | > 80% | ✅ |
-| **Reason agreement** (#47) | 88.8% (174/196 clasificables) | — (referencia) | hallazgo |
+| **Stage accuracy** (#46) | 100% (216/216 evaluables) | > 80% | ✅ |
+| **Reason agreement** (#47) | 88.7% (180/203 clasificables) | — (referencia) | hallazgo |
 | **Severity ranking** (#48) | determinístico, auditable | > 95% | ✅ |
 
 ### 5.1 Stage accuracy (#46): gap dominante vs `stage_primary`
@@ -130,9 +133,9 @@ Se **excluye** el lead time `PO→STA` (mediana 192 h: tiempo de compra normal, 
 todo lo posterior a CHECKOUT: `TRAILER_DEPART` ocurre **después** de `RECPT` en el **99.8%**
 de los POs (verificado), o sea fuera del ciclo de recepción.
 
-Denominador = **evaluables** (208): tardíos con stage decidible y gap medible. Los
+Denominador = **evaluables** (216): tardíos con stage decidible y gap medible. Los
 Indeterminados quedan fuera (el gap dominante no puede juzgar un PO sin tráiler). Con el umbral
-de vendor (24h) el acuerdo es **total (208/208)**: al exigir un push de al menos un día, los
+de vendor (24h) el acuerdo es **total (216/216)**: al exigir un push de al menos un día, los
 casos antes multicausales (push pequeño + tramo interno) ya no se clasifican Vendor, así que la
 atribución por exceso coincide con el tramo de mayor duración bruta en todos los evaluables.
 
@@ -142,10 +145,10 @@ Reparto = Vendor / Carrier / DC / Indeterminado (% de tardíos, con `vendor_gap_
 
 | Umbral | `flag_carrier_calc` | Reparto `stage_primary` |
 |--------|---------------------|--------------------------|
-| 4 h | 25.8% (103) | 53.0 / 17.4 / 15.0 / 14.6 |
-| 6 h | 12.8% (51) | 53.0 / 16.2 / 15.0 / 15.8 |
-| **8 h** | **12.8% (51)** | **53.0 / 16.2 / 15.0 / 15.8** |
-| 12 h | 11.2% (45) | 53.0 / 14.6 / 15.0 / 17.4 |
+| 4 h | 25.8% (103) | 56.3 / 17.4 / 15.0 / 11.3 |
+| 6 h | 12.8% (51) | 56.3 / 16.2 / 15.0 / 12.6 |
+| **8 h** | **12.8% (51)** | **56.3 / 16.2 / 15.0 / 12.6** |
+| 12 h | 11.2% (45) | 56.3 / 14.6 / 15.0 / 14.2 |
 
 **Lectura:** el umbral carrier mueve mucho la *flag bruta* `flag_carrier_calc` (de 25.8% a
 ~12% al pasar de 4h a 8h, justo lo que predijo el mentor) pero apenas mueve `stage_primary`,
@@ -159,30 +162,36 @@ Reparto = Vendor / Carrier / DC / sin_datos / sin_causa_dominante (conteos sobre
 
 | Umbral | Vendor | %Vendor | Reparto |
 |--------|--------|---------|---------|
-| 0 (sin umbral) | 141 | 57.1 | 141 / 40 / 37 / 15 / 14 |
-| 6 h | 133 | 53.8 | 133 / 40 / 37 / 15 / 22 |
-| 12 h | 133 | 53.8 | 133 / 40 / 37 / 15 / 22 |
-| 18 h | 133 | 53.8 | 133 / 40 / 37 / 15 / 22 |
-| **24 h** | **131** | **53.0** | **131 / 40 / 37 / 15 / 24** |
-| 48 h | 114 | 46.2 | 114 / 40 / 37 / 15 / 41 |
-| 72 h | 76 | 30.8 | 76 / 40 / 37 / 15 / 79 |
+| 0 (sin umbral) | 151 | 61.1 | 151 / 40 / 37 / 5 / 14 |
+| 6 h | 141 | 57.1 | 141 / 40 / 37 / 7 / 22 |
+| 12 h | 141 | 57.1 | 141 / 40 / 37 / 7 / 22 |
+| 18 h | 141 | 57.1 | 141 / 40 / 37 / 7 / 22 |
+| **24 h** | **139** | **56.3** | **139 / 40 / 37 / 7 / 24** |
+| 48 h | 121 | 49.0 | 121 / 40 / 37 / 8 / 41 |
+| 72 h | 81 | 32.8 | 81 / 40 / 37 / 10 / 79 |
 
 **Lectura:** 6/12/18h son equivalentes (la distribución del push tiene un hueco vacío entre 6h
 y 18h). **24h** es el valor elegido por tres razones: (1) es el **grano natural del dato** —
 `STA_DT` está a nivel día (sin resolución sub-día), así que medir el push contra un día completo
 es la unidad en que el problema está expresado; (2) cae en la **zona vacía** de la distribución
 → robusto a perturbaciones; (3) no fuerza el reparto hacia el ~20% del kickoff (que el mentor
-desaconsejó). Los POs que dejan de ser Vendor al subir el umbral migran **todos a
-`sin_causa_dominante`, ninguno a Carrier/DC** → el umbral no reatribuye, solo separa los push
-difusos. Detalle del análisis: [`documentation/decisiones/ARD-06b.md`](../documentation/decisiones/ARD-06b.md).
+desaconsejó). Los POs que dejan de ser Vendor al subir el umbral migran a `sin_causa_dominante`
+(la mayoría) o a `sin_datos` (los sin tráiler cuyo push cae bajo el nuevo umbral) — **ninguno a
+Carrier/DC** → el umbral no reatribuye, solo separa los push difusos. Detalle del análisis:
+[`documentation/decisiones/ARD-06b.md`](../documentation/decisiones/ARD-06b.md).
+
+*(Nota de cierre ARD-03b, 2026-07-22: antes de este fix, `sin_datos` aparecía constante en
+15 para los 7 escenarios de esta tabla — una señal, en retrospectiva, de que el umbral de
+vendor nunca alcanzaba a esos POs por el gate `decidible` roto. Ahora varía correctamente
+con el umbral: 5/7/7/7/7/8/10.)*
 
 ### 5.4 Reason agreement (#47): la tesis del proyecto
 
-Agreement = 88.8% sobre 196 clasificables (`stage_primary` vs `reason_group_manual`, el mapeo
+Agreement = 88.7% sobre 203 clasificables (`stage_primary` vs `reason_group_manual`, el mapeo
 de la anotación humana `REASON_DSC`; los nulos entre tardíos → "Unknown", fuera del denominador).
 
 El agreement < 100% es **esperado y deseado**: la anotación humana es ~20% incorrecta (dato del
-kickoff). Los **22 mismatches** son la evidencia de que el cómputo temporal supera a la
+kickoff). Los **23 mismatches** son la evidencia de que el cómputo temporal supera a la
 anotación humana — disponibles como posible insumo few-shot para Fase 3 (ver el estado en §6).
 
 ## 6. Mismatches seleccionados (#47) — evidencia temporal
