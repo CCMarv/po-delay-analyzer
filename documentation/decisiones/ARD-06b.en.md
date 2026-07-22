@@ -27,3 +27,6 @@ The calculation of the variable `_primary_stage` was normalized to `max(0, push 
 ## Consequences
 * **Positive:** Definitive elimination of the construction asymmetry and high stability of the pipeline. It was verified that hardening the threshold increased agreement with human annotation (*Reason agreement*) from 88.7% to 89.7%.
 * **Negative:** Orders excluded by the 24h threshold are no longer assigned to Vendor; as demonstrated through the migration analysis that they did not belong to Carrier or DC, they required a new neutral classification structure (detailed in [ADR-07](ARD-07.en.md)).
+
+## Closing Note (2026-07-22)
+The ADR↔repo audit found that the figure cited above ("from 88.7% to 89.7%") corresponds to the 72h scenario of the sensitivity grid, not the 24h threshold actually adopted. Recalculating `agreement_por_umbral()` on the real dataset, the 24h threshold yields **88.8%** (matching `02_clasif_reglas_negocio/README.md` §5.4). The definitive 24h threshold does not change; only the reinforcing figure cited in Consequences is corrected — no option is reopened.
