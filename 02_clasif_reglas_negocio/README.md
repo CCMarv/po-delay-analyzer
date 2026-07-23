@@ -54,18 +54,21 @@ consulta de atribución (2026-06-17). Cada decisión con su porqué:
 
 | Etapa | % | n |
 |-------|---|---|
-| Vendor | 53.0% | 131 |
+| Vendor | 56.3% | 139 |
 | Carrier | 16.2% | 40 |
 | DC | 15.0% | 37 |
-| Indeterminado | 15.8% | 39 |
+| Indeterminado | 12.6% | 31 |
 
-Los 39 Indeterminados se desglosan en **15 `sin_datos`** (sin hora de tráiler) + **24
-`sin_causa_dominante`** (medibles pero sin ningún exceso sobre umbral).
+Los 31 Indeterminados se desglosan en **7 `sin_datos`** (sin hora de tráiler) + **24
+`sin_causa_dominante`** (medibles pero sin ningún exceso sobre umbral). *(Nota de cierre
+ARD-03b, 2026-07-22: el gate `decidible` excluía a vendor sin condición propia — 8 POs sin
+tráiler pero con exceso de vendor medible (22.6-92.5h) quedaban en `sin_datos` por descarte;
+ver [ADR-03b](../documentation/decisiones/ARD-03b.md).)*
 
-Vendor domina (53%) por encima del ~20% del kickoff. Tras la consulta del mentor (06-17),
+Vendor domina (56%) por encima del ~20% del kickoff. Tras la consulta del mentor (06-17),
 vendor lleva **umbral propio (24h)** para corregir la *asimetría de construcción*: antes
 disparaba con cualquier push positivo mientras carrier/DC exigían 8/4/6h, así que absorbía por
-default. El 53% **lo soporta el dato, no la regla de disparo**: la distribución del push es
+default. El 56% **lo soporta el dato, no la regla de disparo**: la distribución del push es
 **bimodal** — 12 POs con push casi-cero (≤6h) y 141 con push de días (mediana 3.1 días), con un
 **hueco vacío entre 6h y 18h** (ningún PO). Las órdenes tardías lo son casi siempre porque la
 cita se aprobó tarde. *(La correlación push↔retraso total es alta por construcción —un retraso
@@ -109,8 +112,8 @@ Reparto (247 tardíos): MEDIUM 131 · LOW 82 · HIGH 34.
 
 | Métrica | Resultado | Umbral | Estado |
 |---------|-----------|--------|--------|
-| **Stage accuracy** (#46) | 100% (208/208 evaluables) | > 80% | ✅ |
-| **Reason agreement** (#47) | 88.8% (174/196 clasificables) | — (referencia) | hallazgo |
+| **Stage accuracy** (#46) | 100% (216/216 evaluables) | > 80% | ✅ |
+| **Reason agreement** (#47) | 88.7% (180/203 clasificables) | — (referencia) | hallazgo |
 | **Severity ranking** (#48) | determinístico, auditable | > 95% | ✅ |
 
 ### 5.1 Stage accuracy (#46): gap dominante vs `stage_primary`
@@ -130,9 +133,9 @@ Se **excluye** el lead time `PO→STA` (mediana 192 h: tiempo de compra normal, 
 todo lo posterior a CHECKOUT: `TRAILER_DEPART` ocurre **después** de `RECPT` en el **99.8%**
 de los POs (verificado), o sea fuera del ciclo de recepción.
 
-Denominador = **evaluables** (208): tardíos con stage decidible y gap medible. Los
+Denominador = **evaluables** (216): tardíos con stage decidible y gap medible. Los
 Indeterminados quedan fuera (el gap dominante no puede juzgar un PO sin tráiler). Con el umbral
-de vendor (24h) el acuerdo es **total (208/208)**: al exigir un push de al menos un día, los
+de vendor (24h) el acuerdo es **total (216/216)**: al exigir un push de al menos un día, los
 casos antes multicausales (push pequeño + tramo interno) ya no se clasifican Vendor, así que la
 atribución por exceso coincide con el tramo de mayor duración bruta en todos los evaluables.
 
@@ -142,10 +145,10 @@ Reparto = Vendor / Carrier / DC / Indeterminado (% de tardíos, con `vendor_gap_
 
 | Umbral | `flag_carrier_calc` | Reparto `stage_primary` |
 |--------|---------------------|--------------------------|
-| 4 h | 25.8% (103) | 53.0 / 17.4 / 15.0 / 14.6 |
-| 6 h | 12.8% (51) | 53.0 / 16.2 / 15.0 / 15.8 |
-| **8 h** | **12.8% (51)** | **53.0 / 16.2 / 15.0 / 15.8** |
-| 12 h | 11.2% (45) | 53.0 / 14.6 / 15.0 / 17.4 |
+| 4 h | 25.8% (103) | 56.3 / 17.4 / 15.0 / 11.3 |
+| 6 h | 12.8% (51) | 56.3 / 16.2 / 15.0 / 12.6 |
+| **8 h** | **12.8% (51)** | **56.3 / 16.2 / 15.0 / 12.6** |
+| 12 h | 11.2% (45) | 56.3 / 14.6 / 15.0 / 14.2 |
 
 **Lectura:** el umbral carrier mueve mucho la *flag bruta* `flag_carrier_calc` (de 25.8% a
 ~12% al pasar de 4h a 8h, justo lo que predijo el mentor) pero apenas mueve `stage_primary`,
@@ -159,30 +162,36 @@ Reparto = Vendor / Carrier / DC / sin_datos / sin_causa_dominante (conteos sobre
 
 | Umbral | Vendor | %Vendor | Reparto |
 |--------|--------|---------|---------|
-| 0 (sin umbral) | 141 | 57.1 | 141 / 40 / 37 / 15 / 14 |
-| 6 h | 133 | 53.8 | 133 / 40 / 37 / 15 / 22 |
-| 12 h | 133 | 53.8 | 133 / 40 / 37 / 15 / 22 |
-| 18 h | 133 | 53.8 | 133 / 40 / 37 / 15 / 22 |
-| **24 h** | **131** | **53.0** | **131 / 40 / 37 / 15 / 24** |
-| 48 h | 114 | 46.2 | 114 / 40 / 37 / 15 / 41 |
-| 72 h | 76 | 30.8 | 76 / 40 / 37 / 15 / 79 |
+| 0 (sin umbral) | 151 | 61.1 | 151 / 40 / 37 / 5 / 14 |
+| 6 h | 141 | 57.1 | 141 / 40 / 37 / 7 / 22 |
+| 12 h | 141 | 57.1 | 141 / 40 / 37 / 7 / 22 |
+| 18 h | 141 | 57.1 | 141 / 40 / 37 / 7 / 22 |
+| **24 h** | **139** | **56.3** | **139 / 40 / 37 / 7 / 24** |
+| 48 h | 121 | 49.0 | 121 / 40 / 37 / 8 / 41 |
+| 72 h | 81 | 32.8 | 81 / 40 / 37 / 10 / 79 |
 
 **Lectura:** 6/12/18h son equivalentes (la distribución del push tiene un hueco vacío entre 6h
 y 18h). **24h** es el valor elegido por tres razones: (1) es el **grano natural del dato** —
 `STA_DT` está a nivel día (sin resolución sub-día), así que medir el push contra un día completo
 es la unidad en que el problema está expresado; (2) cae en la **zona vacía** de la distribución
 → robusto a perturbaciones; (3) no fuerza el reparto hacia el ~20% del kickoff (que el mentor
-desaconsejó). Los POs que dejan de ser Vendor al subir el umbral migran **todos a
-`sin_causa_dominante`, ninguno a Carrier/DC** → el umbral no reatribuye, solo separa los push
-difusos. Detalle del análisis: [`documentation/decisiones/ARD-06b.md`](../documentation/decisiones/ARD-06b.md).
+desaconsejó). Los POs que dejan de ser Vendor al subir el umbral migran a `sin_causa_dominante`
+(la mayoría) o a `sin_datos` (los sin tráiler cuyo push cae bajo el nuevo umbral) — **ninguno a
+Carrier/DC** → el umbral no reatribuye, solo separa los push difusos. Detalle del análisis:
+[`documentation/decisiones/ARD-06b.md`](../documentation/decisiones/ARD-06b.md).
+
+*(Nota de cierre ARD-03b, 2026-07-22: antes de este fix, `sin_datos` aparecía constante en
+15 para los 7 escenarios de esta tabla — una señal, en retrospectiva, de que el umbral de
+vendor nunca alcanzaba a esos POs por el gate `decidible` roto. Ahora varía correctamente
+con el umbral: 5/7/7/7/7/8/10.)*
 
 ### 5.4 Reason agreement (#47): la tesis del proyecto
 
-Agreement = 88.8% sobre 196 clasificables (`stage_primary` vs `reason_group_manual`, el mapeo
+Agreement = 88.7% sobre 203 clasificables (`stage_primary` vs `reason_group_manual`, el mapeo
 de la anotación humana `REASON_DSC`; los nulos entre tardíos → "Unknown", fuera del denominador).
 
 El agreement < 100% es **esperado y deseado**: la anotación humana es ~20% incorrecta (dato del
-kickoff). Los **22 mismatches** son la evidencia de que el cómputo temporal supera a la
+kickoff). Los **23 mismatches** son la evidencia de que el cómputo temporal supera a la
 anotación humana — disponibles como posible insumo few-shot para Fase 3 (ver el estado en §6).
 
 ## 6. Mismatches seleccionados (#47) — evidencia temporal
@@ -194,25 +203,34 @@ altera la atribución: todos superan el día con holgura.)
 
 | PO | Cómputo | Humano (REASON_DSC) | Evidencia temporal |
 |----|---------|---------------------|--------------------|
-| 100280 | Vendor | Carrier ("Missed appointment window") | STA push 124.6 h; exceso carrier/DC = 0 |
-| 100382 | Vendor | DC ("Yard congestion") | STA push 111.0 h; exceso yard/dock = 0 |
+| 100280 | Vendor | Carrier ("Missed appointment window") | STA push 124.6 h; exceso carrier = 0 |
 | 100236 | Vendor | Carrier ("Equipment/trailer issue") | STA push 118.5 h; exceso carrier = 0 |
-| 100262 | Vendor | DC ("Dock processing backlog") | STA push 81.0 h; exceso dock = 0 |
-| 100073 | Vendor | Carrier ("Weather/road conditions") | STA push 93.5 h; exceso carrier = 0 |
+| 100382 | Vendor | DC ("Yard congestion - no available door") | STA push 111.0 h; exceso yard/dock = 0 |
+| 100244 | Carrier | DC ("Yard congestion - no available door") | exceso carrier 30.8 h; exceso yard/dock = 0 |
 | 100024 | Carrier | DC ("Dock processing backlog") | exceso carrier 25.7 h; exceso dock = 0 |
 | 100058 | DC (Yard) | Carrier ("Equipment/trailer issue") | exceso yard 19.3 h; exceso carrier = 0 |
-| 100204 | DC (Dock) | Vendor ("Vendor delayed shipment") | exceso dock 9.0 h; STA push = 0 |
+| 100230 | DC (Yard) | Carrier ("Equipment/trailer issue") | exceso yard 19.0 h; exceso carrier = 0 |
+| 100138 | Carrier | DC ("Dock processing backlog") | exceso carrier 1.9 h; exceso dock = 0 |
 
-Patrón estrella (los 5 primeros): el humano culpó al eslabón visible (carrier/yard) mientras la
-cita se había aprobado días tarde y ese tramo no tenía exceso alguno. Patrón interno (3
-últimos): el cómputo detecta un exceso de tramo que la anotación humana confundió.
+Patrón estrella (los 3 primeros): el humano culpó al eslabón visible (carrier/DC) mientras la
+cita se había aprobado días tarde y ese tramo no tenía exceso alguno. Patrón interno (los 5
+restantes): el cómputo detecta un exceso de tramo (carrier o DC) que la anotación humana
+confundió con otro eslabón.
 
-`metrics_core.select_mismatches(df, n)` devuelve este ranking por fuerza de señal. Con
-`stratify=True` reparte `n` entre las etapas presentes (Vendor/Carrier/DC) y toma el más
-fuerte de cada una, en vez de los `n` más fuertes en bruto: como el universo de mismatches
-está dominado por Vendor, el ranking plano tiende a ser casi todo Vendor, y la selección
-estratificada asegura que el few-shot (#99) y la narración de mismatches (#95) cubran las
-tres etapas. El default (`stratify=False`) conserva el ranking plano histórico.
+Esta tabla se genera con `metrics_core.select_mismatches(df, n=8, stratify=True)`: reparte `n`
+entre las etapas presentes (Vendor/Carrier/DC) y toma el más fuerte de cada una, en vez de los
+`n` más fuertes en bruto. Como el universo de mismatches está dominado por Vendor, el ranking
+plano (`stratify=False`, el default del código y el criterio que usaba esta tabla hasta
+2026-07-22) tiende a ser casi todo Vendor; la selección estratificada asegura que el few-shot
+(#99) y la narración de mismatches (#95) cubran las tres etapas. Es también el criterio que ya
+usaba `mismatches_ai_vs_humano.md` — ambas tablas citan hoy la misma selección de 8 PO_NBR.
+
+*(Nota de cierre, 2026-07-22: la tabla anterior quedó congelada en el commit `a1650f7`
+(2026-06-18), previa incluso a la existencia del parámetro `stratify` (añadido 10 días
+después) y al fix del gate `decidible` de [ADR-03b](../documentation/decisiones/ARD-03b.md).
+Se regeneró sobre el dataset real post-fix y se cambió el criterio a `stratify=True` para que
+coincida con el de `mismatches_ai_vs_humano.md` — antes usaban selecciones distintas y solo
+compartían 5 de 8 PO_NBR.)*
 
 > **Estado del few-shot (al cierre de Fase 2).** Estos mismatches están **disponibles** como
 > posible few-shot, pero **el prompt de Fase 3 es hoy zero-shot**: todavía NO los consume. El

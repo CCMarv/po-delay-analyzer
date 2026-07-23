@@ -300,7 +300,10 @@ def _simular_corte(df: pd.DataFrame, thr_vendor: float) -> pd.Series:
     algun_exceso = excesos.max(axis=1) > 0
 
     es_tardio = df["delay_days_calc"] > 0
-    decidible = df["_carrier_medible"] | df["_dc_medible"]
+    # Nota de cierre ARD-03b (2026-07-22): mismo fix que classifier_core.py — vendor
+    # también decide por sí solo cuando tiene exceso medible (no depende de
+    # TRAILER_ARRIVE_DT).
+    decidible = df["_carrier_medible"] | df["_dc_medible"] | (exc_vendor > 0)
 
     stage = pd.Series("On-Time", index=df.index, dtype="object")
     stage = stage.mask(es_tardio & decidible & algun_exceso, ganador)

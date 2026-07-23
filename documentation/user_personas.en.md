@@ -52,7 +52,7 @@ Activities:
 - Objective (JTBD): convert the historical data of late POs into actionable and auditable intelligence, separating the structural problem from the noise at once, through the three causes.
 - Question to the tool: "Where is the systemic pattern in the network — which stage, which entity — with how much evidence, and is it reproducible to defend it?"
 - Trigger: reporting cycle (monthly/quarterly), preparation of an executive review, or a management question ("Why did inbound reliability fall?"). Proactive, low frequency, network level.
-- What he consumes: structured aggregates across the three causes — distribution of `stage` (Vendor / Carrier / DC / Indeterminate; today 53.0 / 16.2 / 15.0 / 15.8 % across 247 delays), counts by entity (vendor, carrier, DC), severity distribution, disagreement rate vs. `REASON_DSC`, and temporal trend. The prose of the LLM is almost irrelevant; what matters is that the attribution is consistent and reproducible from timestamps. The batch is deterministic aggregation.
+- What he consumes: structured aggregates across the three causes — distribution of `stage` (Vendor / Carrier / DC / Indeterminate; today 56.3 / 16.2 / 15.0 / 12.6 % across 247 delays), counts by entity (vendor, carrier, DC), severity distribution, disagreement rate vs. `REASON_DSC`, and temporal trend. The prose of the LLM is almost irrelevant; what matters is that the attribution is consistent and reproducible from timestamps. The batch is deterministic aggregation.
 
 Activities:
 

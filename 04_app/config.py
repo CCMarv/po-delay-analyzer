@@ -23,7 +23,7 @@ from shared.data_contract import (
     COL_LLM_RAZONAMIENTO, COL_LLM_HIPOTESIS, COL_LLM_HIPOTESIS_EVIDENCIA,
     COL_LLM_ACCION_INMEDIATA, COL_LLM_ACCION_CORRECTIVA, COL_LLM_ACCION_PREVENTIVA,
     COL_LLM_HIPOTESIS_ALT, COL_LLM_PASO_DISCRIMINANTE, COL_LLM_CONFIANZA_HIPOTESIS,
-    STAGE_SEGMENT_COLUMNS, STAGE_EXCESS_COLUMN, STAGE_COLORS,
+    STAGE_SEGMENT_COLUMNS, STAGE_EXCESS_COLUMN, STAGE_COLORS, SEVERITY_COLORS,
     data_processed_dir, po_output_csv, po_output_sample_csv, scorecards_dir,
     dataset_cutoff_date,
 )
@@ -74,19 +74,19 @@ STAGE_DISPLAY = {
 # acromática (gris-carbón) + ícono/forma + etiqueta de texto. La codificación
 # por color es redundante, no la única señal.
 SEVERITY = {
-    "HIGH":   {"color": "#3D3D3D", "icon": "■", "label": "Alta"},
-    "MEDIUM": {"color": "#6B6B6B", "icon": "◆", "label": "Media"},
-    "LOW":    {"color": "#A8A8A8", "icon": "●", "label": "Baja"},
+    "HIGH":   {"color": SEVERITY_COLORS["alta"], "icon": "■", "label": "Alta"},
+    "MEDIUM": {"color": SEVERITY_COLORS["media"], "icon": "◆", "label": "Media"},
+    "LOW":    {"color": SEVERITY_COLORS["baja"], "icon": "●", "label": "Baja"},
 }
 
 # Confianza (llm_confianza, escalar 0–1): mismo mecanismo ordinal que
 # severidad (rampa acromática), sin ícono — solo bucket + texto.
 CONFIDENCE_BUCKETS = [
-    {"key": "alta", "min": 0.80, "max": 1.00, "color": "#3D3D3D", "label": "Alta",
+    {"key": "alta", "min": 0.80, "max": 1.00, "color": SEVERITY_COLORS["alta"], "label": "Alta",
      "description": "Evidencia suficiente"},
-    {"key": "media", "min": 0.50, "max": 0.79, "color": "#6B6B6B", "label": "Media",
+    {"key": "media", "min": 0.50, "max": 0.79, "color": SEVERITY_COLORS["media"], "label": "Media",
      "description": "Requiere verificación humana"},
-    {"key": "baja", "min": 0.00, "max": 0.49, "color": "#A8A8A8", "label": "Baja",
+    {"key": "baja", "min": 0.00, "max": 0.49, "color": SEVERITY_COLORS["baja"], "label": "Baja",
      "description": "Datos insuficientes"},
 ]
 

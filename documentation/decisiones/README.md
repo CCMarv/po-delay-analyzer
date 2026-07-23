@@ -4,10 +4,10 @@ Este espacio contiene el registro histórico, razonamiento y evolución de las d
 
 ## Reparto Vivo Resultante (247 Pedidos Tardíos)
 Tras la aplicación rigurosa de los criterios de los ADRs vigentes (especialmente el ajuste asimétrico de umbrales y la nueva taxonomía neutral), la distribución final de atribución de retrasos en producción es:
-*   **Vendor (Proveedor):** 131 POs (53.0%)
+*   **Vendor (Proveedor):** 139 POs (56.3%)
 *   **Carrier (Transportista):** 40 POs (16.2%)
 *   **DC (Centro de Distribución):** 37 POs (15.0%)
-*   **Indeterminado:** 39 POs (15.8%) → *Dividido en 15 `sin_datos` + 24 `sin_causa_dominante`*
+*   **Indeterminado:** 31 POs (12.6%) → *Dividido en 7 `sin_datos` + 24 `sin_causa_dominante`*
 
 ## Índice de Decisiones (Log Cronológico y de Evolución)
 

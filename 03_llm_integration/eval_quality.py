@@ -59,7 +59,7 @@ COMBOS = {
 
 # Composición estratificada de la muestra (#94, OK del usuario): sobrerrepresenta los
 # minoritarios para probar los 4 tipos de explicación con muestra suficiente cada uno.
-# El universo de tardíos es ~ Vendor 131 / Carrier 40 / Indeterminado 39 / DC 37.
+# El universo de tardíos es ~ Vendor 139 / Carrier 40 / Indeterminado 31 / DC 37.
 STRATA = {"Vendor": 8, "Carrier": 4, "Indeterminado": 4, "DC": 4}
 RANDOM_STATE = 42  # semilla fija → muestra reproducible (la reusa #99)
 

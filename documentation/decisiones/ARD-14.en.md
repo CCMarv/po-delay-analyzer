@@ -43,3 +43,5 @@ Upon correcting the former and reviewing the complete output of Phase 2 (39 inde
 ## Relation to Other Decisions
 
 Forward from **ADR-12**: executes and reinforces its named mitigation of the template copying risk, without surpassing it (the few-shot remains current). Consumes **ADR-07** (taxonomy of Indeterminate) and links with **ADR-13** (#143 unlocked the closure of #137, which set 0.9 as a temperature anchor in its round 2). Does not surpass or reopen **ADR-03b / ADR-06b** (Vendor measurement).
+
+**Note (2026-07-22):** the 8 `sin_datos` POs with measurable `excess_vendor_hrs` that this ADR documented from the presentation angle (Decision point 3) actually had a root cause in the classifier: the `decidible` gate in `classifier_core.py` excluded them from Vendor attribution. The closing note of [ADR-03b](ARD-03b.en.md) (2026-07-22) fixes that gate; the 8 POs move to Vendor. This ADR is not reopened — Option B (showing excess only for attributed stages) remains current and correct for real Vendor/Carrier/DC POs.

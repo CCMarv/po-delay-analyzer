@@ -61,7 +61,7 @@ cp .env.example .env                                 # Windows: Copy-Item .env.e
 # Run the pipeline and the suite:
 python 01_data_pipeline_and_eda/pipeline_core.py     # F1 — cleaning + validation
 python 02_clasif_reglas_negocio/classifier_core.py   # F2 — stage classification
-pytest                                                # 266 tests, no API
+pytest                                                # 267 tests, no API
 
 # Open the app (Phase 4). Without running Phase 3 locally, it falls back to the
 # versioned sample (data/samples/); the complete artifact resides in
@@ -82,16 +82,16 @@ The complete detail of setup and execution resides in [CONTRIBUTING.md](CONTRIBU
 | F3 — LLM Integration | closed | Wired production: few-shot C3 on `gpt-4o-mini` (OpenAI, official backend); `po_output.csv` generated. Continues as deferred work: lanes 2 (agentic) and 3 (local judge) of [ADR-16](documentation/decisiones/ARD-16.en.md); scope of the model card under deliberation (Discussion #80). |
 | F4 — App + Evaluation | closed | Streamlit app with two views —individual (#163) and aggregated (#164)— rebuilt on the design system of the phase (ARD-17/ARD-22/ARD-23), plus a **Telegram bot** ([ADR-20](documentation/decisiones/ARD-20.en.md)) as a second channel for fixed commands on the same contract. Deferred: the *conversational* chatbot (#160, lane 3 of ADR-16) — distinct capability from the Telegram bot, which is already built. |
 
-Distribution of stages across **247 delayed POs**: Vendor 131 (53.0%) · Carrier 40 (16.2%) ·
-DC 37 (15.0%) · Indeterminate 39 (15.8%).
+Distribution of stages across **247 delayed POs**: Vendor 139 (56.3%) · Carrier 40 (16.2%) ·
+DC 37 (15.0%) · Indeterminate 31 (12.6%).
 
 Header results (population, threshold, and reproducible source of each figure in
 [metricas-proyecto.md](documentation/metricas-proyecto.en.md)):
 
 | Metric | Value | Mentor Threshold |
 |---|---|---|
-| Stage accuracy | 100% (208/208) | > 80% ✅ |
-| Reason agreement | 88.8% (174/196) | reference (not threshold) |
+| Stage accuracy | 100% (216/216) | > 80% ✅ |
+| Reason agreement | 88.7% (180/203) | reference (not threshold) |
 | LLM Explanation Quality | 5/5 (few-shot C3, revalidated at temp. 0.9) | > 4/5 ✅ |
 | Severity Ranking | 100% (14/14) | > 95% ✅ |
 
@@ -141,7 +141,7 @@ Header results (population, threshold, and reproducible source of each figure in
 │   ├── SAD.md · SRS.md           #   architecture and requirements specifications
 │   ├── exports/                  #   .docx/.pptx copies for delivery (not the source)
 │   └── kickoff_po_root_cause.html
-├── tests/                        # pytest suite (266 tests): F1/F2/F3, handoff, few-shot, evals, app, bot
+├── tests/                        # pytest suite (267 tests): F1/F2/F3, handoff, few-shot, evals, app, bot
 ├── CONTRIBUTING.md               # setup, reproducibility, workflow, what not to commit, tests/CI
 ├── requirements.txt
 ├── pyproject.toml                # pytest config (pythonpath, testpaths)
@@ -200,7 +200,7 @@ Organized by purpose (lens [Diátaxis](https://diataxis.fr)): what is consulted,
 - LLM: the deliverable (`po_output.csv`) is generated with `gpt-4o-mini` (OpenAI, official backend);
   `claude-sonnet-4-6` (Anthropic), `deepseek-chat` (DeepSeek), and `qwen2.5:7b` (local via Ollama)
   are alternate backends with the same prompt and parsing interface.
-- Testing: `pytest` (266 tests) in CI (GitHub Actions), on every push and every PR.
+- Testing: `pytest` (267 tests) in CI (GitHub Actions), on every push and every PR.
 - Domain variables and columns (`IS_LATE`, `REASON_DSC`, `HOT_PO_FLAG`, lifecycle timestamps, …) are documented in the [data dictionary](documentation/data_dictionary.en.md).
 
 ## Contribution

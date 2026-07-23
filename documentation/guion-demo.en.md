@@ -39,7 +39,7 @@ Walk through, in this order:
 
 1. The three KPIs on the left: total late POs (247), % high severity, and the "Tasa de
    Desacuerdo AI" KPI (Spanish label; reads "AI Disagreement Rate"). **When reaching this
-   one, clarify in one sentence**: this figure (currently ~38.5%, 95/247) is the LLM's own
+   one, clarify in one sentence**: this figure (currently ~39.7%, 98/247) is the LLM's own
    per-PO judgment on whether its diagnosis matches the human `REASON_DSC` — related to, but
    not the same figure as, the 88.8% reason agreement cited on the Validation and Metrics
    slide (that one is computed by the Phase 2 rule against a curated grouping, not by the

@@ -189,6 +189,20 @@ def test_indeterminado_intercepta_a_vendor(df_clean):
     assert r["indeterminado_substage"] == "sin_datos"
 
 
+def test_vendor_domina_sin_trailer_si_hay_exceso(df_clean):
+    # Nota de cierre ARD-03b (2026-07-22): PO-NULLTRAILER-VENDOR no tiene tráiler
+    # (carrier/DC no medibles) PERO su push de vendor (72h) supera el umbral de 24h
+    # (exc=48h). excess_vendor_hrs NO depende de TRAILER_ARRIVE_DT, así que el gate
+    # `decidible` debe reconocerlo como decidible por vendor y no mandarlo a
+    # Indeterminado por descarte — el bug que la auditoría encontró.
+    out = classify_po_stages(df_clean)
+    r = row_for(out, "PO-NULLTRAILER-VENDOR")
+    assert r["delay_days_calc"] > 0
+    assert r["excess_vendor_hrs"] == pytest.approx(48.0)
+    assert r["stage_primary"] == "Vendor"
+    assert pd.isna(r["indeterminado_substage"])
+
+
 def test_indeterminado_sin_causa_dominante(df_clean):
     # PO-HOT-HIGH es TARDÍO y DECIDIBLE (tramos medibles) pero ningún tramo supera su
     # umbral: carrier 2h/yard 3h/dock 4h bajo 8/4/6, y APPROVED<STA (push 0, < 24h).

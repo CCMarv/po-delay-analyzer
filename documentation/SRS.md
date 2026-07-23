@@ -95,7 +95,7 @@ El sistema **PO Delay Root Cause Analyzer** actúa como un módulo auditor autó
 
 El sistema no se conecta directamente a un ERP o WMS en tiempo real; en su lugar, consume un extracto analítico de 39 columnas de datos transaccionales, realiza cálculos determinísticos en Python, enriquece las transacciones tardías mediante APIs de LLM externas, ejecuta análisis estadísticos de riesgo para los actores de la red, y sirve los resultados mediante una app web local interactiva.
 
-El reparto de atribución vigente en producción, tras aplicar los umbrales de los ADRs (`documentation/decisiones/`), sobre 247 POs tardías es: **Vendor** 53.0% (131), **Carrier** 16.2% (40), **DC** 15.0% (37), **Indeterminado** 15.8% (39 — dividido en 15 `sin_datos` + 24 `sin_causa_dominante`, ver [ADR-07](decisiones/ARD-07.md)).
+El reparto de atribución vigente en producción, tras aplicar los umbrales de los ADRs (`documentation/decisiones/`), sobre 247 POs tardías es: **Vendor** 56.3% (139), **Carrier** 16.2% (40), **DC** 15.0% (37), **Indeterminado** 12.6% (31 — dividido en 7 `sin_datos` + 24 `sin_causa_dominante`, ver [ADR-07](decisiones/ARD-07.md)).
 
 #### 2.2 Funciones principales del producto
 Las macro-funcionalidades implementadas en el código son:
@@ -305,8 +305,8 @@ Cada bloque de RF se valida mediante un archivo de pruebas dedicado en `tests/` 
     *   El intervalo de guardado parcial durante el procesamiento batch debe ser configurable (`LLM_SAVE_EVERY`) para acotar la pérdida de trabajo ante una interrupción, sin exigir reprocesar el lote completo.
     *   Toda corrida que dispare llamadas reales a una API de LLM de pago debe declarar el conteo de llamadas esperadas y obtener autorización explícita antes de ejecutarse, independientemente del modo (`test`/`custom`/`full`).
 *   **RNF-06 (Criterios de calidad validados):** Métricas medidas y publicadas como evidencia de aceptación (ver `README.md`, sección de estado de fases):
-    *   Stage accuracy: 100% (208/208) — meta del mentor > 80%.
-    *   Reason agreement (AI vs. humano): 88.8% (174/196) — referencia, sin umbral de aceptación.
+    *   Stage accuracy: 100% (216/216) — meta del mentor > 80%.
+    *   Reason agreement (AI vs. humano): 88.7% (180/203) — referencia, sin umbral de aceptación.
     *   LLM Explanation Quality: 5/5 (20/20), few-shot C3 revalidado a la temperatura de producción (0.9) — meta del mentor > 4/5. (4.75/5 fue la cifra del benchmark inicial que seleccionó la configuración C3 frente a C1/C2, no la cifra final del entregable; ver `documentation/validacion-y-qa.md`.)
     *   Severity Ranking: 100% (14/14) — meta del mentor > 95%.
 

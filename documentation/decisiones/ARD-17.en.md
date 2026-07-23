@@ -57,3 +57,18 @@ The underlying problem is not just what colors to use, but **which visual channe
 ## Relation to Other Decisions
 
 This serves the two consumer surfaces motivated by **ADR-09** (people Diego / Ravi). It maintains **ADR-10**: the official severity is issued by the LLM and audited by the Phase 2 rule; this ARD only fixes its **visual encoding**, not changing its source nor superseding it. It takes from **[ADR-07](ARD-07.en.md)** the taxonomy of Indeterminate, which justifies the treatment in neutral gray (absence of attributable cause, not a peer category to the other three). It does not supersede or chain any previous ARD: it is a new layer of visual encoding over current decisions.
+
+## Closing Note (2026-07-22)
+
+The ADR↔repo audit found that point 5 (WCAG contrast) claimed a relative-luminance
+verification that, recalculated against the app's three real backgrounds in `styles.css`, did
+not hold for two swatches: Carrier (`#E69F00`, 2.05-2.25:1) and severity/confidence Low
+(`#A8A8A8`, 2.16-2.38:1), both below the required 3:1. They were corrected to **`#B88000`**
+(Carrier) and **`#8A8A8A`** (Low) — same hue/saturation, only brightness reduced — verified at
+≈3.1:1 against `--surface-elevated` (the most demanding of the 3 backgrounds). Additionally,
+the timeline's text pill (point 6, Diego's view) was found to be assigned only to the first
+highlighted segment of a PO: when Carrier spans 2 segment columns, the second communicated its
+stage by hue alone, without the text redundancy the rest of the app otherwise honors. This was
+fixed so every highlighted segment carries its pill. The selection framework
+(Munzner/Cleveland-McGill/Okabe-Ito), the stage-hue table, and the rest of the encoding are not
+reopened — only these two hex values and the pill assignment.

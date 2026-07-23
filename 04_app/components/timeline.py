@@ -25,8 +25,9 @@ def timeline_segment_html(
 
     `stage` determina el hue solo cuando `highlighted=True`; los segmentos no
     resaltados usan un borde neutro. `tramo_label`, si se pasa, añade la pill
-    de tramo responsable junto al timestamp (normalmente solo en el primer
-    segmento resaltado de un PO).
+    de tramo responsable junto al timestamp — en todos los segmentos
+    resaltados de un PO (nota de cierre ARD-17, 2026-07-22: limitarla al
+    primero dejaba a los demás comunicando su etapa solo por hue).
     """
     key = stage.lower() if stage else "indeterminado"
     if key not in STAGE_COLORS:

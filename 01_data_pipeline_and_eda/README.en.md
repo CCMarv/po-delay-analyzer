@@ -75,7 +75,7 @@ Throughout the development cycle, five data engineering strategies were implemen
 *   **Concentration of Delays:** Analytical segmentation of the main delay KPI:
     *   *By Distribution Center (DC):* Certain geographic locations exhibit structural delays associated with dock saturation.
     *   *By Vendor/Carrier:* Unusual groupings of low logistical efficiency were identified associated with specific carriers during nighttime hours.
-*   **Inconsistency of Human Annotation:** The first cross of quantitative variables against the free text column `REASON_DSC`. Systemic contradictions were found in the manual coding of yard operators, empirically confirming the project's hypothesis: human annotation presents an error margin of ~20%, justifying the algorithmic automation of Phase 2 (which reaches an 88.8% business concordance).
+*   **Inconsistency of Human Annotation:** The first cross of quantitative variables against the free text column `REASON_DSC`. Systemic contradictions were found in the manual coding of yard operators, empirically confirming the project's hypothesis: human annotation presents an error margin of ~20%, justifying the algorithmic automation of Phase 2 (which reaches an 88.7% business concordance).
 
 ---
 

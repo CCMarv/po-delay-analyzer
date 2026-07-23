@@ -93,7 +93,7 @@ The **PO Delay Root Cause Analyzer** system acts as a decoupled autonomous audit
 
 The system does not connect directly to an ERP or WMS in real-time; instead, it consumes an analytical extract of 39 columns of transactional data, performs deterministic calculations in Python, enriches late transactions through external LLM APIs, conducts statistical risk analyses for network actors, and serves results through an interactive local web application.
 
-The current attribution breakdown in production, after applying the thresholds from the ADRs (`documentation/decisiones/`), over 247 delayed POs is: **Vendor** 53.0% (131), **Carrier** 16.2% (40), **DC** 15.0% (37), **Indeterminate** 15.8% (39 — divided into 15 `sin_datos` + 24 `sin_causa_dominante`, see [ADR-07](decisiones/ARD-07.en.md)).
+The current attribution breakdown in production, after applying the thresholds from the ADRs (`documentation/decisiones/`), over 247 delayed POs is: **Vendor** 56.3% (139), **Carrier** 16.2% (40), **DC** 15.0% (37), **Indeterminate** 12.6% (31 — divided into 7 `sin_datos` + 24 `sin_causa_dominante`, see [ADR-07](decisiones/ARD-07.en.md)).
 
 #### 2.2 Main product functions
 The macro-functionalities implemented in the code include:
@@ -303,8 +303,8 @@ Each RF block is validated through a dedicated test file in `tests/` (pytest sui
     *   The partial save interval during batch processing must be configurable (`LLM_SAVE_EVERY`) to limit work loss in case of an interruption, without requiring the entire batch to be reprocessed.
     *   Any run that triggers real calls to a paid LLM API must declare the expected call count and obtain explicit authorization before execution, regardless of the mode (`test`/`custom`/`full`).
 *   **RNF-06 (Validated Quality Criteria):** Metrics measured and published as acceptance evidence (see `README.md`, phase status section):
-    *   Stage accuracy: 100% (208/208) — contractor target > 80%.
-    *   Reason agreement (AI vs. human): 88.8% (174/196) — reference, no acceptance threshold.
+    *   Stage accuracy: 100% (216/216) — contractor target > 80%.
+    *   Reason agreement (AI vs. human): 88.7% (180/203) — reference, no acceptance threshold.
     *   LLM Explanation Quality: 5/5 (20/20), few-shot C3 revalidated at production temperature (0.9) — contractor target > 4/5. (4.75/5 was the initial benchmark figure that selected C3 configuration over C1/C2, not the final deliverable figure; see `documentation/validacion-y-qa.md`.)
     *   Severity Ranking: 100% (14/14) — contractor target > 95%.
 

@@ -54,18 +54,21 @@ attribution consultation (2026-06-17). Each decision with its reasoning:
 
 | Stage | % | n |
 |-------|---|---|
-| Vendor | 53.0% | 131 |
+| Vendor | 56.3% | 139 |
 | Carrier | 16.2% | 40 |
 | DC | 15.0% | 37 |
-| Indeterminate | 15.8% | 39 |
+| Indeterminate | 12.6% | 31 |
 
-The 39 Indeterminates break down into **15 `sin_datos`** (without trailer time) + **24
-`sin_causa_dominante`** (measurable but with no excess over threshold).
+The 31 Indeterminates break down into **7 `sin_datos`** (without trailer time) + **24
+`sin_causa_dominante`** (measurable but with no excess over threshold). *(ADR-03b closing
+note, 2026-07-22: the `decidible` gate excluded vendor without its own condition — 8 POs
+without trailer time but with measurable vendor excess (22.6-92.5h) fell into `sin_datos` by
+default; see [ADR-03b](../documentation/decisiones/ARD-03b.en.md).)*
 
-Vendor dominates (53%) above the ~20% from the kickoff. After the mentor consultation (06-17),
+Vendor dominates (56%) above the ~20% from the kickoff. After the mentor consultation (06-17),
 vendor has its **own threshold (24h)** to correct the *construction asymmetry*: previously,
 it triggered with any positive push while carrier/DC required 8/4/6h, thus absorbing by
-default. The 53% **is supported by the data, not the trigger rule**: the distribution of push is
+default. The 56% **is supported by the data, not the trigger rule**: the distribution of push is
 **bimodal** — 12 POs with nearly zero push (≤6h) and 141 with push in days (median 3.1 days), with a
 **void gap between 6h and 18h** (no POs). Late orders are almost always late because the
 appointment was approved late. *(The push↔total delay correlation is high by construction —an early delay
@@ -109,8 +112,8 @@ Distribution (247 late POs): MEDIUM 131 · LOW 82 · HIGH 34.
 
 | Metric | Result | Threshold | Status |
 |--------|--------|-----------|--------|
-| **Stage accuracy** (#46) | 100% (208/208 evaluable) | > 80% | ✅ |
-| **Reason agreement** (#47) | 88.8% (174/196 classifiable) | — (reference) | finding |
+| **Stage accuracy** (#46) | 100% (216/216 evaluable) | > 80% | ✅ |
+| **Reason agreement** (#47) | 88.7% (180/203 classifiable) | — (reference) | finding |
 | **Severity ranking** (#48) | deterministic, auditable | > 95% | ✅ |
 
 ### 5.1 Stage accuracy (#46): dominant gap vs `stage_primary`
@@ -128,9 +131,9 @@ STA → APPROVED → TRAILER_ARRIVE → CHECKIN → CHECKOUT
 The lead time `PO→STA` (median 192 h: standard purchase time, not delay) and everything after CHECKOUT are **excluded**: `TRAILER_DEPART` occurs **after** `RECPT` in **99.8%**
 of POs (verified), meaning outside the reception cycle.
 
-Denominator = **evaluable** (208): late POs with decidable stage and measurable gap. The
+Denominator = **evaluable** (216): late POs with decidable stage and measurable gap. The
 Indeterminates are excluded (the dominant gap cannot judge a PO without trailer). With the vendor
-threshold (24h), the agreement is **total (208/208)**: by requiring a push of at least one day, cases previously multi-causal (small push + internal segment) are no longer classified as Vendor, thus the attribution by excess coincides with the longest gross duration segment in all evaluable cases.
+threshold (24h), the agreement is **total (216/216)**: by requiring a push of at least one day, cases previously multi-causal (small push + internal segment) are no longer classified as Vendor, thus the attribution by excess coincides with the longest gross duration segment in all evaluable cases.
 
 ### 5.2 Sensitivity of the Carrier Threshold (4 / 6 / 8 / 12 h)
 
@@ -138,10 +141,10 @@ Distribution = Vendor / Carrier / DC / Indeterminate (% of late POs, with `vendo
 
 | Threshold | `flag_carrier_calc` | `stage_primary` Distribution |
 |-----------|---------------------|------------------------------|
-| 4 h | 25.8% (103) | 53.0 / 17.4 / 15.0 / 14.6 |
-| 6 h | 12.8% (51) | 53.0 / 16.2 / 15.0 / 15.8 |
-| **8 h** | **12.8% (51)** | **53.0 / 16.2 / 15.0 / 15.8** |
-| 12 h | 11.2% (45) | 53.0 / 14.6 / 15.0 / 17.4 |
+| 4 h | 25.8% (103) | 56.3 / 17.4 / 15.0 / 11.3 |
+| 6 h | 12.8% (51) | 56.3 / 16.2 / 15.0 / 12.6 |
+| **8 h** | **12.8% (51)** | **56.3 / 16.2 / 15.0 / 12.6** |
+| 12 h | 11.2% (45) | 56.3 / 14.6 / 15.0 / 14.2 |
 
 **Reading:** the carrier threshold moves the *raw flag* `flag_carrier_calc` significantly (from 25.8% to
 ~12% when increasing from 4h to 8h, just as the mentor predicted), but barely affects `stage_primary`,
@@ -155,25 +158,30 @@ Distribution = Vendor / Carrier / DC / sin_datos / sin_causa_dominante (counts o
 
 | Threshold | Vendor | %Vendor | Distribution |
 |-----------|--------|---------|--------------|
-| 0 (no threshold) | 141 | 57.1 | 141 / 40 / 37 / 15 / 14 |
-| 6 h | 133 | 53.8 | 133 / 40 / 37 / 15 / 22 |
-| 12 h | 133 | 53.8 | 133 / 40 / 37 / 15 / 22 |
-| 18 h | 133 | 53.8 | 133 / 40 / 37 / 15 / 22 |
-| **24 h** | **131** | **53.0** | **131 / 40 / 37 / 15 / 24** |
-| 48 h | 114 | 46.2 | 114 / 40 / 37 / 15 / 41 |
-| 72 h | 76 | 30.8 | 76 / 40 / 37 / 15 / 79 |
+| 0 (no threshold) | 151 | 61.1 | 151 / 40 / 37 / 5 / 14 |
+| 6 h | 141 | 57.1 | 141 / 40 / 37 / 7 / 22 |
+| 12 h | 141 | 57.1 | 141 / 40 / 37 / 7 / 22 |
+| 18 h | 141 | 57.1 | 141 / 40 / 37 / 7 / 22 |
+| **24 h** | **139** | **56.3** | **139 / 40 / 37 / 7 / 24** |
+| 48 h | 121 | 49.0 | 121 / 40 / 37 / 8 / 41 |
+| 72 h | 81 | 32.8 | 81 / 40 / 37 / 10 / 79 |
 
 **Reading:** 6/12/18h are equivalent (the push distribution has a void gap between 6h
 and 18h). **24h** is the chosen value for three reasons: (1) it is the **natural granularity of the data** —
-`STA_DT` is at day level (without sub-day resolution), so measuring the push against a full day is the unit in which the problem is expressed; (2) it falls in the **empty zone** of the distribution → robust to perturbations; (3) it does not force the distribution toward the ~20% from the kickoff (which the mentor advised against). POs that stop being Vendor when the threshold rises all migrate to **`sin_causa_dominante`, none to Carrier/DC** → the threshold does not reattribute, it only separates the diffuse pushes. Detail of the analysis: [`documentation/decisiones/ARD-06b.md`](../documentation/decisiones/ARD-06b.en.md).
+`STA_DT` is at day level (without sub-day resolution), so measuring the push against a full day is the unit in which the problem is expressed; (2) it falls in the **empty zone** of the distribution → robust to perturbations; (3) it does not force the distribution toward the ~20% from the kickoff (which the mentor advised against). POs that stop being Vendor when the threshold rises migrate to `sin_causa_dominante` (most of them) or to `sin_datos` (those without trailer whose push falls below the new threshold) — **none to Carrier/DC** → the threshold does not reattribute, it only separates the diffuse pushes. Detail of the analysis: [`documentation/decisiones/ARD-06b.md`](../documentation/decisiones/ARD-06b.en.md).
+
+*(ADR-03b closing note, 2026-07-22: before this fix, `sin_datos` was constant at 15 across the
+7 scenarios in this table — a signal, in hindsight, that the vendor threshold never reached
+those POs due to the broken `decidible` gate. It now varies correctly with the threshold:
+5/7/7/7/7/8/10.)*
 
 ### 5.4 Reason Agreement (#47): the Project Thesis
 
-Agreement = 88.8% on 196 classifiable (`stage_primary` vs `reason_group_manual`, the mapping
+Agreement = 88.7% on 203 classifiable (`stage_primary` vs `reason_group_manual`, the mapping
 from human annotation `REASON_DSC`; the nulls among late POs → "Unknown", outside the denominator).
 
 The agreement < 100% is **expected and desired**: human annotation is ~20% incorrect (data from
-the kickoff). The **22 mismatches** are evidence that the temporal computation surpasses the
+the kickoff). The **23 mismatches** are evidence that the temporal computation surpasses the
 human annotation — available as possible few-shot input for Phase 3 (see status in §6).
 
 ## 6. Selected Mismatches (#47) — Temporal Evidence
@@ -183,20 +191,35 @@ They cover the three types of discrepancy. ("STA push" = raw push `APPROVED − 
 
 | PO | Computation | Human (REASON_DSC) | Temporal Evidence |
 |----|-------------|---------------------|--------------------|
-| 100280 | Vendor | Carrier ("Missed appointment window") | STA push 124.6 h; carrier/DC excess = 0 |
-| 100382 | Vendor | DC ("Yard congestion") | STA push 111.0 h; yard/dock excess = 0 |
+| 100280 | Vendor | Carrier ("Missed appointment window") | STA push 124.6 h; carrier excess = 0 |
 | 100236 | Vendor | Carrier ("Equipment/trailer issue") | STA push 118.5 h; carrier excess = 0 |
-| 100262 | Vendor | DC ("Dock processing backlog") | STA push 81.0 h; dock excess = 0 |
-| 100073 | Vendor | Carrier ("Weather/road conditions") | STA push 93.5 h; carrier excess = 0 |
+| 100382 | Vendor | DC ("Yard congestion - no available door") | STA push 111.0 h; yard/dock excess = 0 |
+| 100244 | Carrier | DC ("Yard congestion - no available door") | carrier excess 30.8 h; yard/dock excess = 0 |
 | 100024 | Carrier | DC ("Dock processing backlog") | carrier excess 25.7 h; dock excess = 0 |
 | 100058 | DC (Yard) | Carrier ("Equipment/trailer issue") | yard excess 19.3 h; carrier excess = 0 |
-| 100204 | DC (Dock) | Vendor ("Vendor delayed shipment") | dock excess 9.0 h; STA push = 0 |
+| 100230 | DC (Yard) | Carrier ("Equipment/trailer issue") | yard excess 19.0 h; carrier excess = 0 |
+| 100138 | Carrier | DC ("Dock processing backlog") | carrier excess 1.9 h; dock excess = 0 |
 
-Star pattern (the first five): the human blamed the visible link (carrier/yard) while the
-appointment had been approved days late, and that segment had no excess at all. Internal pattern (last three): the computation detects an excess segment that human annotation confused.
+Star pattern (the first three): the human blamed the visible link (carrier/DC) while the
+appointment had been approved days late, and that segment had no excess at all. Internal
+pattern (the remaining five): the computation detects an excess segment (carrier or DC) that
+human annotation confused with another link.
 
-`metrics_core.select_mismatches(df, n)` returns this ranking by signal strength. With
-`stratify=True`, it distributes `n` among the present stages (Vendor/Carrier/DC) and takes the strongest from each, instead of the `n` strongest in raw form: since the universe of mismatches is dominated by Vendor, the flat ranking tends to be almost all Vendor, and stratified selection ensures that the few-shot (#99) and mismatch narrative (#95) cover all three stages. The default (`stratify=False`) preserves the historical flat ranking.
+This table is generated with `metrics_core.select_mismatches(df, n=8, stratify=True)`: it
+distributes `n` among the present stages (Vendor/Carrier/DC) and takes the strongest from each,
+instead of the `n` strongest in raw form. Since the universe of mismatches is dominated by
+Vendor, the flat ranking (`stratify=False`, the code default and the criterion this table used
+until 2026-07-22) tends to be almost all Vendor; stratified selection ensures that the few-shot
+(#99) and mismatch narrative (#95) cover all three stages. It is also the criterion that
+`mismatches_ai_vs_humano.en.md` already used — both tables now cite the same selection of 8
+PO_NBR.
+
+*(Closing note, 2026-07-22: the previous table was frozen at commit `a1650f7` (2026-06-18),
+even before the `stratify` parameter existed (added 10 days later) and before the fix to the
+`decidible` gate in [ADR-03b](../documentation/decisiones/ARD-03b.en.md). It was regenerated
+against the real post-fix dataset and the criterion was switched to `stratify=True` so it
+matches `mismatches_ai_vs_humano.en.md` — they previously used different selections and only
+shared 5 of 8 PO_NBR.)*
 
 > **Status of the few-shot (at the end of Phase 2).** These mismatches are **available** as
 > possible few-shot, but **the Phase 3 prompt is currently zero-shot**: it still does NOT consume them. The

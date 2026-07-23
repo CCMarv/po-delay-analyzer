@@ -21,17 +21,22 @@
     --accent-hover: #3182ce;
     --accent-shadow: rgba(66, 153, 225, 0.3);
 
-    /* Etapa — hue Okabe-Ito (CUD), idéntico en toda la app (ARD-17) */
+    /* Etapa — hue Okabe-Ito (CUD), idéntico en toda la app (ARD-17).
+       Carrier corregido de #E69F00 a #B88000 (nota de cierre ARD-17,
+       2026-07-22): el original no alcanzaba 3:1 (WCAG 2.1 §1.4.11) contra
+       --surface-elevated. Mismo hue/saturación, solo se redujo el brillo. */
     --stage-vendor: #0072B2;
-    --stage-carrier: #E69F00;
+    --stage-carrier: #B88000;
     --stage-dc: #009E73;
     --stage-indeterminado: #767676;
 
     /* Severidad / Confianza — rampa de luminancia acromática (no compite
-       por hue con la etapa); HIGH/Alta = extremo más saliente. */
+       por hue con la etapa); HIGH/Alta = extremo más saliente.
+       Low/Baja corregido de #A8A8A8 a #8A8A8A (nota de cierre ARD-17,
+       2026-07-22): el original no alcanzaba 3:1 contra --surface-elevated. */
     --ordinal-high: #3D3D3D;
     --ordinal-medium: #6B6B6B;
-    --ordinal-low: #A8A8A8;
+    --ordinal-low: #8A8A8A;
 
     /* Tipografía: bold sans para identificadores, monospace para fecha/hora. */
     --font-sans: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -215,7 +220,10 @@ h1, h2, h3 {
 }
 
 /* Pill "TRAMO {ETAPA} — etapa responsable" (mockup Exception Workbench):
-   junto al timestamp, solo en el primer segmento resaltado de un PO. */
+   junto al timestamp, en todos los segmentos resaltados de un PO (nota de
+   cierre ARD-17, 2026-07-22: antes solo en el primero, dejaba al segundo
+   segmento de un tramo Carrier de 2 columnas comunicando su etapa solo por
+   hue). */
 .timeline-pill {
     display: inline-flex;
     align-items: center;
@@ -246,7 +254,7 @@ h1, h2, h3 {
 /* ── Chip de etapa (punto + texto neutro) ──────────────────────────────── */
 /* ARD-23: adaptación al mockup — la landing colorea la palabra Vendor/
    Carrier/DC como texto, lo que falla contraste WCAG en tema claro (p. ej.
-   Carrier #E69F00 sobre blanco ≈2.2:1). Se conserva la señal de color en el
+   Carrier #B88000 sobre blanco ≈3.4:1, aun bajo el 4.5:1 de texto). Se conserva la señal de color en el
    punto (mismo idiom que las leyendas de Ravi), el texto queda en tinta
    neutra. Reusable en bullets de landing y leyendas de distribución. */
 .stage-chip {

@@ -271,15 +271,14 @@ timeline_events = [
 ]
 
 segments_html = []
-pill_assigned = False
 for col_name, icon, label in timeline_events:
     timestamp = po_data.get(col_name)
     time_str = timestamp.strftime("%Y-%m-%d %H:%M") if pd.notna(timestamp) else "N/A"
     is_highlighted = col_name in highlighted_cols
-    tramo_label = None
-    if is_highlighted and not pill_assigned:
-        tramo_label = f"TRAMO {stage_label.upper()} — etapa responsable"
-        pill_assigned = True
+    # Nota de cierre ARD-17 (2026-07-22): la pill va en TODOS los segmentos
+    # resaltados, no solo el primero — un segundo tramo Carrier sin ella
+    # comunicaba su etapa solo por hue.
+    tramo_label = f"TRAMO {stage_label.upper()} — etapa responsable" if is_highlighted else None
     segments_html.append(
         timeline_segment_html(
             label=f"{icon} {label}",

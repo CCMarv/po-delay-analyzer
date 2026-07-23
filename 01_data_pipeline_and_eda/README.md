@@ -75,7 +75,7 @@ A través del ciclo de desarrollo, se implementaron cinco estrategias de ingenie
 *   **Concentración de Tardanzas:** Segmentación analítica del KPI principal de retraso:
     *   *Por Centro de Distribución (DC):* Ciertas localidades geográficas presentan demoras estructurales asociadas a la saturación de muelles.
     *   *Por Vendor/Carrier:* Se identificaron agrupaciones atípicas de baja eficiencia logística asociadas a transportistas específicos en franjas horarias nocturnas.
-*   **Inconsistencia de la Anotación Humana:** Primer cruce de variables cuantitativas frente a la columna de texto libre `REASON_DSC`. Se hallaron contradicciones sistémicas en la codificación manual de los operadores del patio, confirmando empíricamente la hipótesis del proyecto: la anotación humana presenta un margen de error del ~20%, justificando la automatización algorítmica de la Fase 2 (la cual alcanza un 88.8% de concordancia de negocio).
+*   **Inconsistencia de la Anotación Humana:** Primer cruce de variables cuantitativas frente a la columna de texto libre `REASON_DSC`. Se hallaron contradicciones sistémicas en la codificación manual de los operadores del patio, confirmando empíricamente la hipótesis del proyecto: la anotación humana presenta un margen de error del ~20%, justificando la automatización algorítmica de la Fase 2 (la cual alcanza un 88.7% de concordancia de negocio).
 
 ---
 

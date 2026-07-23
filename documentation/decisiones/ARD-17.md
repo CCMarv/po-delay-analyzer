@@ -130,3 +130,18 @@ fija su **codificación visual**, no cambia su fuente ni la supersede. Toma de *
 la taxonomía de Indeterminado, que justifica el tratamiento en gris neutro (ausencia de causa
 atribuible, no una categoría par de las otras tres). No supera ni encadena ningún ARD previo:
 es una capa nueva de codificación visual sobre decisiones vigentes.
+
+## Nota de cierre (2026-07-22)
+
+La auditoría ADR↔repo detectó que el punto 5 (contraste WCAG) afirmaba una verificación por
+luminancia relativa que, recalculada contra los tres fondos reales de `styles.css`, no se
+sostenía para dos swatches: Carrier (`#E69F00`, 2.05-2.25:1) y severidad/confianza Baja
+(`#A8A8A8`, 2.16-2.38:1), ambos por debajo del 3:1 exigido. Se corrigieron a **`#B88000`**
+(Carrier) y **`#8A8A8A`** (Baja) — mismo hue/saturación, solo se redujo el brillo — verificados
+en ≈3.1:1 contra `--surface-elevated` (el fondo más exigente de los 3). Adicionalmente, se
+detectó que la pill de texto del timeline (punto 6, vista Diego) solo se asignaba al primer
+segmento resaltado de un PO: cuando Carrier abarca 2 columnas de segmento, el segundo
+comunicaba su etapa solo por hue, sin la redundancia de texto que el resto de la app sí
+respeta. Se corrigió para que todos los segmentos resaltados lleven su pill. El marco de
+selección (Munzner/Cleveland-McGill/Okabe-Ito), la tabla de hues de etapa y el resto de la
+codificación no se reabren — solo estos dos valores hex y la asignación de la pill.

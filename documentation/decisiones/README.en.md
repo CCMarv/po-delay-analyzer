@@ -4,10 +4,10 @@ This space contains the historical record, reasoning, and evolution of data engi
 
 ## Resulting Live Distribution (247 Delayed POs)
 Following the rigorous application of the criteria from the current ADRs (especially the asymmetric adjustment of thresholds and the new neutral taxonomy), the final distribution of delay attribution in production is:
-*   **Vendor:** 131 POs (53.0%)
+*   **Vendor:** 139 POs (56.3%)
 *   **Carrier:** 40 POs (16.2%)
 *   **DC:** 37 POs (15.0%)
-*   **Indeterminate:** 39 POs (15.8%) → *Divided into 15 `sin_datos` + 24 `sin_causa_dominante`*
+*   **Indeterminate:** 31 POs (12.6%) → *Divided into 7 `sin_datos` + 24 `sin_causa_dominante`*
 
 ## Decision Index (Chronological Log and Evolution)
 

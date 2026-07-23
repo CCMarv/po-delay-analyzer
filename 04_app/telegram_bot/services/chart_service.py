@@ -12,7 +12,7 @@ import plotly.express as px
 
 from config import (
     COL_STAGE, COL_SEVERITY, COL_PO_DT, COL_LLM_COINCIDE,
-    STAGE_COLORS,
+    STAGE_COLORS, SEVERITY_COLORS,
 )
 
 logger = logging.getLogger(__name__)
@@ -41,10 +41,12 @@ def _fig_to_png(fig) -> bytes:
 
 
 # ── Paleta de colores para severidad (rampa de luminancia acromática) ──────
+# Fuente única: SEVERITY_COLORS (shared/data_contract.py, ARD-17). Solo se
+# remapea a las claves HIGH/MEDIUM/LOW que usa el df de severidad.
 SEV_COLORS = {
-    "HIGH": "#3D3D3D",
-    "MEDIUM": "#6B6B6B",
-    "LOW": "#A8A8A8",
+    "HIGH": SEVERITY_COLORS["alta"],
+    "MEDIUM": SEVERITY_COLORS["media"],
+    "LOW": SEVERITY_COLORS["baja"],
 }
 
 

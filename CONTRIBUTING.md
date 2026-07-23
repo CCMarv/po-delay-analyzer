@@ -127,7 +127,7 @@ en comandos de git vive en la
 ## Tests y CI
 
 ```bash
-pytest      # 266 tests; configuración en pyproject.toml
+pytest      # 267 tests; configuración en pyproject.toml
 ```
 
 La suite cubre el pipeline (Fase 1), el clasificador y las métricas (Fase 2), el contrato de

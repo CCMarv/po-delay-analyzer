@@ -142,7 +142,10 @@ def _etapa_primaria(df: pd.DataFrame, rules: dict) -> pd.DataFrame:
     # Paso 3+4 — etapa primaria con intercepción de Indeterminado.
     es_tardio = df["delay_days_calc"] > 0
     # ¿Puedo decidir? Necesito al menos un tramo medible para atribuir con honestidad.
-    decidible = df["_carrier_medible"] | df["_dc_medible"]
+    # Nota de cierre ARD-03b (2026-07-22): vendor también decide por sí solo cuando
+    # tiene exceso medible — excess_vendor_hrs no depende de TRAILER_ARRIVE_DT, así
+    # que no debe quedar condicionado a que carrier/DC sean medibles.
+    decidible = df["_carrier_medible"] | df["_dc_medible"] | (exc_vendor > 0)
 
     excesos = pd.DataFrame(
         {"Vendor": exc_vendor, "Carrier": exc_carrier, "DC": exc_dc}

@@ -72,6 +72,7 @@ COL_LLM_CONFIANZA_HIPOTESIS = _dc.COL_LLM_CONFIANZA_HIPOTESIS
 STAGE_SEGMENT_COLUMNS = _dc.STAGE_SEGMENT_COLUMNS
 STAGE_EXCESS_COLUMN = _dc.STAGE_EXCESS_COLUMN
 STAGE_COLORS = _dc.STAGE_COLORS
+SEVERITY_COLORS = _dc.SEVERITY_COLORS
 data_processed_dir = _dc.data_processed_dir
 po_output_csv = _dc.po_output_csv
 po_output_sample_csv = _dc.po_output_sample_csv

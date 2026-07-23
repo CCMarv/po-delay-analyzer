@@ -114,7 +114,7 @@ Complete agreements (when something is an issue/discussion/chat, titles, labels,
 ## Tests and CI
 
 ```bash
-pytest      # 266 tests; configuration in pyproject.toml
+pytest      # 267 tests; configuration in pyproject.toml
 ```
 
 The suite covers the pipeline (Phase 1), the classifier and metrics (Phase 2), the handoff contract between phases, LLM integration and few-shot (Phase 3), and the Streamlit app and Telegram bot — page smoke tests, the QR service, fail-closed authentication (Phase 4). It does not require API: the LLM tests use fixtures and stubs, not real calls.
