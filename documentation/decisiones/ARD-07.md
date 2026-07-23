@@ -33,3 +33,12 @@ Esta lógica quedó integrada en la arquitectura del clasificador y fue desplega
 ## Consecuencias
 * **Positivas:** El clasificador alcanza una pureza conceptual absoluta. Se evita el descarte ciego y se le entrega a la Fase 3 una estructura de datos limpia que permite al LLM entender la diferencia exacta entre "falta de información" y "operación eficiente dentro de las tolerancias permitidas".
 * **Negativas:** La reportería final del negocio debe estar consciente de esta sub-taxonomía para no interpretar erróneamente todos los casos "Indeterminados" como fallas críticas del sistema de extracción de datos.
+
+## Nota (2026-07-22)
+Los conteos citados arriba (39 pedidos, 15 `sin_datos`, 24 `sin_causa_dominante`) reflejan el
+reparto vigente al cerrar esta decisión (2026-06-18). La nota de cierre de
+[ADR-03b](ARD-03b.md) (2026-07-22) corrigió un gate del clasificador que excluía a Vendor sin
+condición propia: 8 de los 39 pedidos migraron de `sin_datos` a Vendor, dejando el reparto
+actual en 31 (7 `sin_datos` + 24 `sin_causa_dominante`). Esta decisión no se reabre — la
+sub-taxonomía y sus dos criterios mutuamente excluyentes siguen vigentes tal cual se describen
+arriba.

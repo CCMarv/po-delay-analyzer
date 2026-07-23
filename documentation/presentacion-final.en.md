@@ -65,7 +65,7 @@ consistent across the findings, the documented mismatches, and the live demo.
 The project reports two distinct figures under the idea of "disagreement with the human,"
 and the presentation and demo script cite them separately so they are not conflated:
 
-- **Reason agreement (the canonical figure, with a mentor threshold):** 88.8% (174/196).
+- **Reason agreement (the canonical figure, with a mentor threshold):** 88.7% (180/203).
   Computed by `metrics_core.py` in Phase 2, comparing `stage_primary` (the computation)
   against `reason_group_manual` (a curated grouping of `REASON_DSC`). This is the figure
   cited on the Validation & Metrics slide.
@@ -208,8 +208,8 @@ Source: `documentation/decisiones/ARD-11.en.md`, `ARD-12.en.md`, `ARD-13.en.md`,
 - The stage is decided by excess over an expected window, not raw duration: vendor 24h (late
   appointment approval), carrier 8h, yard 4h, dock 6h. The thresholds are backed by a
   sensitivity analysis, not hand-picked.
-- Resulting distribution over the 247 late POs: Vendor 53.0% (131), Carrier 16.2% (40), DC
-  15.0% (37), Indeterminate 15.8% (39). Indeterminate breaks down into 15 with no data (no
+- Resulting distribution over the 247 late POs: Vendor 56.3% (139), Carrier 16.2% (40), DC
+  15.0% (37), Indeterminate 12.6% (31). Indeterminate breaks down into 7 with no data (no
   trailer time) and 24 with no dominant cause (measurable, but no segment exceeds its
   threshold).
 - Deterministic severity: HIGH if the PO is urgent ("hot") and the delay exceeds 3 days; LOW
@@ -227,7 +227,7 @@ Source: `documentation/explicacion-proyecto.en.md` (Phase 2).
   residual: the signal covers 100% of the dataset, including the 27 POs with no trailer
   record, which a residual model could not resolve.
 - Indeterminate taxonomy: an `indeterminado_substage` sub-category with two mutually
-  exclusive criteria — `sin_datos` (15 POs, an atomic source datum is missing) vs.
+  exclusive criteria — `sin_datos` (7 POs, an atomic source datum is missing) vs.
   `sin_causa_dominante` (24 POs, complete data but no segment exceeds its threshold) — an
   explicit mentor decision (Round 2, 2026-06-18) made to avoid forcing attribution by
   elimination.
@@ -339,13 +339,13 @@ progress.
 
 | Metric | Value | Mentor threshold |
 |---|---|:--:|
-| Stage accuracy | 100% (208/208) | > 80% ✅ |
-| Reason agreement | 88.8% (174/196) | reference, no threshold (this is the central finding) |
+| Stage accuracy | 100% (216/216) | > 80% ✅ |
+| Reason agreement | 88.7% (180/203) | reference, no threshold (this is the central finding) |
 | Severity Ranking | 100% (14/14) | > 95% ✅ |
 | LLM Explanation Quality | 5/5 (20/20) | 4/5 (80%) ✅ |
 
 - Test suite: 251 tests passing, merge gate on every PR.
-- Denominators are not interchangeable: 208 evaluable, 196 classifiable, 14 hot-late, and 20
+- Denominators are not interchangeable: 216 evaluable, 203 classifiable, 14 hot-late, and 20
   sampled answer different questions (detail in `metricas-proyecto.en.md`).
 
 Speaker notes: this slide replaces the single loose figure v1 carried (an "88%" on
@@ -357,7 +357,7 @@ Source: `documentation/metricas-proyecto.en.md`; `documentation/validacion-y-qa.
 ### 16. Conclusions — [expanded]
 
 - Data-driven decisions, not perceptions.
-- 88.8% reason agreement between the computation and the human expert (a specific figure,
+- 88.7% reason agreement between the computation and the human expert (a specific figure,
   no longer a loose "88%").
 - Total separation of responsibilities: statistics diagnoses, the LLM interprets.
 - The dashboard always serves instant information, without recomputing anything on the fly.

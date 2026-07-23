@@ -33,3 +33,12 @@ This logic was integrated into the classifier architecture and was deployed in t
 ## Consequences
 * **Positive:** The classifier achieves absolute conceptual purity. Blind elimination is avoided, and Phase 3 is provided with a clean data structure that allows the LLM to understand the exact difference between "lack of information" and "efficient operation within permitted tolerances."
 * **Negative:** The final business reporting must be aware of this sub-taxonomy to avoid misinterpreting all "Indeterminate" cases as critical failures of the data extraction system.
+
+## Note (2026-07-22)
+The counts cited above (39 orders, 15 `sin_datos`, 24 `sin_causa_dominante`) reflect the split
+in effect when this decision was closed (2026-06-18). The closing note of
+[ADR-03b](ARD-03b.en.md) (2026-07-22) fixed a classifier gate that excluded Vendor without its
+own condition: 8 of the 39 orders migrated from `sin_datos` to Vendor, leaving the current
+split at 31 (7 `sin_datos` + 24 `sin_causa_dominante`). This decision is not reopened — the
+sub-taxonomy and its two mutually exclusive criteria remain current exactly as described
+above.

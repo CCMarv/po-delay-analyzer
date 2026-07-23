@@ -82,16 +82,16 @@ The complete detail of setup and execution resides in [CONTRIBUTING.md](CONTRIBU
 | F3 — LLM Integration | closed | Wired production: few-shot C3 on `gpt-4o-mini` (OpenAI, official backend); `po_output.csv` generated. Continues as deferred work: lanes 2 (agentic) and 3 (local judge) of [ADR-16](documentation/decisiones/ARD-16.en.md); scope of the model card under deliberation (Discussion #80). |
 | F4 — App + Evaluation | closed | Streamlit app with two views —individual (#163) and aggregated (#164)— rebuilt on the design system of the phase (ARD-17/ARD-22/ARD-23), plus a **Telegram bot** ([ADR-20](documentation/decisiones/ARD-20.en.md)) as a second channel for fixed commands on the same contract. Deferred: the *conversational* chatbot (#160, lane 3 of ADR-16) — distinct capability from the Telegram bot, which is already built. |
 
-Distribution of stages across **247 delayed POs**: Vendor 131 (53.0%) · Carrier 40 (16.2%) ·
-DC 37 (15.0%) · Indeterminate 39 (15.8%).
+Distribution of stages across **247 delayed POs**: Vendor 139 (56.3%) · Carrier 40 (16.2%) ·
+DC 37 (15.0%) · Indeterminate 31 (12.6%).
 
 Header results (population, threshold, and reproducible source of each figure in
 [metricas-proyecto.md](documentation/metricas-proyecto.en.md)):
 
 | Metric | Value | Mentor Threshold |
 |---|---|---|
-| Stage accuracy | 100% (208/208) | > 80% ✅ |
-| Reason agreement | 88.8% (174/196) | reference (not threshold) |
+| Stage accuracy | 100% (216/216) | > 80% ✅ |
+| Reason agreement | 88.7% (180/203) | reference (not threshold) |
 | LLM Explanation Quality | 5/5 (few-shot C3, revalidated at temp. 0.9) | > 4/5 ✅ |
 | Severity Ranking | 100% (14/14) | > 95% ✅ |
 

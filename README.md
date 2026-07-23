@@ -91,16 +91,16 @@ comandos.
 | F3 — Integración LLM | cerrada | Producción cableada: few-shot C3 sobre `gpt-4o-mini` (OpenAI, backend oficial); `po_output.csv` generado. Continúa como trabajo diferido: carriles 2 (agéntico) y 3 (juez local) de [ADR-16](documentation/decisiones/ARD-16.md); alcance del model card en deliberación (Discussion #80). |
 | F4 — App + evaluación | cerrada | App Streamlit con dos vistas —individual (#163) y agregada (#164)— reconstruidas sobre el sistema de diseño de la fase (ARD-17/ARD-22/ARD-23), más un **bot de Telegram** ([ADR-20](documentation/decisiones/ARD-20.md)) como segundo canal de comandos fijos sobre el mismo contrato. Diferido: el chatbot *conversacional* (#160, carril 3 de ADR-16) — capacidad distinta al bot de Telegram, que ya está construido. |
 
-Reparto de etapas sobre los **247 POs tardíos**: Vendor 131 (53.0%) · Carrier 40 (16.2%) ·
-DC 37 (15.0%) · Indeterminado 39 (15.8%).
+Reparto de etapas sobre los **247 POs tardíos**: Vendor 139 (56.3%) · Carrier 40 (16.2%) ·
+DC 37 (15.0%) · Indeterminado 31 (12.6%).
 
 Resultados cabecera (población, umbral y fuente reproducible de cada cifra en
 [metricas-proyecto.md](documentation/metricas-proyecto.md)):
 
 | Métrica | Valor | Umbral del mentor |
 |---|---|---|
-| Stage accuracy | 100% (208/208) | > 80% ✅ |
-| Reason agreement | 88.8% (174/196) | referencia (no umbral) |
+| Stage accuracy | 100% (216/216) | > 80% ✅ |
+| Reason agreement | 88.7% (180/203) | referencia (no umbral) |
 | LLM Explanation Quality | 5/5 (few-shot C3, revalidado a temp. 0.9) | > 4/5 ✅ |
 | Severity Ranking | 100% (14/14) | > 95% ✅ |
 

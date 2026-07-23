@@ -42,10 +42,10 @@ una app Streamlit multipágina y un bot de Telegram como canal adicional de lect
 
 Las cifras que resumen el estado validado del proyecto, todas trazables a su artefacto o conteo real:
 
-- Reparto de los 247 POs tardíos por etapa responsable: Vendor 53.0% (131), Carrier 16.2% (40), DC
-  15.0% (37), Indeterminado 15.8% (39, desglosados en 15 `sin_datos` + 24 `sin_causa_dominante`).
-- Stage accuracy 100% (208/208 evaluables) frente al umbral del mentor de >80%.
-- Reason agreement 88.8% (174/196 clasificables): el <100% es esperado y deseado.
+- Reparto de los 247 POs tardíos por etapa responsable: Vendor 56.3% (139), Carrier 16.2% (40), DC
+  15.0% (37), Indeterminado 12.6% (31, desglosados en 7 `sin_datos` + 24 `sin_causa_dominante`).
+- Stage accuracy 100% (216/216 evaluables) frente al umbral del mentor de >80%.
+- Reason agreement 88.7% (180/203 clasificables): el <100% es esperado y deseado.
 - LLM Explanation Quality 5/5 (20/20) en el benchmark de calidad, few-shot C3 a temperatura 0.9.
 - Severity ranking 100% (14/14) frente al umbral de >95%.
 - Suite de pruebas: 266 casos que recolecta `pytest --collect-only -q` — 230 funciones `def test_` en
@@ -248,8 +248,8 @@ Cuando ningún tramo aplica, el PO cae en Indeterminado, con una subclase que di
 umbral) — [ADR-07](decisiones/ARD-07.md) documenta que la opción descartada fue enviar estos casos a
 Vendor "por descarte", que reintroduciría sesgo silenciosamente.
 
-El reparto resultante sobre los 247 tardíos es Vendor 131 (53.0%), Carrier 40 (16.2%), DC 37 (15.0%)
-e Indeterminado 39 (15.8%, 15 `sin_datos` + 24 `sin_causa_dominante`). La severidad reparte MEDIUM
+El reparto resultante sobre los 247 tardíos es Vendor 139 (56.3%), Carrier 40 (16.2%), DC 37 (15.0%)
+e Indeterminado 31 (12.6%, 7 `sin_datos` + 24 `sin_causa_dominante`). La severidad reparte MEDIUM
 131, LOW 82, HIGH 34: HIGH cuando el PO es hot y el retraso supera 3 días, LOW cuando el retraso es
 menor a 1 día, MEDIUM en el resto; los agravantes (`is_short_lead`, `is_short_ship`) suben un nivel
 sin pasar de HIGH.
@@ -265,7 +265,7 @@ subir el umbral migran todos a `sin_causa_dominante`, nunca a Carrier ni DC — 
 culpa, solo aísla los push que no alcanzan a ser señal.
 
 El contraste con la anotación humana es la tesis del proyecto en su forma más medible: reason
-agreement 88.8% sobre 196 clasificables. `select_mismatches()` extrae los mismatches ordenados por
+agreement 88.7% sobre 203 clasificables. `select_mismatches()` extrae los mismatches ordenados por
 "fuerza de señal" (el exceso de la etapa que el cómputo eligió), con un modo `stratify=True` que
 reparte la selección entre las tres etapas atribuibles en vez de tomar los más fuertes en bruto (que
 serían casi todos Vendor) — este modo es el que alimenta el pool few-shot de Fase 3.
@@ -286,7 +286,7 @@ orquestada por `classify_po_stages()` en cuatro pasos encadenados: `_flags_por_u
 [`metrics_core.py`](../02_clasif_reglas_negocio/metrics_core.py): `gap_dominante()` calcula, de forma
 **independiente** de `stage_primary`, cuál tramo tuvo la mayor duración bruta sobre una secuencia
 acotada de hitos (excluyendo el lead time de compra y todo lo posterior a checkout); `stage_accuracy()`
-compara ambas métricas sobre la población evaluable — 100% (208/208) no es circular: converge porque
+compara ambas métricas sobre la población evaluable — 100% (216/216) no es circular: converge porque
 cuando hay STA push ese tramo es de días (domina la duración) y a la vez es la señal de exceso de
 vendor, pero un desacuerdo sería multicausalidad, no un error del método.
 
@@ -388,8 +388,8 @@ Existe una segunda métrica de desacuerdo AI-vs-humano, distinta del reason agre
 `llm_coincide_con_reason` es un juicio binario que el propio LLM emite por PO comparando su
 diagnóstico contra `REASON_DSC`. Sobre las 247 filas de `po_output.csv`: 152 `True` / 95 `False`,
 38.5% de desacuerdo. Es una cifra correlacionada pero no intercambiable con el reason agreement de
-Fase 2 (88.8% sobre 196 clasificables): distinto método (juicio del LLM vs. regla determinística de
-`metrics_core.py`), distinto denominador (247 vs. 196) y distinta fuente.
+Fase 2 (88.7% sobre 203 clasificables): distinto método (juicio del LLM vs. regla determinística de
+`metrics_core.py`), distinto denominador (247 vs. 203) y distinta fuente.
 
 #### Implementación
 
@@ -682,8 +682,8 @@ F1→F2, F2→F3 y F3→F4.
 
 | Métrica | Valor | Umbral mentor | Denominador |
 |---|---|:--:|---|
-| Stage accuracy | 100% (208/208) | > 80% | 208 evaluables |
-| Reason agreement | 88.8% (174/196) | referencia, no umbral | 196 clasificables |
+| Stage accuracy | 100% (216/216) | > 80% | 216 evaluables |
+| Reason agreement | 88.7% (180/203) | referencia, no umbral | 203 clasificables |
 | Severity ranking | 100% (14/14) | > 95% | 14 hot-late, sobre `po_output.csv` |
 
 **Capa D — CI como gate de merge.** El workflow
@@ -824,8 +824,9 @@ verificado del código:
 - [ADR-06b](decisiones/ARD-06b.md) (umbral de vendor = 24h) tiene el umbral bien implementado y
   verificado (distribución bimodal recomputada: 12 POs ≤6h, hueco 6h-18h vacío, 141 POs ≥18h), pero
   citaba en Consecuencias una mejora de Reason agreement de **88.7% a 89.7%** al adoptarlo. Recalculando
-  la métrica sobre el dataset real, el umbral de 24h efectivamente adoptado da 88.8% (coincide con
-  `02_clasif_reglas_negocio/README.md` §5.4, prácticamente igual al baseline); 89.7% corresponde al
+  la métrica sobre el dataset real, el umbral de 24h efectivamente adoptado da 88.7% (coincide con
+  `02_clasif_reglas_negocio/README.md` §5.4, cifra recalculada el mismo día tras el fix del gate
+  `decidible` de ADR-03b — antes de ese fix daba 88.8%); 89.7% corresponde al
   escenario de 72h, que el propio ADR descarta a favor de 24h. **Corregido** (nota de cierre ARD-06b,
   2026-07-22, sin reabrir la decisión del umbral).
 - [ADR-17](decisiones/ARD-17.md) (lenguaje visual y color de la taxonomía) afirmaba haber **verificado

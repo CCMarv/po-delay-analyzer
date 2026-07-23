@@ -63,7 +63,7 @@ evidencia entre los hallazgos, los mismatches documentados y la demo en vivo.
 El proyecto reporta dos cifras distintas bajo la idea de "desacuerdo con el humano", y la
 presentación y el guion de demo las citan por separado para no confundirlas:
 
-- **Reason agreement (la cifra canónica, con umbral del mentor):** 88.8% (174/196). La
+- **Reason agreement (la cifra canónica, con umbral del mentor):** 88.7% (180/203). La
   calcula `metrics_core.py` en la Fase 2 comparando `stage_primary` (el cómputo) contra
   `reason_group_manual` (una agrupación curada de `REASON_DSC`). Es la cifra que cita la
   slide de Validación y Métricas.
@@ -208,8 +208,8 @@ Fuente: `documentation/decisiones/ARD-11.md`, `ARD-12.md`, `ARD-13.md`, `ARD-14.
 - La etapa se decide por exceso sobre una ventana esperada, no por duración bruta: vendor 24h
   (aprobación tardía de la cita), carrier 8h, yard 4h, dock 6h. Los umbrales están respaldados
   por un análisis de sensibilidad, no elegidos a mano.
-- Reparto resultante sobre los 247 tardíos: Vendor 53.0% (131), Carrier 16.2% (40), DC 15.0%
-  (37), Indeterminado 15.8% (39). Indeterminado se desglosa en 15 sin datos (sin hora de
+- Reparto resultante sobre los 247 tardíos: Vendor 56.3% (139), Carrier 16.2% (40), DC 15.0%
+  (37), Indeterminado 12.6% (31). Indeterminado se desglosa en 7 sin datos (sin hora de
   tráiler) y 24 sin causa dominante (medibles, pero ningún tramo excede su umbral).
 - Severidad determinística: HIGH si el PO es urgente ("hot") y el retraso supera 3 días; LOW
   si el retraso es menor a 1 día (borderline); MEDIUM en el resto. Reparto: MEDIUM 131, LOW
@@ -227,7 +227,7 @@ Fuente: `documentation/explicacion-proyecto.md` (Fase 2).
   operacional: la señal cubre el 100% del dataset, incluidos los 27 PO sin registro de
   tráiler, que un modelo por residuo no podía resolver.
 - Taxonomía de Indeterminado: sub-categoría `indeterminado_substage` con dos criterios
-  mutuamente excluyentes — `sin_datos` (15 PO, falta un dato atómico en el origen) vs.
+  mutuamente excluyentes — `sin_datos` (7 PO, falta un dato atómico en el origen) vs.
   `sin_causa_dominante` (24 PO, datos completos pero ningún tramo excede su umbral) —
   decisión explícita del mentor (Ronda 2, 2026-06-18) para no forzar una atribución por
   eliminación.
@@ -337,13 +337,13 @@ cuenta como avance.
 
 | Métrica | Valor | Umbral del mentor |
 |---|---|:--:|
-| Stage accuracy | 100% (208/208) | > 80% ✅ |
-| Reason agreement | 88.8% (174/196) | referencia, no umbral (es el hallazgo central) |
+| Stage accuracy | 100% (216/216) | > 80% ✅ |
+| Reason agreement | 88.7% (180/203) | referencia, no umbral (es el hallazgo central) |
 | Severity Ranking | 100% (14/14) | > 95% ✅ |
 | LLM Explanation Quality | 5/5 (20/20) | 4/5 (80%) ✅ |
 
 - Suite de pruebas: 251 tests en verde, gate de merge en cada PR.
-- Los denominadores no son intercambiables: 208 evaluables, 196 clasificables, 14 hot-late y
+- Los denominadores no son intercambiables: 216 evaluables, 203 clasificables, 14 hot-late y
   20 muestreados responden preguntas distintas (detalle en `metricas-proyecto.md`).
 
 Notas del orador: esta slide reemplaza la única cifra que traía v1 (88% suelto en
@@ -355,7 +355,7 @@ Fuente: `documentation/metricas-proyecto.md`; `documentation/validacion-y-qa.md`
 ### 16. Conclusiones — [enriquece]
 
 - Decisiones basadas en datos, no en percepciones.
-- Reason agreement de 88.8% entre el cómputo y el experto humano (cifra específica, ya no
+- Reason agreement de 88.7% entre el cómputo y el experto humano (cifra específica, ya no
   "88%" suelto).
 - Separación total de responsabilidades: la estadística diagnostica, el LLM interpreta.
 - El dashboard siempre sirve información instantánea, sin recomputar nada en caliente.

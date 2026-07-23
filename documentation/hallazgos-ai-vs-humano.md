@@ -14,14 +14,14 @@ intercambiables; cada cifra se cita con su población y no se recalcula aquí.
 
 ## 1. Dónde el cómputo supera a la anotación humana
 
-El cómputo temporal coincide con la anotación humana en 88.8% de los POs clasificables
-(174/196) y discrepa en el ~11% restante. Ese desacuerdo no es error del método: son las 22
+El cómputo temporal coincide con la anotación humana en 88.7% de los POs clasificables
+(180/203) y discrepa en el ~11% restante. Ese desacuerdo no es error del método: son las 23
 discrepancias donde el reason code heredado se aparta de lo que dicen los timestamps, y la
 evidencia apunta a que los timestamps tienen razón. El dato del mentor lo respalda: la
 anotación humana es aproximadamente 20% incorrecta, así que un método que discrepa donde la
 anotación falla es precisamente lo que se busca.
 
-De esas 22 discrepancias medidas, ocho se narran en detalle como muestra estratificada (tres
+De esas 23 discrepancias medidas, ocho se narran en detalle como muestra estratificada (tres
 Vendor, tres Carrier, dos DC) en la narración de mismatches. Los ocho exhiben un mismo
 fenómeno en dos variantes.
 
@@ -43,29 +43,29 @@ etapa que el cómputo señala, no con la etapa a la que quedó archivado; es dec
 redacción humana del motivo es ambigua frente a la taxonomía de tres etapas. La fuente de
 verdad sigue siendo el timestamp, no la anotación ni la lectura que el LLM hace de ella.
 
-Referencias: reason agreement 88.8% (174/196) y las 22 discrepancias en
+Referencias: reason agreement 88.7% (180/203) y las 23 discrepancias en
 `documentation/metricas-proyecto.md` (fila 2 y nota de contexto); el patrón transversal y los
 ocho casos en `03_llm_integration/mismatches_ai_vs_humano.md`.
 
 ## 2. Dónde el método falla y cuáles son sus límites
 
 El método tiene puntos ciegos, y su valor está en que los declara en lugar de adivinar. De
-los 247 POs tardíos, 39 quedan clasificados como Indeterminado porque el cómputo no puede
-sostener una causa dominante. Ese 39 se desglosa en dos límites distintos.
+los 247 POs tardíos, 31 quedan clasificados como Indeterminado porque el cómputo no puede
+sostener una causa dominante. Ese 31 se desglosa en dos límites distintos.
 
-Quince POs quedan como `sin_datos`: son tardíos pero carecen de `TRAILER_ARRIVE_DT`, así que
+Siete POs quedan como `sin_datos`: son tardíos pero carecen de `TRAILER_ARRIVE_DT`, así que
 no hay forma de medir los tramos de carrier y DC. Conviene precisar el alcance de este hueco:
 en total 27 POs carecen de hora de tráiler, pero la regla que asigna Vendor por STA push
 (`APPROVED_DT > STA_DT`) los rescata porque mide la aprobación tardía sin necesitar el
-tráiler. Solo los 15 que además no tienen señal de vendor quedan sin diagnóstico. El diseño
-recupera la mayoría de los registros con datos faltantes; el punto ciego real son esos 15.
+tráiler. Solo los 7 que además no tienen señal de vendor quedan sin diagnóstico. El diseño
+recupera la mayoría de los registros con datos faltantes; el punto ciego real son esos 7.
 
 Veinticuatro POs quedan como `sin_causa_dominante`: son medibles, pero ninguno de sus tramos
 excede su umbral, de modo que no hay un eslabón al que atribuir el retraso con evidencia. El
 método prefiere marcarlos Indeterminado antes que forzar una etiqueta sin respaldo temporal.
 
-La consecuencia es que la exactitud de etapa de 100% se mide sobre 208 POs evaluables (247
-menos los 39 Indeterminados), no sobre la población completa. El método no adivina lo que no
+La consecuencia es que la exactitud de etapa de 100% se mide sobre 216 POs evaluables (247
+menos los 31 Indeterminados), no sobre la población completa. El método no adivina lo que no
 puede medir: lo marca Indeterminado y lo deja para revisión humana.
 
 Del lado del LLM, la calidad de las explicaciones no es gratuita: depende del diseño del
@@ -77,7 +77,7 @@ ingeniería del prompt, no el modelo. Esto implica un riesgo operativo: cambiar 
 puede degradar la calidad sin aviso, y las explicaciones de baja confianza siguen requiriendo
 criterio humano.
 
-Referencias: desglose de Indeterminado (15 `sin_datos` + 24 `sin_causa_dominante`) y los 208
+Referencias: desglose de Indeterminado (7 `sin_datos` + 24 `sin_causa_dominante`) y los 216
 evaluables en `documentation/metricas-proyecto.md` (filas 1 y 5, sección de poblaciones); la
 regla Vendor por STA push y los 27 sin hora de tráiler en
 `02_clasif_reglas_negocio/README.md`; la comparación zero-shot contra few-shot C3 en
@@ -100,13 +100,13 @@ analista puede confiar en ese ranking para decidir el orden de atención sin rec
 severidad a mano.
 
 Qué revisar primero. Los POs hot-late (`HOT_PO_FLAG=1` con retraso mayor a tres días) son el
-primer frente por su severidad. Después, el grueso del retraso vive en Vendor: 131 de los 247
-tardíos (53%) se atribuyen a aprobación tardía, así que ahí está la mayor palanca de mejora
-sistémica. Y en paralelo, las 22 discrepancias entre cómputo y anotación marcan exactamente
+primer frente por su severidad. Después, el grueso del retraso vive en Vendor: 139 de los 247
+tardíos (56%) se atribuyen a aprobación tardía, así que ahí está la mayor palanca de mejora
+sistémica. Y en paralelo, las 23 discrepancias entre cómputo y anotación marcan exactamente
 dónde no confiar en el reason code heredado.
 
 Referencias: severidad LLM y Severity Ranking 14/14 en `documentation/metricas-proyecto.md`
-(fila 4) y `documentation/decisiones/ARD-10.md`; reparto de etapas (Vendor 131, 53%) en
+(fila 4) y `documentation/decisiones/ARD-10.md`; reparto de etapas (Vendor 139, 56%) en
 `documentation/metricas-proyecto.md` (fila 5).
 
 ## 4. Recomendaciones para producción

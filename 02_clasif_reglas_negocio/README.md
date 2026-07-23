@@ -68,7 +68,7 @@ ver [ADR-03b](../documentation/decisiones/ARD-03b.md).)*
 Vendor domina (56%) por encima del ~20% del kickoff. Tras la consulta del mentor (06-17),
 vendor lleva **umbral propio (24h)** para corregir la *asimetría de construcción*: antes
 disparaba con cualquier push positivo mientras carrier/DC exigían 8/4/6h, así que absorbía por
-default. El 53% **lo soporta el dato, no la regla de disparo**: la distribución del push es
+default. El 56% **lo soporta el dato, no la regla de disparo**: la distribución del push es
 **bimodal** — 12 POs con push casi-cero (≤6h) y 141 con push de días (mediana 3.1 días), con un
 **hueco vacío entre 6h y 18h** (ningún PO). Las órdenes tardías lo son casi siempre porque la
 cita se aprobó tarde. *(La correlación push↔retraso total es alta por construcción —un retraso

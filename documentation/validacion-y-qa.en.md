@@ -39,11 +39,11 @@ What it guarantees. The header figures of the deliverable are calculated from th
 
 | Metric            | Value             | Mentor Threshold | Denominator                                                |
 |-------------------|-------------------|:----------------:|----------------------------------------------------------|
-| Stage accuracy     | 100% (208/208)    | > 80%            | 208 evaluable (247 late − 39 Indeterminate with no measurable gap) |
-| Reason agreement   | 88.8% (174/196)   | reference, not threshold | 196 classifiable (late with non-null human annotation)   |
+| Stage accuracy     | 100% (216/216)    | > 80%            | 216 evaluable (247 late − 31 Indeterminate with no measurable gap) |
+| Reason agreement   | 88.7% (180/203)   | reference, not threshold | 203 classifiable (late with non-null human annotation)   |
 | Severity ranking   | 100% (14/14)      | > 95%            | 14 hot-late (`HOT_PO_FLAG=1` and `delay_days_calc > 3`), on `po_output.csv` (severity = LLM) |
 
-Stage accuracy compares the stage by excess over threshold (`stage_primary`) against the dominant gap (the segment of longest gross duration): it measures whether the classification rule aligns with where the PO actually spent more time. Reason agreement compares the temporal computation against the human annotation `REASON_DSC`, and here the <100% is expected and desired: the human annotation is approximately 20% incorrect, so the 22 mismatches are evidence of the project's thesis — the computation through timestamps corrects the inherited reason code — not a failure of the method. The severity ranking is measured against the official severity of the deliverable, which **is that of the LLM** (`severity ← llm_severidad`, ADR-10), not the deterministic rule of F2. Therefore, the measurement is empirical — it validates if the LLM respected `hot & delay>3 ⇒ HIGH`, not assuming it — and can in principle yield less than 100%; that it gives 14/14 is an observed result, not a guarantee "by construction." The F2 rule is preserved as an auditing baseline (that does give 14/14 by construction, by design) and is the reference against which the LLM is contrasted (see "LLM Severity Divergence vs Rule" below).
+Stage accuracy compares the stage by excess over threshold (`stage_primary`) against the dominant gap (the segment of longest gross duration): it measures whether the classification rule aligns with where the PO actually spent more time. Reason agreement compares the temporal computation against the human annotation `REASON_DSC`, and here the <100% is expected and desired: the human annotation is approximately 20% incorrect, so the 23 mismatches are evidence of the project's thesis — the computation through timestamps corrects the inherited reason code — not a failure of the method. The severity ranking is measured against the official severity of the deliverable, which **is that of the LLM** (`severity ← llm_severidad`, ADR-10), not the deterministic rule of F2. Therefore, the measurement is empirical — it validates if the LLM respected `hot & delay>3 ⇒ HIGH`, not assuming it — and can in principle yield less than 100%; that it gives 14/14 is an observed result, not a guarantee "by construction." The F2 rule is preserved as an auditing baseline (that does give 14/14 by construction, by design) and is the reference against which the LLM is contrasted (see "LLM Severity Divergence vs Rule" below).
 
 What it breaks if it fails. If one of these figures moves outside the threshold, the classifier has deviated from the timestamps (the source of truth) without notice, and the traceability of the figures supporting the report is lost.
 
@@ -70,8 +70,8 @@ pytest                                                 # 266 passed
 The anchor figures that must be obtained:
 
 - Test suite: 266 passing. The suite grew with each phase (from 57 to 99 to 114 to 244 to 251 to 266); the current value is 266.
-- Stage accuracy 100% (208/208), reason agreement 88.8% (174/196), severity ranking 100% (14/14, severity = LLM).
-- Breakdown of stages over the 247 late: Vendor 131 (53.0%), Carrier 40 (16.2%), DC 37 (15.0%), Indeterminate 39 (15.8%).
+- Stage accuracy 100% (216/216), reason agreement 88.7% (180/203), severity ranking 100% (14/14, severity = LLM).
+- Breakdown of stages over the 247 late: Vendor 139 (56.3%), Carrier 40 (16.2%), DC 37 (15.0%), Indeterminate 31 (12.6%).
 - LLM Explanation Quality 5/5 (20/20), few-shot C3 at temperature 0.9 (production configuration; requires API — see detail and progression in `documentation/metricas-proyecto.md`).
 - LLM Severity Divergence vs Rule F2: 213/247 (86.2%) match; 34/247 (13.8%) diverge, always scaling (see section above).
 
@@ -81,16 +81,16 @@ All are traceable to `documentation/metricas-proyecto.md`, which documents the p
 
 Validation not only confirms the happy path; it covers edge cases where the data is partial or anomalous, and the design prefers to declare the limit rather than guess.
 
-27 POs without trailer time. They lack `TRAILER_ARRIVE_DT`, making the carrier and DC segments not measurable. The rule that assigns Vendor by STA push (`APPROVED_DT > STA_DT`) rescues 12 of them, as it measures late approval without needing the trailer; the remaining 15 remain as `sin_datos` within Indeterminate. The quality flag that marks them is covered by `tests/test_pipeline_core.py`, and the breakdown is in `documentation/metricas-proyecto.md`.
+27 POs without trailer time. They lack `TRAILER_ARRIVE_DT`, making the carrier and DC segments not measurable. The rule that assigns Vendor by STA push (`APPROVED_DT > STA_DT`) rescues 20 of them, as it measures late approval without needing the trailer; the remaining 7 remain as `sin_datos` within Indeterminate. *(Before the `decidible` gate fix from [ARD-03b](decisiones/ARD-03b.en.md), 2026-07-22, only 12 were rescued: the gate excluded 8 POs with measurable excess from Vendor attribution by not requiring that condition on its own.)* The quality flag that marks them is covered by `tests/test_pipeline_core.py`, and the breakdown is in `documentation/metricas-proyecto.md`.
 
 12 temporal inversions. The flag `_ts_issue` marks 12 POs where `CHECKOUT_DT < CHECKIN_DT`, a sequence anomaly recorded in `documentation/data_dictionary.md`. The pipeline truncates the affected segment to zero (`clip ≥ 0`) instead of propagating a negative duration. Of those 12, 11 are the subset with a dock discrepancy greater than one hour compared to the precalculated column. Coverage is in `tests/test_pipeline_core.py`.
 
 Round-trip CSV preserving `"Ninguno"`. Described in Layer B: the choice of sentinel `"Ninguno"` over `"None"` or the empty string prevents the signal of "no secondary stage" from being lost as NaN during serialization. Verified by `tests/test_handoff_contract.py`.
 
-Two populations of 39 that should not be confused. The figure 39 appears twice over different sets, and mixing them would lead to a misreading:
+F1 population (39) and F2 population (31) that should not be confused. They come from different sets; before the `decidible` gate fix from ARD-03b (2026-07-22) they numerically coincided at 39, which made them easier to conflate — that coincidence is gone, but they still should not be mixed:
 
 - In F1, 39 unreliable POs = 12 temporal inversions + 27 without trailer time, with zero overlap between the two groups, out of the 400 POs in the dataset. Baseline metrics are reported on the remaining 361 reliable ones.
-- In F2, 39 Indeterminate POs = 15 `sin_datos` + 24 `sin_causa_dominante`, out of the 247 late POs. It is the population subtracted from the 247 to obtain the 208 evaluable for stage accuracy.
+- In F2, 31 Indeterminate POs = 7 `sin_datos` + 24 `sin_causa_dominante`, out of the 247 late POs. It is the population subtracted from the 247 to obtain the 216 evaluable for stage accuracy.
 
 These are two different sets that coincidentally match in number; the document keeps them separate intentionally.
 

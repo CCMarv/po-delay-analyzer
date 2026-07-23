@@ -82,15 +82,15 @@ mentor. El módulo `02_clasif_reglas_negocio/metrics_core.py` las produce: `stag
 
 | Métrica | Valor | Umbral mentor | Denominador |
 |---|---|:--:|---|
-| Stage accuracy | 100% (208/208) | > 80% | 208 evaluables (247 tardíos − 39 Indeterminados sin gap medible) |
-| Reason agreement | 88.8% (174/196) | referencia, no umbral | 196 clasificables (tardíos con anotación humana no nula) |
+| Stage accuracy | 100% (216/216) | > 80% | 216 evaluables (247 tardíos − 31 Indeterminados sin gap medible) |
+| Reason agreement | 88.7% (180/203) | referencia, no umbral | 203 clasificables (tardíos con anotación humana no nula) |
 | Severity ranking | 100% (14/14) | > 95% | 14 hot-late (`HOT_PO_FLAG=1` y `delay_days_calc > 3`), sobre `po_output.csv` (severidad = LLM) |
 
 Stage accuracy compara la etapa por exceso sobre umbral (`stage_primary`) contra el gap
 dominante (el tramo de mayor duración bruta): mide si la regla de clasificación coincide con
 dónde el PO realmente pasó más tiempo. Reason agreement compara el cómputo temporal contra la
 anotación humana `REASON_DSC`, y aquí el <100% es esperado y deseado: la anotación humana es
-aproximadamente 20% incorrecta, así que los 22 mismatches son la evidencia de la tesis del
+aproximadamente 20% incorrecta, así que los 23 mismatches son la evidencia de la tesis del
 proyecto —el cómputo por timestamps corrige al reason code heredado—, no un fallo del método.
 El severity ranking se mide sobre la severidad oficial del entregable, que **es la del LLM**
 (`severity ← llm_severidad`, ADR-10), no la regla determinística de F2. Por eso la medición es
@@ -140,10 +140,10 @@ Las cifras ancla que debe obtener:
 
 - Suite de tests: 266 pasando. La suite creció con cada fase (de 57 a 99 a 114 a 244 a 251 a
   266); el valor vigente es 266.
-- Stage accuracy 100% (208/208), reason agreement 88.8% (174/196), severity ranking 100%
+- Stage accuracy 100% (216/216), reason agreement 88.7% (180/203), severity ranking 100%
   (14/14, severidad = LLM).
-- Reparto de etapas sobre los 247 tardíos: Vendor 131 (53.0%), Carrier 40 (16.2%), DC 37
-  (15.0%), Indeterminado 39 (15.8%).
+- Reparto de etapas sobre los 247 tardíos: Vendor 139 (56.3%), Carrier 40 (16.2%), DC 37
+  (15.0%), Indeterminado 31 (12.6%).
 - LLM Explanation Quality 5/5 (20/20), few-shot C3 a temperatura 0.9 (configuración de
   producción; requiere API — ver detalle y progresión en `documentation/metricas-proyecto.md`).
 - Divergencia de severidad LLM vs regla F2: 213/247 (86.2%) coinciden; 34/247 (13.8%)
@@ -158,10 +158,13 @@ La validación no solo confirma el camino feliz; cubre los casos límite donde e
 o anómalo, y el diseño prefiere declarar el límite antes que adivinar.
 
 27 POs sin hora de tráiler. Carecen de `TRAILER_ARRIVE_DT`, con lo que los tramos de carrier y
-DC no son medibles. La regla que asigna Vendor por STA push (`APPROVED_DT > STA_DT`) rescata 12
-de ellos, porque mide la aprobación tardía sin necesitar el tráiler; los 15 restantes quedan
-como `sin_datos` dentro de Indeterminado. La flag de calidad que los marca está cubierta por
-`tests/test_pipeline_core.py`, y el desglose está en `documentation/metricas-proyecto.md`.
+DC no son medibles. La regla que asigna Vendor por STA push (`APPROVED_DT > STA_DT`) rescata 20
+de ellos, porque mide la aprobación tardía sin necesitar el tráiler; los 7 restantes quedan
+como `sin_datos` dentro de Indeterminado. *(Antes del fix del gate `decidible` de
+[ARD-03b](decisiones/ARD-03b.md), 2026-07-22, solo 12 se rescataban: el gate excluía de la
+atribución a Vendor a 8 POs con exceso medible por no exigir esa condición propia.)* La flag de
+calidad que los marca está cubierta por `tests/test_pipeline_core.py`, y el desglose está en
+`documentation/metricas-proyecto.md`.
 
 12 inversiones temporales. La flag `_ts_issue` marca 12 POs donde `CHECKOUT_DT < CHECKIN_DT`,
 una anomalía de secuencia registrada en `documentation/data_dictionary.md`. El pipeline trunca
@@ -173,14 +176,16 @@ Round-trip CSV que preserva `"Ninguno"`. Descrito en la Capa B: la elección del
 `"Ninguno"` sobre `"None"` o la cadena vacía es lo que evita que la señal de "sin etapa
 secundaria" se pierda como NaN al serializar. Verificado por `tests/test_handoff_contract.py`.
 
-Dos poblaciones de 39 que no deben confundirse. La cifra 39 aparece dos veces sobre conjuntos
-distintos, y mezclarlas llevaría a una lectura errónea:
+Población de F1 (39) y de F2 (31) que no deben confundirse. Ambas provienen de conjuntos
+distintos; antes del fix del gate `decidible` de ARD-03b (2026-07-22) coincidían numéricamente
+en 39, lo que hacía más fácil confundirlas — la coincidencia desapareció, pero conviene seguir
+sin mezclarlas:
 
 - En F1, 39 POs no confiables = 12 inversiones temporales + 27 sin hora de tráiler, con
   solapamiento cero entre ambos grupos, sobre los 400 POs del dataset. Las métricas baseline se
   reportan sobre los 361 confiables restantes.
-- En F2, 39 POs Indeterminado = 15 `sin_datos` + 24 `sin_causa_dominante`, sobre los 247 POs
-  tardíos. Es la población que se resta a los 247 para obtener los 208 evaluables del stage
+- En F2, 31 POs Indeterminado = 7 `sin_datos` + 24 `sin_causa_dominante`, sobre los 247 POs
+  tardíos. Es la población que se resta a los 247 para obtener los 216 evaluables del stage
   accuracy.
 
 Son dos conjuntos diferentes que coinciden en el número; el documento los mantiene separados a
