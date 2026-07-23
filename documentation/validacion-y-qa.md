@@ -133,13 +133,13 @@ con el dataset en `data/raw/`) ejecutando:
 ```
 python 01_data_pipeline_and_eda/pipeline_core.py      # F1 → df_clean
 python 02_clasif_reglas_negocio/classifier_core.py    # F2 → reparto + df_classified
-pytest                                                 # 266 passed
+pytest                                                 # 267 passed
 ```
 
 Las cifras ancla que debe obtener:
 
-- Suite de tests: 266 pasando. La suite creció con cada fase (de 57 a 99 a 114 a 244 a 251 a
-  266); el valor vigente es 266.
+- Suite de tests: 267 pasando. La suite creció con cada fase (de 57 a 99 a 114 a 244 a 251 a
+  267); el valor vigente es 267.
 - Stage accuracy 100% (216/216), reason agreement 88.7% (180/203), severity ranking 100%
   (14/14, severidad = LLM).
 - Reparto de etapas sobre los 247 tardíos: Vendor 139 (56.3%), Carrier 40 (16.2%), DC 37

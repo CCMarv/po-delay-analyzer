@@ -28,7 +28,7 @@ Recorrer, en este orden:
 
 1. Los tres KPIs de la izquierda: total de POs tardíos (247), % de severidad alta, y la KPI
    "Tasa de Desacuerdo AI". **Al llegar a esta última, aclarar en una frase**: esta cifra
-   (hoy ~38.5%, 95/247) es el juicio propio del LLM por PO sobre si su diagnóstico coincide
+   (hoy ~39.7%, 98/247) es el juicio propio del LLM por PO sobre si su diagnóstico coincide
    con el `REASON_DSC` humano — está relacionada, pero no es la misma cifra que el reason
    agreement de 88.8% que se cita en la slide de Validación y Métricas (esa la calcula la
    regla de la Fase 2 contra una agrupación curada, no el LLM). Ver el detalle de por qué son

@@ -69,7 +69,7 @@ and the presentation and demo script cite them separately so they are not confla
   Computed by `metrics_core.py` in Phase 2, comparing `stage_primary` (the computation)
   against `reason_group_manual` (a curated grouping of `REASON_DSC`). This is the figure
   cited on the Validation & Metrics slide.
-- **The "AI Disagreement Rate" KPI seen live in the Ravi view:** currently 38.5% (95/247,
+- **The "AI Disagreement Rate" KPI seen live in the Ravi view:** currently 39.7% (98/247,
   verified against the real CSV). This is `llm_coincide_con_reason`, a binary judgment the
   LLM itself emits per PO while drafting its explanation — one of the five fields of the
   JSON produced by Phase 3 — not the same computation as the figure above. It is correlated

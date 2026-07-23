@@ -1,280 +1,849 @@
 # Project Explanation — PO Delay Root Cause Analyzer
 
-This document is the narrative synthesis of the project, organized by phase and intended to be read continuously: it connects the reasons for each decision —recorded in the ADRs— with the resulting logic and its implementation in the code. It does not replace the formal documents of the repository, the Software Requirements Specification (`SRS.en.md`) and the Software Architecture Document (`SAD.en.md`), which exhaustively and audibly enumerate what the system must do and how it is constructed; this document is the narrative entry point, the reference with which the project is explained and defended from start to finish.
+This document is the narrative synthesis of the project, organized by phase and meant to be read
+start to finish: it connects the reason behind each decision —recorded in the ADRs— with the
+resulting logic and its implementation in the code. It does not replace the repository's formal
+documents, the Software Requirements Specification ([SRS.md](SRS.en.md)) and the Software
+Architecture Document ([SAD.md](SAD.en.md)), which exhaustively and auditably enumerate what the
+system must do and how it is built; this document is the narrative entry point, the reference with
+which the project is explained and defended from beginning to end.
 
 ## Executive Summary
 
-The project analyzes Purchase Orders (POs) that arrived late at a distribution center and answers, for each, three questions: at what stage of the life cycle the delay originated, how severe it is, and what concrete action corrects it. The dataset is synthetic: 400 POs and 39 columns, of which 247 turn out to be late and are the population that the system explains.
+The project analyzes Purchase Orders (POs) that arrived late at a distribution center and answers,
+for each one, three questions: at what stage of the life cycle the delay originated, how severe it
+is, and what concrete action corrects it. The dataset is synthetic: 400 POs and 39 columns, of
+which 247 turn out to be late and form the population the system explains.
 
-The thesis that supports the method is that the timestamps of the life cycle are the source of truth, not human annotation. Each PO carries a `REASON_DSC` written by an operator, but that annotation is approximately 20% incorrect. The system calculates the responsible stage from the dates and contrasts it against the `REASON_DSC`: when they differ, the discrepancy is not an error of the method but evidence that the temporal computation corrects the inherited annotation. The goal is to detect the real reason for the delay, not to reproduce the reason that an operator noted; it is entirely possible that a previously accepted annotation is identified as incorrect once analyzed. That correction is the central finding of the project.
+The thesis behind the method is that the life-cycle timestamps are the source of truth, not the
+human annotation. Each PO carries a `REASON_DSC` written by an operator, but that annotation is
+roughly 20% incorrect. The system computes the responsible stage from the dates and contrasts it
+against `REASON_DSC`: when they differ, the discrepancy is not an error of the method but evidence
+that the temporal computation corrects the inherited annotation.
 
-The solution combines deterministic rules and a language model, with a strict division of labor. The rules resolve all the arithmetic —which segment exceeded its threshold, how much, with what severity— and the LLM interprets that already resolved diagnosis to draft the explanation and action, without recalculating or inventing figures. The work is organized into four linked phases through data contracts: Phase 1 cleans the data and isolates its anomalies; Phase 2 classifies the responsible stage and assigns severity; Phase 3 generates the explanation in natural language; Phase 4 presents the results in a consumer application.
+A concrete finding illustrates the thesis with a figure that earlier project documents did not
+cite: the Phase 1 EDA notebook itself
+([`data_pipeline_and_EDA.ipynb`](../01_data_pipeline_and_eda/data_pipeline_and_EDA.ipynb)), working
+on the precalculated `IS_LATE` column (not on the timestamp computation), reports a lateness rate
+of 41.25% (~165 POs) and a 48.5% mismatch against `REASON_DSC` (80 of 165). Those figures are never
+explicitly reconciled in the notebook's text with Phase 2's canonical figures (247 late via
+`delay_days_calc>0`, 88.8% agreement) — unintentionally, it is a second demonstration of the
+project's thesis: the precalculated source and the timestamp computation produce different
+populations and rates, and it is the computation that gets used downstream.
 
-The figures that summarize the validated state of the project, all traceable to the documentation of metrics and validation:
+The solution combines deterministic rules and a language model, with a strict division of labor.
+The rules resolve all the arithmetic —which segment exceeded its threshold, by how much, at what
+severity— and the LLM interprets that already-resolved diagnosis to draft the explanation and the
+action, without recalculating or inventing figures. The work is organized into four phases chained
+by data contracts: Phase 1 cleans the data and isolates its anomalies; Phase 2 classifies the
+responsible stage and assigns severity; Phase 3 generates the natural-language explanation (and, in
+a parallel surface, an executive synthesis by actor); Phase 4 presents the results across two
+consumption surfaces — a multipage Streamlit app and a Telegram bot as an additional reading
+channel.
 
-- Breakdown of the 247 late POs by responsible stage: Vendor 56.3% (139), Carrier 16.2% (40), DC 15.0% (37), Indeterminate 12.6% (31).
+The figures that summarize the project's validated state, all traceable to their real artifact or
+count:
+
+- Breakdown of the 247 late POs by responsible stage: Vendor 56.3% (139), Carrier 16.2% (40), DC
+  15.0% (37), Indeterminate 12.6% (31, broken down into 7 `sin_datos` + 24 `sin_causa_dominante`).
 - Stage accuracy 100% (216/216 evaluable) against the mentor's threshold of >80%.
-- Reason agreement 88.7% (180/203 classifiable): the <100% is expected and desired, as it measures where the computation corrects human annotation.
-- LLM Explanation Quality 5/5 (20/20) in the quality benchmark.
+- Reason agreement 88.7% (180/203 classifiable): the <100% is expected and desired.
+- LLM Explanation Quality 5/5 (20/20) in the quality benchmark, few-shot C3 at temperature 0.9.
 - Severity ranking 100% (14/14) against the threshold of >95%.
-- Test suite: 251 tests in green as a merge gate.
+- Test suite: 267 cases collected by `pytest --collect-only -q` — 231 `def test_` functions across
+  13 files under [`tests/`](../tests/), some parametrized.
+- Decision record: 28 ADRs ([ADR-01](decisiones/ARD-01.en.md) through
+  [ADR-25](decisiones/ARD-25.en.md), with three numbers carrying two chained variants: 03a/03b,
+  04a/04b, 06a/06b), of which 17 are Current, 5 Superseded, and 6 in Draft — full record in
+  [documentation/decisiones/README.md](decisiones/README.en.md).
 
 ## Phase 1 — Ingestion, Data Quality, and EDA
 
 ### Design
 
-The decision that orders the entire phase is to treat the life cycle timestamps as the only source of truth, and to relegate the precalculated columns from the source CSV (`DELAY_DAYS`, `YARD_WAIT_HRS`, `DOCK_HRS`, `IS_LATE`) to mere cross-check (ADR-01). The evidence supporting this is concrete: `DOCK_HRS` disagrees with the actual computation in 11 POs, by up to 8.2 hours, because the source system recorded time investments as negative values. If those columns governed the logic, the error would propagate; used only for auditing, they serve to detect anomalies without inheriting them.
+The decision that governs the entire phase is to treat the life-cycle timestamps as the sole
+source of truth, and to relegate the source CSV's precalculated columns (`DELAY_DAYS`,
+`YARD_WAIT_HRS`, `DOCK_HRS`, `IS_LATE`) to mere cross-checks ([ADR-01](decisiones/ARD-01.en.md)).
+The evidence backing this is concrete: `DOCK_HRS` disagrees with the actual computation in 11 POs,
+by up to 8.2 hours, because the source system recorded time inversions as negative values.
 
-The second design decision is not to delete rows. Records with inconsistent or incomplete dates are not removed; they are isolated with quality flags. Deleting them would alter the statistical volume and induce bias; isolating them preserves the complete population and makes explicit which record is reliable for what calculation.
+The second design decision is not to delete rows. Records with inconsistent or incomplete dates
+are not removed; they are isolated with quality flags.
 
 ### Logic
 
-The parsing of date columns is strict with safe recovery: `errors='coerce'` converts any invalid value to `NaT` instead of breaking the pipeline. Three quality flags that do not destroy rows are injected into the already typed data:
+Date column parsing uses `errors='coerce'`: an invalid value becomes `NaT` instead of breaking the
+pipeline — the rest of the code has to anticipate that `NaT` explicitly in every calculation that
+depends on a date that might be missing. Three quality flags that do not destroy rows are injected
+on top of the already-typed data:
 
-- `_ts_issue` marks the 12 orders with time investment (`CHECKOUT_DT < CHECKIN_DT`).
+- `_ts_issue` marks the 12 orders with a time inversion (four distinct conditions: `CHECKIN <
+  TRAILER_ARRIVE`, `CHECKOUT < CHECKIN`, `RECPT < CHECKIN`, `STA < PO`).
 - `_trailer_arrive_null` marks the 27 orders without `TRAILER_ARRIVE_DT`.
-- `_data_reliable` identifies the 361 totally clean records out of 400.
+- `_data_reliable` identifies the 361 fully clean records out of 400 (the conjunction of neither of
+  the two previous flags being true).
 
-The 39 unreliable orders are the exact sum of those two groups —12 investments + 27 without trailer— with no overlap between them, and the baseline metrics are reported on the remaining 361.
+The 39 unreliable orders are the exact sum of those two groups —12 inversions + 27 without
+trailer— with no overlap, and the baseline metrics are reported over the remaining 361.
 
-Isolating the null trailer is important because, without it, calculating the carrier segment would yield `NaN` and the comparison against the threshold would be evaluated as `False` in silence: a false negative that would appear as compliance. The explicit flag allows those 27 orders to be removed from the denominator instead of counting them as if the carrier had complied.
+The pipeline formally computes six segments from the native dates:
 
-The pipeline formally calculates responsibility segments from the native dates:
+| Segment | Formula | Truncation |
+|---|---|---|
+| `lead_time_days` | `PO_DT → STA_DT` (purchase lead time) | ≥ 0 |
+| `carrier_lag_hrs` | `APPROVED_DT → TRAILER_ARRIVE_DT` (carrier transit) | keeps sign |
+| `yard_wait_calc_hrs` | `TRAILER_ARRIVE_DT → CHECKIN_DT` (yard dwell) | ≥ 0 |
+| `dock_calc_hrs` | `CHECKIN_DT → CHECKOUT_DT` (dock unloading) | ≥ 0 |
+| `delay_days_calc` | `RECPT_DT − STA_DT` (final delay) | ≥ 0 |
+| `appt_lead_days` | `STA_DT − APPROVED_DT` (appointment booking window) | keeps sign |
+| `total_dc_hrs` | `TRAILER_ARRIVE_DT → CHECKOUT_DT` (total DC dwell, yard + dock) | ≥ 0 |
 
-- `lead_time_days`: `PO_DT → STA_DT`, the purchase time.
-- `carrier_lag_hrs`: `APPROVED_DT → TRAILER_ARRIVE_DT`, the carrier transit time.
-- `yard_wait_calc_hrs`: `TRAILER_ARRIVE_DT → CHECKIN_DT`, the stay in the yard.
-- `dock_calc_hrs`: `CHECKIN_DT → CHECKOUT_DT`, the unloading at the dock.
-- `delay_days_calc`: `RECPT_DT − STA_DT`, the final delay, bounded to ≥ 0.
-- `appt_lead_days`: `STA_DT − APPROVED_DT`, the appointment booking window.
+```mermaid
+flowchart LR
+    PO[PO_DT] -->|lead_time_days| STA[STA_DT<br/>promised date]
+    STA -.->|appt_lead_days<br/>can be negative| APPR[APPROVED_DT]
+    APPR -->|carrier_lag_hrs| TRAILER[TRAILER_ARRIVE_DT]
+    TRAILER -->|yard_wait_calc_hrs| CHECKIN[CHECKIN_DT]
+    CHECKIN -->|dock_calc_hrs| CHECKOUT[CHECKOUT_DT]
+    CHECKOUT --> RECPT[RECPT_DT]
+    STA -.->|delay_days_calc| RECPT
+```
 
-The bounding to ≥ 0 truncates physically impossible durations produced by the 12 investments to zero instead of propagating negative times. The column `TRAILER_DEPART_DT` is formally excluded from any segment calculation: it occurs on average ~27 hours after receiving in 99.8% of cases, that is, outside the operational receiving cycle.
+A detail of the implementation worth calling out: **not everything is truncated to zero**.
+`carrier_lag_hrs` and `appt_lead_days` deliberately keep their negative sign — a negative value in
+`appt_lead_days` (the appointment was approved after the promised date) is exactly the signal Phase
+2 uses to detect the vendor's "STA push"; truncating it to zero would destroy that signal. The
+other four deltas are bounded to `≥ 0` because they represent physical durations that cannot be
+negative except through a capture error. The `TRAILER_DEPART_DT` column is formally excluded from
+every segment calculation: it occurs on average ~27 hours after receiving in 99.8% of cases,
+outside the receiving operational cycle that these segments measure.
+
+`total_dc_hrs` does not appear as its own edge in the flow diagram because it is a composition of
+two segments already shown (yard + dock, from `TRAILER_ARRIVE_DT` to `CHECKOUT_DT`), not an
+additional discrete step. It is not dead computation: Phase 3 consumes it in the DC scorecard to
+derive `Dwell_Time_Net` — the net-dwell metric for excess yard time that feeds Ravi's view for the
+DC actor. The code has a primary path (`total_dc_hrs − excess_yard_hrs`) and a fallback path that
+composes `total_dc_hrs` as `excess_yard_hrs + excess_dock_hrs` when the column is not present in
+the input.
+
+This phase's exploratory classification flags (`flag_yard_congestion`, `flag_dock_backlog`,
+`flag_carrier_miss`) have a subtle asymmetry, verified by tests: the first two compare against the
+**precalculated** CSV columns (`YARD_WAIT_HRS`, `DOCK_HRS`), not against the newly computed
+deltas — deliberately, because in this exploratory phase the goal is to compare against the
+precalculated source to detect where it diverges, not to replace it yet. `flag_carrier_miss`, by
+contrast, does use the computed delta. None of these three flags is the production classification:
+they are exploratory, with preliminary thresholds (carrier 4h, yard 4h, dock 6h) that Phase 2
+supersedes with its own thresholds (carrier 8h, final).
 
 ### Implementation
 
-The logic resides in `pipeline_core.py`, with two core functions. `clean_po_data()` sequentially executes the parsing of timestamps, the injection of quality flags, the calculation of deltas, and the assignment of exploratory stage flags. `cross_validate_deltas()` audits the calculated segments against the precalculated columns and reports discrepancies before exporting.
+The logic lives in [`pipeline_core.py`](../01_data_pipeline_and_eda/pipeline_core.py), with two
+core functions: `clean_po_data()` (parsing, quality flags, deltas, exploratory flags) and
+`cross_validate_deltas()` (audits the calculated segments against the precalculated columns and
+reports discrepancies). Both functions explicitly validate their input contract
+(`_REQUIRED_INPUT_COLUMNS`): if a column is missing, they raise a `KeyError` that names it, instead
+of failing deeper in with an opaque message — a "fail fast with a useful message" pattern applied
+consistently.
 
-The module runs with `python 01_data_pipeline_and_eda/pipeline_core.py`; it consumes `data/raw/po_root_cause_synthetic.csv` (out of version control) and produces the clean DataFrame that Phase 2 consumes. The thresholds that this phase injects as exploratory flags (carrier 4h, yard 4h, dock 6h) are preliminary and have been surpassed: the logic of production classification is consolidated in Phase 2 with the carrier threshold of 8h. The phase coverage is in `tests/test_pipeline_core.py`.
+The module runs with:
+
+```
+python 01_data_pipeline_and_eda/pipeline_core.py
+```
+
+It consumes `data/raw/po_root_cause_synthetic.csv` (outside version control) and produces, via
+`save_clean_output()`, the `data/processed/df_clean.csv` CSV that Phase 2 consumes — the handoff's
+"dual contract": the persisted CSV is identical to the in-memory DataFrame (all columns, same
+order), so re-reading it reconstructs exactly what the monolithic chain would leave in memory.
+
+The [`data_pipeline_and_EDA.ipynb`](../01_data_pipeline_and_eda/data_pipeline_and_EDA.ipynb)
+notebook (7 sections, from load/inventory to saving the output) only presents and narrates the EDA;
+all reusable logic lives in the module, which the notebook imports without reimplementing — this
+avoids the logic living duplicated between notebook and module.
+
+The phase's coverage is in [`tests/test_pipeline_core.py`](../tests/test_pipeline_core.py) (31
+functions), organized in blocks (smoke, date parsing, quality flags, deltas, classification flags,
+operational metrics, cross-validation, robustness against nulls). One test in particular
+(`test_flag_carrier_miss_silent_false_on_null_trailer`) documents a real finding in detail: when
+`TRAILER_ARRIVE_DT` is null, `carrier_lag_hrs` is `NaN`, and `NaN > 4.0` evaluates to `False` in
+pandas — so a PO with a real carrier miss ends up silently flagged as "no carrier problem." This is
+exactly the kind of "silent NaN" that Phase 2 explicitly guards against with the `sin_datos`
+subclass of Indeterminate.
 
 ## Phase 2 — Stage Classification (Business Rules)
 
 ### Design
 
-This phase assigns a responsible stage for the delay to each late PO and a severity, and validates both against independent references. The taxonomy and thresholds were finalized with the mentor and refined after an attribution consultation. Six decisions govern it:
+This phase assigns each late PO a responsible stage and a severity, and validates both against
+independent references. Six decisions order it: four stages —Vendor, Carrier, DC, and Indeterminate
+(#39)—, Vendor measured by STA push rather than by residual
+([ADR-03b](decisiones/ARD-03b.en.md), supersedes [ADR-03a](decisiones/ARD-03a.en.md)), the carrier
+threshold at 8 hours rather than 4 ([ADR-04b](decisiones/ARD-04b.en.md), supersedes
+[ADR-04a](decisiones/ARD-04a.en.md)), rescheduling and short-ship as context/aggravating factor
+rather than a stage ([ADR-05](decisiones/ARD-05.en.md)), a dedicated vendor threshold of 24 hours
+([ADR-06b](decisiones/ARD-06b.en.md), supersedes [ADR-06a](decisiones/ARD-06a.en.md)), and DC
+consolidating Yard and Dock with an informative subclass (`dc_substage`).
 
-Four stages are defined —Vendor, Carrier, DC, and Indeterminate (#39). Indeterminate is a valid and auditable category, not a dumping ground: forcing attribution without evidence would be to invent causality.
-
-Vendor is measured by STA push (`APPROVED_DT > STA_DT`), not by residual (ADR-03b, which supersedes ADR-03a). The residual —subtracting carrier and DC from the total delay— assumes that the segments are additive and mutually exclusive, and in practice, they overlap. The direct signal is more robust and also works in the 27 POs without trailer time, because it does not need to measure carrier or DC to exist.
-
-The carrier threshold is 8 hours, not 4 (ADR-04b, which supersedes ADR-04a), accompanied by a sensitivity table. The median of the carrier gap is around 3 hours, and the 75th percentile is 4.4, so 8 hours produces a carrier proportion consistent with a dataset of short trips. What supports the choice is not the number itself, but its traceability.
-
-Appointment rescheduling and short-ship are modeled as context or aggravating factors, not as stages (ADR-05). A rescheduling describes an event, not a root cause; the classifier answers who caused the delay, not what happened.
-
-Vendor has its own threshold of 24 hours (ADR-06b, which supersedes ADR-06a). It corrects a structural asymmetry: previously, vendor would trigger with any positive push while carrier, yard, and dock required surpassing their threshold, so vendor absorbed by default everything that others did not capture.
-
-DC consolidates Yard and Dock into a single stage, with a subclass `dc_substage` that retains detail. The final responsible party is the same —the operations of the distribution center— so a stage is reported and the distinction is kept as informative subclassification.
-
-Decision anchors: ADR-01, ADR-02 (hierarchy with multiple active flags), ADR-03b, ADR-04b, ADR-05, ADR-06b, and ADR-07 (taxonomy of Indeterminate); ADR-08 (`stage_modifiers`) was conceived and deleted.
+One rule external to the method deserves explicit mention: the mentor's original repository README
+defined "Late Shipment" as a vendor cause via `VENDOR_SHIP_DT > STA_DT`. That column does not exist
+among the 39 in the real CSV, and the only proxy tested (`STA_DT − PO_DT < 3 days`, issue #17)
+fired on 0% of the cases on the real dataset — it does not discriminate anything.
+[ADR-24](decisiones/ARD-24.en.md) formally documents the discard: vendor responsibility is already
+covered by STA push (ADR-03b/06b), which does not depend on either of the two columns in question.
+The discard is not total: ADR-24 keeps `lead_time_days` (`STA_DT − PO_DT`) as a future severity
+candidate, not a stage candidate — it is not implemented in the current severity function, but it
+is noted as a lever to evaluate if the team decides to weight it.
 
 ### Logic
 
-The primary stage is decided by excess over threshold, not by raw duration. For each measurable segment, the excess is `max(0, observed − threshold)` in hours, with the mentor's thresholds (carrier 8h, yard 4h, dock 6h). A segment that cannot be measured contributes 0 to the argmax, but its mask records "not measurable" to avoid confusing it with a real zero.
+The primary stage is decided by **excess over threshold**, not by raw duration — a central
+distinction: a segment that lasts a long time but is within normal range does not win merely for
+being long in absolute terms. For every measurable segment, the excess is `max(0, observed −
+threshold)` in hours, with the mentor's thresholds externalized in
+[`rules_config.json`](../02_clasif_reglas_negocio/rules_config.json) (version 3):
 
-Vendor fits into the same scheme: its excess is `max(0, −appt_lead_days × 24 − 24h)`, where `appt_lead_days = STA − APPROVED` in days. That value is negative when the appointment was approved after the promised date, so the push in hours is positive, and only counts as excess above `vendor_gap_hrs = 24h`, just like the other segments have theirs. The primary stage is the argmax of {Vendor, Carrier, DC}.
+```json
+{
+  "version": 3,
+  "vendor_gap_hrs": 24.0,
+  "carrier_lag_hrs": 8.0,
+  "yard_wait_hrs": 4.0,
+  "dock_hrs": 6.0,
+  "short_ship_fill_rate": 0.9,
+  "severity_delay_days": 3.0,
+  "severity_low_days": 1.0
+}
+```
 
-When no segment applies, the PO falls into Indeterminate, with a subclass that states why: `sin_datos` if the PO is late but not measurable (without `TRAILER_ARRIVE_DT`), or `sin_causa_dominante` if it is measurable but no segment exceeds its threshold. The top label is Indeterminate; the reason lives in the subclass.
+Vendor is folded into the same schema with a transformation: its excess is
 
-The thresholds are read by name from `rules_config.json`, never from the code; recalibrating means editing the JSON:
+```python
+exceso_vendor_hrs = max(0, -appt_lead_days * 24 - vendor_gap_hrs)
+```
 
-| Key                  | Value | Use                                                   |
-|----------------------|-------|------------------------------------------------------|
-| `vendor_gap_hrs`     | 24.0 h | Vendor excess (STA push) over this threshold         |
-| `carrier_lag_hrs`    | 8.0 h | Carrier excess                                        |
-| `yard_wait_hrs`      | 4.0 h | Yard excess                                          |
-| `dock_hrs`           | 6.0 h | Dock excess                                          |
-| `short_ship_fill_rate`| 0.9   | Below, short-ship (context)                          |
-| `severity_delay_days` | 3.0 d | HIGH severity gate                                   |
-| `severity_low_days`   | 1.0 d | LOW borderline cutoff                                 |
+negative when the appointment was approved after the promised date, so the push in hours is
+positive, and only counts as excess above its own threshold. The primary stage is the `argmax`
+among {Vendor, Carrier, DC}; when a segment is not measurable (for example, carrier without
+`TRAILER_ARRIVE_DT`), its excess is forced to 0 via a "measurability" mask (`_carrier_medible`,
+`_dc_medible`) — that mask is what allows, further down, distinguishing "not measurable" from
+"measurable but with no excess" instead of collapsing both into the same value of 0.
 
-Severity is deterministic and auditable, separate from what the LLM later issues. It is HIGH when the PO is hot and arrived late (`HOT_PO_FLAG=1` and `IS_LATE`) and the delay exceeds 3 days; LOW when the delay is less than 1 day (borderline, almost on time); MEDIUM in the rest of the late cases. The aggravating factors `is_short_lead` or `is_short_ship` raise a level (LOW→MEDIUM, MEDIUM→HIGH), without exceeding HIGH: the actual HIGH gate remains hot plus strong delay.
+```mermaid
+flowchart TD
+    A[Late PO] --> B["Excess per segment:<br/>max(0, observed − threshold)"]
+    B --> C{argmax among<br/>Vendor / Carrier / DC}
+    C -->|there is a winner greater than 0| D[stage_primary = winning stage]
+    C -->|no segment exceeds its threshold| E[Indeterminate]
+    E --> F{measurable segments?}
+    F -->|no, e.g. no TRAILER_ARRIVE_DT| G[sin_datos]
+    F -->|yes, but none exceeded| H[sin_causa_dominante]
+```
 
-The resulting breakdown over the 247 late POs is Vendor 139 (56.3%), Carrier 40 (16.2%), DC 37 (15.0%), and Indeterminate 31 (12.6%), where those 31 are broken down into 7 `sin_datos` and 24 `sin_causa_dominante`. The severity allocates MEDIUM 131, LOW 82, and HIGH 34.
+A detail that is only explained outside the production module: `excesos.idxmax(axis=1)` breaks an
+excess tie by the order of the DataFrame's columns (`{"Vendor", "Carrier", "DC"}`), that is, in
+favor of Vendor. `classifier_core.py` does not comment on that rule where it happens; the business
+justification —a late push is a probable cause of the downstream disruption, which propagates
+pressure onto carrier and DC— lives only in `metrics_core.py`, the sensitivity-analysis module, not
+the production one.
 
-That Vendor dominates with 56% —well above the ~20% anticipated at kickoff— is supported by the data, not the trigger rule. The distribution of the push is bimodal: 12 POs with almost no push (≤6h) and 141 with days' push (median 3.1 days), with an empty gap between 6 and 18 hours where no PO falls. Late orders are almost always late because the appointment was approved late. The correlation between push and total delay is high by construction —an early delay propagates— and for this reason is not used as evidence of causality; what it attributes is the excess by segment.
+When no segment applies, the PO falls into Indeterminate, with a subclass that states why:
+`sin_datos` (late but not measurable) or `sin_causa_dominante` (measurable but no segment exceeds
+its threshold) — [ADR-07](decisiones/ARD-07.en.md) documents that the discarded option was to send
+these cases to Vendor "by elimination," which would silently reintroduce bias.
 
-The two sensitivity analyses are the traceability that supports the thresholds. The carrier analysis shows that moving the threshold changes the raw flag significantly but hardly the stage distribution, because the vendor signal dominates the argmax:
+The resulting breakdown over the 247 late POs is Vendor 139 (56.3%), Carrier 40 (16.2%), DC 37
+(15.0%), and Indeterminate 31 (12.6%, 7 `sin_datos` + 24 `sin_causa_dominante`). Severity allocates
+MEDIUM 131, LOW 82, HIGH 34: HIGH when the PO is hot and the delay exceeds 3 days, LOW when the
+delay is under 1 day, MEDIUM otherwise; the aggravating factors (`is_short_lead`, `is_short_ship`)
+raise a level without exceeding HIGH.
 
-| Carrier Threshold | `flag_carrier_calc` | Vendor / Carrier / DC / Indeterminate Distribution |
-|-------------------|----------------------|----------------------------------------------------|
-| 4 h               | 25.8% (103)          | 56.3 / 17.4 / 15.0 / 11.3                           |
-| 6 h               | 12.8% (51)           | 56.3 / 16.2 / 15.0 / 12.6                           |
-| 8 h               | 12.8% (51)           | 56.3 / 16.2 / 15.0 / 12.6                           |
-| 12 h              | 11.2% (45)           | 56.3 / 14.6 / 15.0 / 14.2                           |
+The sensitivity analysis behind the 24h vendor threshold is not just a table in an ADR: it is a
+complete block of functions in
+[`metrics_core.py`](../02_clasif_reglas_negocio/metrics_core.py) (`_simular_corte`,
+`distribucion_gap_vendor`, `sensibilidad_vendor`, `destino_migracion_vendor`, `robustez_vendor`,
+`agreement_por_umbral`, `umbral_vs_mismo_dia`) that reproduces the classification arithmetic with a
+variable vendor threshold, without touching the real classifier, and sweeps a grid of candidates
+(0/6/12/18/24/48/72h), tabulating how the breakdown changes. It confirms that the POs that stop
+being Vendor as the threshold rises migrate exclusively to `sin_causa_dominante`, never to Carrier
+or DC — the threshold does not reassign blame, it only isolates the pushes that fall short of being
+a signal.
 
-The vendor analysis justifies the 24 hours and, above all, shows that raising the threshold does not reattribute delays to other stages; it only separates the diffuse pushes:
+Two tables summarize that grid for the two sensitivities that support the mentor's thresholds:
 
-| Vendor Threshold | Vendor | Vendor / Carrier / DC / sin_datos / sin_causa_dominante Distribution |
-|-------------------|--------|----------------------------------------------------|
-| 0 (no threshold)   | 151 (61.1%) | 151 / 40 / 37 / 5 / 14                               |
-| 6–18 h            | 141 (57.1%) | 141 / 40 / 37 / 7 / 22                               |
-| 24 h              | 139 (56.3%) | 139 / 40 / 37 / 7 / 24                               |
-| 48 h              | 121 (49.0%) | 121 / 40 / 37 / 8 / 41                               |
-| 72 h              | 81 (32.8%)  | 81 / 40 / 37 / 10 / 79                                |
+**Carrier threshold sensitivity (4/6/8/12h)** — Vendor/Carrier/DC/Indeterminate breakdown in % of
+late POs, with `vendor_gap_hrs`=24 active:
 
-24 hours are chosen for three reasons: it is the natural granularity of the data, since `STA_DT` is at the day level and measuring the push against a whole day is the unit in which the problem is expressed; it falls in the empty zone of the distribution, which makes it robust to perturbations; and it does not force the distribution towards the ~20% of kickoff, which the mentor advised against. The POs that cease being Vendor upon raising the threshold migrate to `sin_causa_dominante` (most of them) or to `sin_datos` (those without trailer whose push falls below the new threshold), none to Carrier or DC: the threshold does not reassign blame, it only isolates the pushes that do not reach to be signals.
+| Carrier threshold | `flag_carrier_calc` | Vendor / Carrier / DC / Indeterminate breakdown |
+|---|---|---|
+| 4 h | 25.8% (103) | 56.3 / 17.4 / 15.0 / 11.3 |
+| 6 h | 12.8% (51) | 56.3 / 16.2 / 15.0 / 12.6 |
+| 8 h | 12.8% (51) | 56.3 / 16.2 / 15.0 / 12.6 |
+| 12 h | 11.2% (45) | 56.3 / 14.6 / 15.0 / 14.2 |
 
-The contrast with human annotation is the thesis of the project. The reason agreement is 88.7% over 203 classifiable; the 23 mismatched cases are evidence that the temporal computation surpasses the inherited annotation. Eight defensible cases covering two patterns are selected. In the star pattern, the operator blamed the visible link —carrier or yard— while the appointment had been approved days late and that segment had no excess at all. In the internal pattern, the computation detects a segment excess that the annotation confused. The stratified selection distributes the examples among the three attributable stages instead of taking the strongest ones outright, which would almost all be Vendor.
+The carrier threshold moves the raw flag significantly but barely moves `stage_primary`, because
+the vendor signal dominates the argmax and the carrier threshold only reorders the few cases where
+carrier competes closely.
+
+**Vendor threshold sensitivity (0/6/12/18/24/48/72h)** — counts over the 247 late POs:
+
+| Vendor threshold | Vendor | % Vendor | Vendor / Carrier / DC / sin_datos / sin_causa_dominante breakdown |
+|---|---|---|---|
+| 0 (no threshold) | 151 | 61.1 | 151 / 40 / 37 / 5 / 14 |
+| 6–18 h | 141 | 57.1 | 141 / 40 / 37 / 7 / 22 |
+| 24 h | 139 | 56.3 | 139 / 40 / 37 / 7 / 24 |
+| 48 h | 121 | 49.0 | 121 / 40 / 37 / 8 / 41 |
+| 72 h | 81 | 32.8 | 81 / 40 / 37 / 10 / 79 |
+
+The contrast against human annotation is the project's thesis in its most measurable form: reason
+agreement 88.7% over 203 classifiable. `select_mismatches()` extracts the mismatches ranked by
+"signal strength" (the excess of the stage the computation chose), with a `stratify=True` mode that
+spreads the selection across the three attributable stages instead of taking the strongest ones
+outright (which would be almost all Vendor) — this mode is what feeds Phase 3's few-shot pool.
+
+The mapping that supports this comparison, `_REASON_DSC_MAP` (the basis of `reason_group_manual`),
+is a fixed dictionary of 10 keys that must match `REASON_DSC`'s text character for character:
+without normalization, any wording variant silently falls into `"Unknown"`. It is not an active
+risk on the current, already-audited synthetic dataset, but it is a real fragility if the source
+were to change.
 
 ### Implementation
 
-The logic lives in reusable functions, not in the notebook, which only presents. `classify_po_stages` in `classifier_core.py` orchestrates four steps: `_flags_por_umbral` (#44), `_etapa_primaria` (#45), `_capa_complementaria` (context flags), and `_severidad` (#48). The validations live in `metrics_core.py`: `stage_accuracy` (#46), `reason_agreement` (#47), `select_mismatches` and the sensitivity and severity functions.
+The logic lives in
+[`02_clasif_reglas_negocio/classifier_core.py`](../02_clasif_reglas_negocio/classifier_core.py),
+orchestrated by `classify_po_stages()` in four chained steps: `_flags_por_umbral` (#44) →
+`_etapa_primaria` (#45) → `_capa_complementaria` (multi-cause labels, context flags) →
+`_severidad` (#48, which needs the context flags and therefore runs last). The validations live in
+[`metrics_core.py`](../02_clasif_reglas_negocio/metrics_core.py): `gap_dominante()` computes,
+**independently** of `stage_primary`, which segment had the greatest raw duration over a bounded
+sequence of milestones (excluding the purchase lead time and everything past checkout);
+`stage_accuracy()` compares both metrics over the evaluable population — 100% (216/216) is not
+circular: it converges because when there is an STA push that segment spans days (it dominates the
+duration) and is simultaneously the vendor excess signal, but a disagreement would be
+multicausality, not a method error.
 
-The module consumes the clean DataFrame from Phase 1 and produces `data/processed/df_classified.csv`, which is not versioned and is regenerated by running the module. The coverage is in `tests/test_classifier_core.py` and `tests/test_metrics_core.py`.
+The module produces `data/processed/df_classified.csv` (dual contract, all columns). Coverage is in
+[`tests/test_classifier_core.py`](../tests/test_classifier_core.py) (31 functions) and
+[`tests/test_metrics_core.py`](../tests/test_metrics_core.py) (14 functions).
 
 ## Phase 3 — LLM Integration
 
-Phase 3 generates the root cause explanation in natural language. The project operates two complementary LLM surfaces: one per PO, which produces the deliverable evaluated by the mentor (`po_output.csv`), and a holistic one by actor, which produces a network executive synthesis (`agente1_raw.txt`). Both share a principle: the computation —rules or statistics— diagnoses, and the LLM interprets that already resolved diagnosis.
+Phase 3 generates the root-cause explanation in natural language. The project operates **three
+surfaces** worth distinguishing precisely:
+
+1. **Per PO** (the explanation + action of the deliverable evaluated by the mentor).
+2. **Holistic by actor** (executive network synthesis, statistical scorecards).
+3. **Differential diagnosis tier-2** (an opt-in second call, a hybrid hypothesis-and-staged-plan
+   contract).
+
+It is, by a wide margin, the largest block of code in the repository:
+[`llm_integration.py`](../03_llm_integration/llm_integration.py) exceeds 2500 lines and
+concentrates 98 of the suite's 231 test functions (42.4%).
 
 ### Per PO Surface — the Evaluated Deliverable
 
 #### Design
 
-The guiding principle is that the LLM interprets, not recalculates (#91, ADR-14). All the arithmetic is resolved from the previous phases and the model only reads it to draft; the prompt explicitly forbids recalculating dates or hours and inventing figures, and requires quoting verbatim those provided, so the explanation can be audited against the data.
+The guiding principle is that the LLM interprets, it does not recalculate (#91,
+[ADR-14](decisiones/ARD-14.en.md)): the prompt explicitly forbids recalculating dates or hours and
+inventing figures, and requires quoting verbatim the ones it is given. Severity is hybrid
+([ADR-10](decisiones/ARD-10.en.md)): the LLM issues it and Phase 2's deterministic rule audits it;
+the deliverable's official severity is the LLM's.
 
-The severity is hybrid (ADR-10): the LLM issues it, and the deterministic rule from Phase 2 audits it. The official severity of the deliverable is that of the LLM; that of the rule is kept as an audit baseline in the internal artifact.
-
-The prompt has a single source, `build_prompt()` (ADR-12). A previous plain text draft was removed because it had diverged —a taxonomy of six stages that were not the four states of Phase 2, instructions inviting calculation, a contradictory severity threshold— and keeping it risked it being reused without context. The production configuration is few-shot C3, three examples that teach the reasoning, validated at temperature 0.9 (ADR-13) without regression against the anchor 0.3. An instruction block called HOW TO REASON hardens the prompt against overfitting to few-shot (ADR-14): it prevents the model from copying the shape of the examples as a template. The severity thresholds that the prompt delivers are interpolated from `rules_config.json` (#121), the same single source used by Phase 2. The handling of the API keys follows the multi-provider secret policy (ADR-11): they live only in `.env`, never in the code, the versioned CLI, or the logs.
+The prompt has a single source, `build_prompt()` ([ADR-12](decisiones/ARD-12.en.md)): an earlier
+plain-text draft was removed because it had diverged (an obsolete six-stage taxonomy, instructions
+that invited recalculation, a contradictory severity threshold). The production configuration is
+few-shot C3, three examples that teach the reasoning (one per stage: Vendor, Carrier, DC),
+validated at temperature 0.9 ([ADR-13](decisiones/ARD-13.en.md)). An instruction block called HOW
+TO REASON (ADR-14, #143) hardens the prompt against a measured, concrete problem: without that
+block, the model learned from the three few-shot examples —all cases of human↔computation
+discrepancy— that "there is always a discrepancy," and copied that shape as a template even when
+the actual PO agreed with the human annotation. The block fixes that `stage_primary` is the source
+of truth and that `REASON_DSC` is only for contrast, never to replace the stage.
 
 #### Logic
 
-The process filters the late POs (`delay_days_calc > 0`) and, for each one, assembles a prompt by blocks: the DATA of the PO and its actors; the TIMELINE of raw dates, which the model reads to contrast and not to recalculate; the CALCULATED METRICS, with the delay, the yard and dock times, and the excess by stage; the AUTOMATIC CLASSIFICATION, where `stage_primary` of Phase 2 is the source of truth for the stage and the model does not re-decide it; and the ADDITIONAL CONTEXT with the aggravating factors, rescheduling as a neutral datum, the subclass of Indeterminate and the `REASON_DSC`. It closes with two instruction blocks: one prohibits recalculating and demands citation, and HOW TO REASON establishes that the classification sends the stage and that the `REASON_DSC` serves for contrast, never to replace the stage.
+The prompt is assembled in blocks in a fixed order: DATA → TIMELINE → CALCULATED METRICS →
+AUTOMATIC CLASSIFICATION → ADDITIONAL CONTEXT → [optional domain block, #151] → [optional few-shot
+examples] → INSTRUCTIONS → HOW TO REASON → JSON format. A subtle but important detail: the "excess
+by stage" lines in CALCULATED METRICS are **omitted** when the stage is Indeterminate, because
+showing a raw excess (for example, a vendor push that survives inside a `sin_datos`) would invite
+the model to override Phase 2's verdict.
 
-The response is a JSON with five keys —`causa_raiz`, `accion_recomendada`, `severidad`, `coincide_con_reason_code`, and `confianza`— and its parsing is centralized in `_parse_llm_json()` to avoid duplicating logic among backends. There are four: `openai` with `gpt-4o-mini` is the official backend of the deliverable; `local` with Qwen on Ollama does not incur API costs and serves for development; `claude` and `deepseek` are alternative comparisons. The local backend has a fallback to free text if the model does not return JSON; the cloud expects valid JSON. The C3 configuration deterministically selects three examples, one for each attributable stage, with `select_examples(3, ["Vendor","Carrier","DC"])` from the audited pool `fewshot_pool.json`. The examples come from real mismatches in Phase 2, are disjoint from the 20 PO benchmark to avoid contaminating the metric, and do not include the timeline of dates, because showing it would re-teach recalculation.
+The conditional domain context (#151, `domain_kb.json`) is a mechanism against a different,
+measured problem: the LLM produced correct but homogeneous actions within the same stage. The
+solution is not RAG with embeddings —explicitly discarded— but a **deterministic lookup**: since
+`stage_primary` is already the routing key computed in Phase 2, a dictionary indexed by actor
+suffices, with conditions that filter which context "levers" apply to this PO according to the
+magnitude band of its excess (normalized by that segment's own Phase 2 threshold) and its flags.
+With `kb=None` (the historical default), the prompt is byte-identical to the original zero-shot
+version.
 
-The figures for this surface: LLM Explanation Quality 5/5 (20/20) with C3 at temperature 0.9 and seed 42; severity ranking 100% (14/14), measured on the severity of the LLM. The divergence between the severity of the LLM and that of the rule from Phase 2 is a documented finding: they agree in 213 of 247 (86.2%) and diverge in 34 (13.8%), and those divergences always scale —30 LOW→MEDIUM and 4 MEDIUM→HIGH—, none downscales.
+The response is a five-key JSON, parsed by `_parse_llm_json()` (centralized to avoid duplicating
+logic among the four backends):
 
-#### Implementation 
+```json
+{
+  "causa_raiz": "...",
+  "accion_recomendada": "...",
+  "severidad": "LOW | MEDIUM | HIGH",
+  "coincide_con_reason_code": true,
+  "confianza": 0.0
+}
+```
 
-The logic lives in `llm_integration.py`: `build_prompt`, `add_llm_explanations`, `export_deliverable_csv`, `create_backend`, and `_parse_llm_json`, with the inference configuration in `llm_config.json` (temperature 0.9, seed 42). The `--mode` (test / full / custom), `--backend`, and `--zero-shot` flags control the run. The module consumes `df_classified.csv` and produces two artifacts: the internal `df_with_llm_*.csv`, which carries the severity from Phase 2 along with that of the LLM for audit, and the deliverable CSV `po_output.csv`. The coverage is in `tests/test_llm_integration.py` and `tests/test_handoff_f3.py`.
+`create_backend()` — a Factory Pattern in terms of [SAD.md](SAD.en.md) §2.2 — instantiates one of
+four backends according to the configuration:
+
+| Backend | Model | Cost | Fallback if JSON does not parse |
+|---|---|---|---|
+| `openai` | `gpt-4o-mini` | paid — the deliverable's official backend | none, strict JSON expected |
+| `claude` | `claude-sonnet-4-6` | paid — comparison | none, strict JSON expected |
+| `deepseek` | `deepseek-chat` | paid — comparison | none, strict JSON expected |
+| `local` | `qwen2.5:7b` via Ollama | no cost | emergency regex dict (`fallback=True`) |
+
+The decision to fix the temperature at 0.9 (ADR-13) comes from a two-round sweep over C3 (3
+few-shot examples), backend `gpt-4o-mini`, the same 20 benchmark POs (seed 42), at
+0.3/0.5/0.7/0.9. The first round, with the un-hardened prompt (pre-ADR-14/#143), showed no
+measurable effect of temperature on diversity. After the HOW TO REASON block, the second round did
+measure it: the lexical diversity of Vendor actions rises monotonically, 0.312 (0.3) → 0.375 (0.5)
+→ 0.458 (0.7) → 0.567 (0.9), with the automatic check at 20/20 except 19/20 at 0.7 (one
+Indeterminate PO copied the stage from `REASON_DSC`, the failure mode ADR-14 corrects, and
+transiently relapsed). The diversity gain lives in the cited cause, not in the action's structure:
+the template "Request a recovery plan from the vendor..." persists across all eight Vendor actions
+at every temperature.
+
+This surface's figures: LLM Explanation Quality 5/5 (20/20) with C3 at temperature 0.9 and seed 42;
+severity ranking 100% (14/14). The divergence between the LLM's severity and Phase 2's rule is a
+documented finding: they agree on 213 of 247 (86.2%) and diverge on 34 (13.8%), always escalating
+—30 cases LOW→MEDIUM and 4 MEDIUM→HIGH— none downscales.
+
+There is a second AI-vs-human disagreement metric, distinct from Phase 2's reason agreement.
+`llm_coincide_con_reason` is a binary judgment the LLM itself issues per PO, comparing its
+diagnosis against `REASON_DSC`. Over the 247 rows of `po_output.csv`: 149 `True` / 98 `False`,
+39.7% disagreement. It is a correlated but not interchangeable figure with Phase 2's reason
+agreement (88.7% over 203 classifiable): a different method (the LLM's judgment vs.
+`metrics_core.py`'s deterministic rule), a different denominator (247 vs. 203), and a different
+source.
+
+#### Implementation
+
+The logic lives in [`llm_integration.py`](../03_llm_integration/llm_integration.py):
+`build_prompt`, `add_llm_explanations`, `export_deliverable_csv`, `create_backend`, and
+`_parse_llm_json`, with the inference configuration in
+[`llm_config.json`](../03_llm_integration/llm_config.json) (temperature 0.9, seed 42). The
+`--mode` (test / full / custom), `--backend`, and `--zero-shot` flags control the run:
+
+```
+python 03_llm_integration/llm_integration.py --mode test --backend openai
+```
+
+The module consumes `df_classified.csv` and produces two artifacts: the internal
+`df_with_llm_*.csv`, which carries Phase 2's severity alongside the LLM's for audit purposes, and
+the deliverable CSV `po_output.csv`. Coverage is in
+[`tests/test_llm_integration.py`](../tests/test_llm_integration.py) (98 functions, the largest file
+in the suite) and [`tests/test_fewshot.py`](../tests/test_fewshot.py) (8 functions).
+
+### Differential Diagnosis Tier-2 (ADR-16, Lane 1)
+
+Under the `--action-call` flag, each PO receives a **second call** with `build_action_prompt()`: a
+"supply planner with decision authority" role (not an "advising analyst" — the direct antidote to
+the model delegating the action instead of deciding it) that receives the call-1 diagnosis as a
+fixed input and produces a hybrid contract with keys in mandatory order:
+
+```
+razonamiento
+→ hipotesis_principal { hipotesis, evidencia, plan { inmediata, correctiva, preventiva } }
+→ hipotesis_alternativa { hipotesis, paso_discriminante }
+→ confianza
+```
+
+Reducing this to "goes through a rules-based quality gate" undersells it: it is in fact a system of
+**seven deterministic checks** (`run_action_checks`), not an LLM judge: a complete schema, key
+order verified on the raw text, the absence of "meta verbs" (review/analyze/investigate/monitor) as
+the main action, that every figure cited in the output exists among the figures in the prompt
+(regex extraction and set comparison), that the hypothesis's evidence cites at least one figure,
+that a short-ship has an explicit decision about the shortfall, and that the named stage matches
+`stage_primary` (with Spanish aliases and explicit recognition of Indeterminate). If there are
+defects, the loop (`call_action_with_qa`) re-calls citing **exactly** which checks failed, up to two
+regenerations; if they persist, it does not block — it returns the last usable output with its
+`qa_flags` visible, instead of failing the whole run over one problematic PO.
+
+It populates the nine tier-2 columns of `po_output.csv`; without the flag, those columns come out
+**empty, not absent** (the column contract is stable with or without it). The complete contract is
+formalized in [ADR-21](decisiones/ARD-21.en.md) (still in Draft).
 
 ### Holistic Actor Surface — Network Executive Synthesis
 
 #### Design
 
-This surface answers a single directive question: where is the root cause of the delay and what operational implications does it have, hierarchized by risk zones for each of the three actors. The problem has two layers that are not solved separately. The first is who analyzes: an LLM fed with raw POs produces generic narratives, invents correlations, and ignores sample size. The second is with what input: feeding it only raw POs hands it data without diagnosis. The solution is not LLM or statistics, but a pipeline where the statistics produce a structured diagnosis —the scorecard, which is the numeric ground truth— and the LLM interprets it as an analyst.
+It answers a different directive question: where is the root cause of the delay by actor
+(Vendor/Carrier/DC) and what it implies operationally. The problem has two layers: who analyzes (an
+LLM fed raw POs produces generic narratives and ignores sample size) and with what input (feeding
+it raw POs is handing it data without a diagnosis). The solution is a pipeline where statistics
+produce the structured diagnosis —the scorecard— and the LLM interprets it as an analyst
+([ADR-19](decisiones/ARD-19.en.md)).
 
-The architecture features three specialized agents in sequence, one for each actor, each with its `ACTOR_CONFIG` of guiding thresholds, files, and title. The monolithic agent was discarded because the thresholds of operational health differ by actor, and mixing them forces averaging criteria, and it was also discarded to deliver raw POs as input, as the model would inherit and amplify its biases. The prompt separates what the model must think —an eight-step methodology and internal guides marked as "do not mention"— from what it must write: executive bullets with concrete actions in terms of time, responsible entity, and mode. The output is forced into a Pydantic schema (`ReporteEspecialista` with `AnalisisBloqueRiesgo` blocks) so that the frontend can parse it unambiguously, and homogeneity is treated as a finding: if all entities are practically the same, that is the main finding, not something to forcefully differentiate. The inference uses `temperature=0.1` and `max_tokens=1200` to minimize variability and force synthesis. Anchors: ADR-19, which delivers the executive synthesis by actor from lane 3 of ADR-16 —the conversational Q&A and the agentic lane 2 remain open—, in addition to ADR-10 and ADR-09.
+A scope nuance worth stating: this surface and the per-PO surface operate on different populations
+under the same entity name. `scorecard_core.py` reads `df_classified.csv` by default —400 POs,
+including the 153 On-Time ones—, while `po_output.csv` —consumed by Diego and the tier-1/tier-2
+contract— only carries the 247 late ones. A vendor/carrier/DC scorecard in Ravi's view can reflect
+on-time deliveries from that entity that Diego's view never sees. This is consistent with each
+surface serving a different purpose —aggregated diagnosis by actor vs. explanation by late
+exception— but it is a real scope asymmetry worth making explicit.
 
 #### Logic
 
-`scorecard_core.py` produces, for each entity, a `reporte_{vendors,carriers,dcs}.json` with statistically robust metrics: explicit sample sizes (`n_POs_total`, `n_POs_causa_raiz`), credibility quantified by Z-scores, and a `Score_Riesgo_Normalizado`. This allows one not to compare in raw terms a vendor with 3 POs against one with 300. Each agent consumes its scorecard, not the POs, emits at least one risk block (High, Medium, or Low, without fixed limit), and `construir_segmento_texto` translates the Pydantic to text; the three segments accumulate and consolidate in `agente1_raw.txt` when invoked with `--actor all`. The reproducibility is asymmetric: the scorecard is byte-identical between runs because its date derives from the data and not from execution, while the narrative of the LLM is stable in tone due to the low temperature but is not anchored with seed, a minor debt recorded in ADR-19.
+[`scorecard_core.py`](../03_llm_integration/scorecard_core.py) produces, per entity, metrics made
+robust with two non-trivial statistical techniques — in terms of [SAD.md](SAD.en.md) §2.2, an
+Estimator Pattern that exposes `build_all_scorecards` as a single interface over both: an
+**empirical-Bayes shrinkage estimator** (`_credibility_from_raw`, `_rate_efron_morris`) that
+"pulls" a low-data entity's average toward the group mean (with a weight `z = n/(n+k)` that depends
+on sample size), preventing a vendor with 2 POs from having an average as credible as one with
+300; and a **weight adjustment via Ridge regression** (`_ridge_weight_adjustment`) that combines a
+fixed business prior (40/30/15/15 across Delay/Excess/Reschedule/Responsibility) with what the data
+suggests, bounded to ±30% of the prior — a "prior + bounded evidence" hybrid. The risk cutoffs
+(low/medium/high) are derived from a 3-component Gaussian mixture over the `delay_days_calc`
+distribution, with a fallback to fixed percentiles if the fit does not converge.
+
+`llm_integration_network_intelligence_view.py` uses the `openai-agents` SDK for three specialized
+agents in sequence (one per actor), each with its own table of guiding reference thresholds
+explicitly marked "DO NOT MENTION IN OUTPUT." The output is forced into a Pydantic schema
+(`ReporteEspecialista` with `AnalisisBloqueRiesgo` blocks). A notable design detail: the prompt
+treats **homogeneity across entities as a finding, not a flaw to correct** — if all the entities in
+a block are practically the same, the prompt requires saying so explicitly ("do not force
+differentiation where none exists"), an active defense against a known hallucination pattern
+(inventing variation where there is none). The three agents run **sequentially** despite using
+`asyncio` — an unexploited opportunity for parallelism, since they are independent of one another.
 
 #### Implementation
 
-`scorecard_core.py` takes `df_classified.csv` and an output directory; `llm_integration_network_intelligence_view.py`, invoked with `--actor all`, runs the three agents and consolidates the result. The chain is `df_classified.csv → scorecards JSON → agente1_raw.txt`.
+[`scorecard_core.py`](../03_llm_integration/scorecard_core.py) takes `df_classified.csv` and
+produces `reporte_{vendors,carriers,dcs}.json`;
+[`llm_integration_network_intelligence_view.py`](../03_llm_integration/llm_integration_network_intelligence_view.py),
+with `--actor all`, runs the three agents and consolidates `agente1_raw.txt`. Neither module has a
+dedicated test file in `tests/` (unlike `pipeline_core.py`, `classifier_core.py`, and
+`llm_integration.py`) — this is the project's most significant coverage gap, given that
+`scorecard_core.py` contains the repository's only non-trivial statistical-adjustment logic.
 
-### Differential Diagnosis Tier-2
+The `eval_*.py` scripts (`eval_quality.py`, `eval_severity_ranking.py`, `eval_diversity.py`,
+`eval_differentiation.py`, `eval_mismatches.py`) are this phase's validation instrument, not
+production code: they deliberately separate **generating** the artifact (costs API calls) from
+**measuring** on the already-generated artifact (costs nothing, only reads CSV/markdown from disk)
+— this allows iterating on the metric without repeating LLM calls. Two of these scripts have their
+own coverage: [`tests/test_eval_diversity.py`](../tests/test_eval_diversity.py) (9 functions) and
+[`tests/test_eval_quality.py`](../tests/test_eval_quality.py) (15 functions).
 
-Under the `--action-call` flag (ARD-16, lane 1), each PO receives a second call with `build_action_prompt()`: a planner role with decision authority that produces a hybrid contract —reasoning, main hypothesis with its immediate, corrective, and preventive action plan, alternative hypothesis with its discriminating step, and a second confidence— and undergoes a rule quality control. The first call diagnoses at the stage level; this one plans the mechanism below that level. It fills the nine tier-2 columns of `po_output.csv`; without the flag, those columns are empty, not absent, so the column contract remains stable with or without it. The complete contract is formalized in ARD-21.
-
-## Phase 4 — App (Demo + Final Evaluation)
+## Phase 4 — App (Demo + Final Evaluation) and Telegram Bot
 
 ### Design
 
-Phase 4 presents the results and does not produce new analysis: it reads the artifact from Phase 3 and displays it. The application is Streamlit, and all the logic of cleaning, classification, and explanation has already occurred upstream.
+Phase 4 presents the results and does not produce new analysis. The design is organized by
+consumption mode, not by entity in the chain ([ADR-09](decisiones/ARD-09.en.md)): Diego queries an
+individual PO, Ravi reviews the portfolio by batch — the full comparison of both personas,
+including their trust criteria, lives in [`user_personas.md`](user_personas.en.md). The rule
+underpinning the architecture is that the app **reads, it does not recompute** (F3→F4 contract): it
+does not recalculate the Phase 1/2 rules nor call the LLM again. The visual language follows the
+Okabe-Ito palette with a channel separation by variable type
+([ADR-17](decisiones/ARD-17.en.md)): the stage —a **nominal** variable, with no order— uses
+categorical hue; severity and confidence —**ordinal**— use an achromatic luminance ramp plus
+icon/shape plus text, without competing for the color channel with the stage. ADR-17 anchors that
+choice in three frameworks: Munzner (*What–Why–How*, choosing the channel by the task) over the
+Cleveland–McGill hierarchy of channel effectiveness (position and length decode with less error
+than color or area), and WCAG 2.1 §1.4.3/§1.4.11 for the contrast requirements of text and
+non-text objects, respectively. The confidence ramp's cutoffs are High 0.80-1.00, Medium
+0.50-0.79, and Low 0.00-0.49. The app is locked to the light theme in this phase (dark mode already
+exists in the code, dormant, deferred to a future static export).
 
-The design is organized by consumption mode, not by entity in the chain (ADR-09). Two personas are defined: Diego, who queries an individual PO, and Ravi, who reviews the portfolio by batch. This choice responds to the fact that the same data is used in two distinct ways —specific diagnosis versus aggregated executive reading— and organizing the app by persona instead of by vendor/carrier/DC avoids duplicating the same entity on three screens.
+Diego trusts the explanation when it respects the order of timestamps, the evidence is complete,
+and the cause is consistent with how the process operates; he distrusts vague outputs, a single
+event carrying the whole conclusion, or missing data — hence why the timeline is primary evidence
+in his view and the confidence indicator is visible. Ravi trusts the attribution when it is
+repeatable across many orders and the disagreement looks systematic, not random; he distrusts it
+when the labels look noisy or the disagreement seems like chance — hence why his view elevates the
+disagreement rate with `REASON_DSC` to a first-class metric.
 
-The rule that underpins the architecture is that the app reads, not recomputes (contract F3→F4, #100). It does not recompute the rules of Phase 1 or 2, nor does it call the LLM again; if a view requires a datum that the CSV does not bring, the contract is expanded in Phase 3, not recomputed in the app. The visual language and color coding of the taxonomy follow the Okabe-Ito palette with light and dark themes (ADR-17). Anchors: ADR-09, ADR-17, ADR-21 (the data contract), ADR-19 (the network view), and ADR-20 (the Telegram bot, in the roadmap).
+An additional channel, the **Telegram bot** ([ADR-20](decisiones/ARD-20.en.md), in Draft but
+functionally complete), offers fixed read commands over the same contract — it is not a
+conversational chat nor a new analytical surface; the conversational chatbot (#160) remains
+deferred, distinct from this bot. The app and the bot differ in deployment topology, not only in
+surface: the Streamlit dashboard is a local, single-user process with no concurrency; the bot is an
+independent, long-running process, reachable remotely and simultaneously by any user in
+`TELEGRAM_USER_WHITELIST`, with no process supervision (no automatic restart on crash). Both read
+the same flat files in `data/processed/` with no intermediate data-service layer (full detail in
+[SAD.md](SAD.en.md) §3.4):
+
+```mermaid
+flowchart LR
+    subgraph Local["Local station, single user"]
+        St[Streamlit dev server]
+    end
+    subgraph Remote["Bot process, long-running"]
+        Bot[telegram_bot/bot.py]
+    end
+    Disk[("data/processed/*.csv, *.json")]
+    Users["Remote users<br/>TELEGRAM_USER_WHITELIST"]
+
+    Disk --> St
+    Disk --> Bot
+    Bot <-->|polling| Users
+```
 
 ### Logic
 
-The F3→F4 contract is `po_output.csv` with 33 columns, only for late POs, divided into three blocks (ADR-21): a base contract of 16 columns —mentor identity and diagnosis, timeline, aggravating factors, and concordance with human annotation—, a tier-1 of 8 columns with enrichment already computed upstream (confidence, responsible entities, excess hours by stage), and a tier-2 of 9 columns with the differential diagnosis from ARD-16. The tier-2 is only populated with `--action-call`, but the 33 columns always exist, with or without the flag.
+**The app is natively multipage**, not a single monolithic `app.py` as a superficial reading of the
+entry file's name might suggest: `app.py` is only the landing page (two persona cards + the
+Telegram channel), and the two real surfaces live in `pages/1_🔍_Exception_Workbench.py` (Diego)
+and `pages/2_📊_Network_Intelligence.py` (Ravi) — Streamlit detects the `pages/` folder and
+generates the navigation automatically.
 
-Diego's individual view consumes the prose per PO from `po_output.csv`: the timeline, the responsible stage, the LLM's explanation and action, the severity, and the concordance with the `REASON_DSC`. Ravi's aggregated view, the Network Intelligence view, consumes two distinct artifacts of that prose per PO: the scorecard JSONs, which are the numerical aggregates by entity, and the executive narrative `agente1_raw.txt`, the actor synthesis from the holistic surface. Both are generated offline, are regenerable, and are outside the mentor's contract and version control.
+The data contract lives in
+[`shared/data_contract.py`](../04_app/shared/data_contract.py), shared between the app and the
+Telegram bot. Its history is documented right in the code: before this module, `04_app/config.py`
+and `telegram_bot/config.py` each kept **two manual copies** of the contract's columns that had
+already diverged (the bot was missing the excess-by-stage columns). The bot resolves the name
+collision (`config`/`services` exist in both trees) by loading the shared module via an **explicit
+file path** (`importlib.util.spec_from_file_location`), without touching `sys.path` — a more
+advanced technique than the `sys.path.insert()` used in the rest of the repo, necessary because the
+collision scenario had already manifested in practice.
+
+Diego's individual view consumes the per-PO prose from `po_output.csv`: a 7-event timeline, the
+diagnosis (stage/severity/confidence/concordance with `REASON_DSC`), the excess for the assigned
+stage, and —conditionally, if `llm_hipotesis` is populated— the tier-2 differential diagnosis panel
+(main hypothesis + evidence, alternative hypothesis + discriminating step, a three-step staged
+plan). Ravi's aggregated view combines KPIs and distributions in pure HTML/CSS
+([`services/data_service.py`](../04_app/services/data_service.py) acts as a Facade in terms of
+[SAD.md](SAD.en.md) §2.2: it simplifies loading, encoding, and indexing for both pages), a Plotly
+time trend with data-driven granularity (weekly if the date range fits in ~half a year, monthly
+otherwise) and direct labeling without a legend, and a "Strategic Diagnosis" section that parses
+`agente1_raw.txt` with a regex parser (`parse_informe_completo`) — the code itself is
+self-described as "PARSER ULTRA-ROBUSTO" and "REGEX MAESTRA CORREGIDA" (ultra-robust parser,
+corrected master regex), a sign that it has already gone through several rounds of fixes against
+formats that did not match; it is, by a clear margin, Phase 4's most fragile point: it has no unit
+test of its own, and the page's only smoke test explicitly runs in the scenario where
+`agente1_raw.txt` does not exist, so the parser is never exercised in CI.
+
+The Telegram bot reuses exactly the same `po_output.csv` and the same scorecards, with
+**fail-closed** authentication (an empty whitelist means nobody is authorized, not that everyone
+is) and two profiles (Diego/Ravi) that determine which commands it answers. An explicit
+`DEMO_MODE` allows a full bypass meant only for presentations, with a log warning if it is left
+active.
 
 ### Implementation
 
-The app is launched with `streamlit run 04_app/app.py` and organizes its two surfaces into pages: the individual view (#163) and the Network Intelligence view (#164). `config.py` centralizes the canonical columns of the contract and the color coding of the taxonomy (ADR-17), and `styles.css` the visual theme. The app consumes `po_output.csv`, the `scorecards/reporte_*.json`, and `agente1_raw.txt`, all produced upstream. The coverage is in `tests/test_handoff_f3.py`, which locks the column contract, and `tests/test_app_smoke.py`.
+The F3→F4 contract is `po_output.csv` with 33 columns, only for late POs, split into three blocks
+([ADR-21](decisiones/ARD-21.en.md), in Draft): a base contract of 16 columns (identity, mentor
+diagnosis, timeline, aggravating factors, concordance), a tier-1 of 8 columns (confidence,
+entities, excess by stage), and a tier-2 of 9 columns (differential diagnosis). `agente1_raw.txt`
+is a parallel derived artifact: it shares Phase 3's lineage but is not part of `po_output.csv`.
+
+[`04_app/config.py`](../04_app/config.py) centralizes the design system;
+[`assets/styles.css`](../04_app/assets/styles.css) the visual tokens;
+[`services/data_service.py`](../04_app/services/data_service.py) the loading (`@st.cache_data`),
+delegating CSV reading to [`shared/data_loader.py`](../04_app/shared/data_loader.py) —shared with
+the Telegram bot—: it tries the real `po_output.csv` and falls back to
+`data/samples/po_output_sample.csv` if Phase 3 was not run locally; if neither exists, the error
+gives both paths it searched and the exact command to regenerate the artifact; it tries encodings
+in order `utf-8`/`cp1252`/`latin-1`/`iso-8859-1`, with `errors="replace"` as a last resort, for a
+CSV that can be regenerated on different team members' machines; `components/` holds the reusable
+UI fragments (badges, timeline, navbar, metric cards). The bot lives in
+[`04_app/telegram_bot/`](../04_app/telegram_bot/) with its own parallel structure (`bot.py`,
+`handlers/{common,diego,ravi}.py`, `services/{auth,chart_service,data_service}.py`).
+
+```
+streamlit run 04_app/app.py
+python 04_app/telegram_bot/bot.py
+```
+
+Phase 4's coverage is the thinnest in the project:
+[`tests/test_app_smoke.py`](../tests/test_app_smoke.py) (1 function parametrized into 2 cases, one
+per page) only verifies that each page loads without raising an exception, asserting nothing about
+content or layout; [`tests/test_sample_artifact.py`](../tests/test_sample_artifact.py) (5
+functions) locks the shape of the versioned sample;
+[`tests/test_qr_service.py`](../tests/test_qr_service.py) (2 functions) and
+[`tests/test_telegram_auth.py`](../tests/test_telegram_auth.py) (4 functions, fail-closed
+authentication and the demo bypass) cover specific pieces of the bot. There is no test for the
+bot's command handlers (`cmd_po`, `cmd_kpi`, etc.) nor for the Network Intelligence parser.
 
 ## End-to-End Data Contract
-
-The complete data chain, from raw source to final consumption:
 
 ```mermaid
 flowchart LR
     A[Raw CSV<br/>400 POs, 39 col] -->|pipeline_core.py| B[df_clean<br/>F1]
     B -->|classifier_core.py| C[df_classified.csv<br/>F2]
-    C -->|llm_integration.py| D[po_output.csv<br/>33 col, only late<br/>F3]
+    C -->|llm_integration.py| D[po_output.csv<br/>33 col, late only<br/>F3]
     C -->|scorecard_core.py| E[scorecards<br/>reporte_vendors/carriers/dcs.json]
     E -->|llm_integration_network_intelligence_view.py<br/>--actor all| F[agente1_raw.txt]
-    D --> G[app.py<br/>individual view · Diego<br/>F4]
-    E --> H[app.py<br/>Network Intelligence view · Ravi<br/>F4]
+    D --> G["app.py + pages/1_Exception_Workbench<br/>individual view · Diego · F4"]
+    E --> H["pages/2_Network_Intelligence<br/>aggregated view · Ravi · F4"]
     F --> H
+    D --> I[telegram_bot/<br/>additional channel ADR-20]
+    E --> I
 ```
 
-Each boundary between phases is a contract, not an assumption: the CSV produced by one phase is functionally identical to the DataFrame that that phase leaves in memory, so that the next phase reads it and reconstructs the same state it would have if the chain were run all at once. Identity is functional, not typed —a CSV writes dates as text— so the contract is fulfilled when the value is the same, not when the dtype matches. This covers the two main boundaries, F1→F2 and F2→F3.
+Every boundary between phases is a contract, not an assumption: the CSV a phase produces is
+functionally identical to the DataFrame that phase leaves in memory — identity is functional, not
+typed (a CSV writes dates as text), so the contract is fulfilled when the value is the same, not
+when the dtype matches. In terms of [SAD.md](SAD.en.md) §2.2, this is the project's Contract /
+Dual Contract Pattern, verified with tests dedicated to each boundary:
+[`tests/test_handoff_contract.py`](../tests/test_handoff_contract.py) (4 functions, F1→F2 and
+F2→F3) explicitly normalizes typing differences (re-parsed dates, missing values unified to a
+common sentinel) before comparing; [`tests/test_handoff_f3.py`](../tests/test_handoff_f3.py) (9
+functions) does the same for F3→F4, also verifying that the mentor's five columns come first and in
+order.
 
-A limit case of that golden rule is the sentinel `"Ninguno"`. The column `stage_multi` uses `"Ninguno"` for POs without a secondary stage, and not the literal `"None"` or the empty string, because both are read from the CSV as NaN: F3 would lose the signal of "no second stage" and confuse it with an absent datum. `"Ninguno"` is a real value that survives the round-trip intact.
-
-The F3→F4 contract (`po_output.csv`, ADR-21) has 33 columns and reaches only late POs (`delay_days_calc > 0`): a base block of 16 (identity and mentor diagnosis, timeline, aggravating factors, concordance with human annotation), a tier-1 of 8 (enrichment already computed), and a tier-2 of 9 (differential diagnosis, populated only with `--action-call`, but always present as a column). `agente1_raw.txt` is a parallel derived artifact: it shares lineage from Phase 3 but is not part of `po_output.csv` —it is produced by the holistic surface from the scorecards, not from the CSV— and its content is narrative text by actor, not tabular columns.
-
-The rule governing the entire F3→F4 stretch is that the app reads and does not recompute: it does not rerun the rules of F1/F2 nor call the LLM again. Everything that each view needs is already in the artifacts it consumes.
+A limit case of that golden rule is the `"Ninguno"` sentinel in `stage_multi`: it is neither the
+literal `"None"` nor the empty string, because both are read from the CSV as NaN — `"Ninguno"` is a
+real value that survives the round-trip intact.
 
 ## Validation and Quality
 
-The project guarantees its results in four layers, each with its own what it guarantees, what it breaks if it fails, and how it reproduces. The complete method detail lives in `documentation/validacion-y-qa.md`; here its canonical table is cited, not recalculated.
+The project guarantees its results across four layers (full detail in
+[`validacion-y-qa.md`](validacion-y-qa.en.md)):
 
-**Layer A — Unit tests by phase.** Each function of the pipeline is tested in isolation, with synthetic fixtures of known expected value: `test_pipeline_core.py` for cleaning, `test_classifier_core.py` for stage and severity, `test_metrics_core.py` for validation metrics, `test_llm_integration.py` for prompt construction and parsing without touching the network. If it fails, a regression reaches main without anyone noticing.
+**Layer A — unit tests by phase.** [`test_pipeline_core.py`](../tests/test_pipeline_core.py) (31),
+[`test_classifier_core.py`](../tests/test_classifier_core.py) (31),
+[`test_metrics_core.py`](../tests/test_metrics_core.py) (14),
+[`test_llm_integration.py`](../tests/test_llm_integration.py) (98),
+[`test_fewshot.py`](../tests/test_fewshot.py) (8) test each function in isolation with synthetic
+fixtures of known expected value. The central fixture
+([`tests/conftest.py`](../tests/conftest.py)) builds a DataFrame where **each row is a deliberate
+scenario** identified by a descriptive `PO_NBR` (`PO-CLEAN`, `PO-CARRIER-LATE`,
+`PO-VENDOR-SUBUMBRAL`, etc.), with datetimes at round offsets so the expected value can be computed
+by hand — this avoids the circularity of "trusting the code itself to know what it should produce."
 
-**Layer B — Handoff contract between phases.** `test_handoff_contract.py` verifies the golden rule described above at the two boundaries F1→F2 and F2→F3. If it fails, running the phases separately would yield a different result than running them together.
+**Layer B — handoff contract between phases.**
+[`test_handoff_contract.py`](../tests/test_handoff_contract.py) (4) and
+[`test_handoff_f3.py`](../tests/test_handoff_f3.py) (9) verify the golden rule at the three
+boundaries F1→F2, F2→F3, and F3→F4.
 
-**Layer C — Classification metrics against thresholds.** The headline figures are calculated from the timestamps, never from human annotation, and are contrasted against the mentor's acceptance thresholds:
+**Layer C — classification metrics against thresholds.**
 
-| Metric              | Value           | Mentor Threshold | Denominator                                           |
-|---------------------|-----------------|------------------|------------------------------------------------------|
-| Stage accuracy       | 100% (216/216)  | > 80%            | 216 evaluable (247 late − 31 Indeterminates with no measurable gap) |
-| Reason agreement      | 88.7% (180/203) | reference, not threshold | 203 classifiable (late with non-null human annotation) |
-| Severity ranking      | 100% (14/14)    | > 95%            | 14 hot-late, on `po_output.csv` (severity = LLM)    |
+| Metric | Value | Mentor threshold | Denominator |
+|---|:--:|:--:|---|
+| Stage accuracy | 100% (216/216) | > 80% | 216 evaluable |
+| Reason agreement | 88.7% (180/203) | reference, not a threshold | 203 classifiable |
+| Severity ranking | 100% (14/14) | > 95% | 14 hot-late, on `po_output.csv` |
 
-Stage accuracy compares the stage by excess over threshold against the dominant gap —the segment of greatest raw duration—: it validates that the attribution does not stray from where time was physically spent, without forcing them to match by construction. Reason agreement, as established in Phase 2, has its <100% expected and desired: it measures where the computation corrects human annotation, not where the method fails.
+**Layer D — CI as a merge gate.** The workflow
+([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)) runs on every PR and every push to main
+**five** isolated import-smoke steps: `pipeline_core`, `classifier_core`, `llm_integration`,
+`llm_integration_network_intelligence_view` (the network view), and `bot` (the Telegram bot), each
+with its own minimal `PYTHONPATH` because the phase folders start with a digit and are not
+importable Python packages by name. It then runs the full suite (`pytest`, which takes its
+configuration from `pyproject.toml`). The workflow explicitly documents, in its own header comment,
+that the absence of a lint/format/type-check gate (`ruff`/`black`/`mypy`) is a **conscious
+decision**, not an oversight: the style standard is upheld by internal convention reviewed in the
+PR's self-review.
 
-**Layer D — CI as merge gate.** The workflow runs on each PR and on each push to main a smoke test of imports from the three core modules followed by the complete suite. The team merges without blocking human review, so the merge gate is the green check.
-
-The anchor figures that a reviewer obtains in a clean environment: test suite at 251 (grew from 57 to 251 with each phase); stage accuracy 100% (216/216); reason agreement 88.7% (180/203); severity ranking 100% (14/14); LLM Explanation Quality 5/5 (20/20); LLM severity divergence versus rule 213/247 (86.2%) agree, 34/247 (13.8%) diverge —always scaling—.
-
-Validation also covers limit cases where the data is partial or anomalous. Of the 27 POs without `TRAILER_ARRIVE_DT`, the vendor's STA push rule rescues 20 —because it measures late approval without needing the trailer—, and the remaining 7 are left as `sin_datos`. *(Before the `decidible` gate fix from ADR-03b, 2026-07-22, only 12 were rescued; see the Divergences subsection below.)* Of the 12 time investments, the pipeline truncates the affected segment to zero instead of propagating a negative duration. The figure 39 (F1's unreliable POs: 12 time inversions + 27 without trailer, out of 400) and F2's Indeterminate count (31: 7 `sin_datos` + 24 `sin_causa_dominante`, out of 247 late) come from distinct populations; before the ADR-03b fix they numerically coincided at 39, which made them easier to conflate — that coincidence is gone, but they still should not be mixed.
+The test suite is 267 cases collected by `pytest --collect-only -q`, over 231 `def test_` functions
+across the 13 [`tests/`](../tests/) files that define them — the difference comes from the cases
+that `@pytest.mark.parametrize` expands in `test_pipeline_core.py`, `test_telegram_auth.py`, and
+`test_app_smoke.py`.
 
 ## Traceability Map
 
-| Phase                | Decisions (ADR/ARD)                                                                         | Key Issues                    | Tests                                        |
-|----------------------|--------------------------------------------------------------------------------------------|-------------------------------|----------------------------------------------|
-| F1 — Pipeline and Quality | ADR-01                                                                                      | #4, #15, #16, #18             | `test_pipeline_core.py`                     |
-| F2 — Classification  | ADR-01, ADR-02, ADR-03a▷ADR-03b, ADR-04a▷ADR-04b, ADR-05, ADR-06a▷ADR-06b, ADR-07, ADR-08 (superseded) | #39, #40, #41, #42, #44, #45, #46, #47, #48, #49 | `test_classifier_core.py`, `test_metrics_core.py` |
-| F3 — LLM per PO     | ADR-10, ADR-11, ADR-12, ADR-13, ADR-14, ADR-15 (superseded by ADR-16)                  | #67, #91, #94, #99, #121, #135, #137, #143, #144, #151 | `test_llm_integration.py`, `test_handoff_f3.py` |
-| F3 — Holistic / network  | ADR-16 (draft, lane 3), ADR-19                                                               | —                             | —                                            |
-| F3 — Tier-2 (action) | ADR-16 (lane 1), ARD-21                                                                      | #158, #161                    | —                                            |
-| F4 — App            | ADR-09, ADR-17, ADR-20 (draft), ADR-21                                                       | #100, #102, #103, #158, #161, #162, #163, #164, #174, #175, #176, #186, #187 | `test_handoff_f3.py`, `test_app_smoke.py`  |
+| Phase | Decisions (ADR/ARD) | Key issues | Tests |
+|---|---|---|---|
+| F1 — Pipeline and quality | [ADR-01](decisiones/ARD-01.en.md) | #4, #15, #16, #18 | `test_pipeline_core.py` (31) |
+| F2 — Classification | [ADR-01](decisiones/ARD-01.en.md), [ADR-02](decisiones/ARD-02.en.md), [ADR-03a](decisiones/ARD-03a.en.md)▷[ADR-03b](decisiones/ARD-03b.en.md), [ADR-04a](decisiones/ARD-04a.en.md)▷[ADR-04b](decisiones/ARD-04b.en.md), [ADR-05](decisiones/ARD-05.en.md), [ADR-06a](decisiones/ARD-06a.en.md)▷[ADR-06b](decisiones/ARD-06b.en.md), [ADR-07](decisiones/ARD-07.en.md), [ADR-08](decisiones/ARD-08.en.md) (superseded, no direct replacement), [ADR-24](decisiones/ARD-24.en.md) | #39-#49 | `test_classifier_core.py` (31), `test_metrics_core.py` (14) |
+| F3 — LLM per-PO | [ADR-10](decisiones/ARD-10.en.md), [ADR-11](decisiones/ARD-11.en.md), [ADR-12](decisiones/ARD-12.en.md), [ADR-13](decisiones/ARD-13.en.md), [ADR-14](decisiones/ARD-14.en.md), [ADR-15](decisiones/ARD-15.en.md) (superseded by [ADR-16](decisiones/ARD-16.en.md)) | #67, #91, #94, #99, #121, #135, #137, #143, #144, #151 | `test_llm_integration.py` (98), `test_handoff_f3.py` (9) |
+| F3 — Holistic / network | [ADR-16](decisiones/ARD-16.en.md) (draft, lane 3), [ADR-19](decisiones/ARD-19.en.md) | — | *(no dedicated test — coverage gap, see roadmap)* |
+| F3 — Tier-2 (action) | [ADR-16](decisiones/ARD-16.en.md) (lane 1, closed), [ADR-21](decisiones/ARD-21.en.md) (draft) | #158, #161 | included in `test_llm_integration.py` |
+| F4 — App + Bot | [ADR-09](decisiones/ARD-09.en.md), [ADR-17](decisiones/ARD-17.en.md), [ADR-20](decisiones/ARD-20.en.md) (draft), [ADR-21](decisiones/ARD-21.en.md) (draft), [ADR-22](decisiones/ARD-22.en.md) (draft), [ADR-23](decisiones/ARD-23.en.md) (draft), [ADR-25](decisiones/ARD-25.en.md) (draft) | #100, #102, #103, #158, #161-#164, #174-#176, #186, #187, #193, #194, #196 | `test_handoff_f3.py`, `test_app_smoke.py` (1), `test_sample_artifact.py` (5), `test_qr_service.py` (2), `test_telegram_auth.py` (4) |
 
-The decisions superseded (marked ▷) are not edited or deleted: they chain to the current one that replaces them, according to the MADR standard adopted by the team. The complete record, with status and context links per decision, lives in `documentation/decisiones/README.md`.
+Full record with status and links per decision:
+[documentation/decisiones/README.md](decisiones/README.en.md).
 
 ## Open Work / Roadmap
 
-What is described above is the submitted and validated state. There is, apart from that, draft or deferred work, documented separately to avoid mixing it with what has been produced:
+What is described above is the submitted and validated state. Beyond that, there is draft or
+deferred work:
 
-ADR-16, lane 2 (agentic) and conversational Q&A in lane 3, remain open. The executive synthesis by actor in lane 3 is already delivered by ADR-19, but the conversational Q&A about the dataset is unresolved.
+[ADR-16](decisiones/ARD-16.en.md), lane 2 (agentic) and the conversational Q&A of lane 3, remain
+open. The conversational chatbot (#160) stays deferred, distinct from the Telegram bot
+([ADR-20](decisiones/ARD-20.en.md)), which is already built as an additional consumption channel,
+pending only its formal closure as a decision.
 
-The conversational chatbot (#160) is deferred, distinct from the Telegram bot (ADR-20), which is an additional consumption channel for the already existing contract, not a new analytical surface.
+[ADR-21](decisiones/ARD-21.en.md) (tier-1/tier-2 contract), [ADR-22](decisiones/ARD-22.en.md)
+(interface rework spec), and [ADR-23](decisiones/ARD-23.en.md) (base mockups for that rework) are
+in Draft — formally unclosed, even though the code implementing them is already in production.
 
-ADR-20, the Telegram bot, is in draft: an additional consumption channel for `po_output.csv`, pending formal closure.
+[ADR-18](decisiones/ARD-18.en.md) (canonical source language for bilingual documentation) governs
+the ES→EN translation of the deliverables, outside the scope of this document.
 
-ADR-18, source canonical language and naming convention for bilingual documentation, is in draft; it governs the ES→EN translation of deliverables, which is outside this document.
+[ADR-25](decisiones/ARD-25.en.md), the most recent decision in the record (2026-07-20, in Draft),
+declares three post-deliverable improvement fronts without committing to dates:
 
-Additionally, a minor debt recorded in ADR-19 remains: the narrative of the holistic surface is not anchored with seed (unlike the per PO surface, which does use `seed=42`), a second comparative table of thresholds among the three actors partially dilutes the isolation that the architecture demands, and there is a vocabulary inconsistency between two fields of the same Pydantic schema (`bloques` describes "Critical, Medium or Low" while `nivel_riesgo` requires "High, Medium or Low"). None of the three block the result; they are recorded as code improvements outside the scope of this document.
+1. **Localization (bilingual ES/EN app).** The interface *chrome* is trivial to translate because
+   the categorical fields (`severity`, `stage`, `llm_confianza`) are already stored as codes and the
+   app assigns the label. The real cost is the free-form text the LLM generates (`explanation`,
+   `action`, hypotheses), generated in Spanish: a genuinely English app requires deciding between
+   re-generating those outputs in English (API cost), translating them offline, or accepting a
+   mixed-language interface.
+2. **Themes / dark mode.** Locked to light (commit `c726f23`) because Streamlit does not allow an
+   instant manual toggle with custom CSS: it uses emotion/React with no stable DOM hook, and
+   switching the native theme does not run the Python script, so the token injection falls out of
+   sync; a toggle faithful to the mockups would require a static export layer (HTML/CSS/JS) outside
+   Streamlit.
+3. **Conversational chatbot** (#160, lane 3 of [ADR-16](decisiones/ARD-16.en.md)). Distinct from
+   the already-delivered Telegram bot (fixed, read-only commands, no LLM at query time): this is
+   free-language Q&A where the LLM reasons over the dataset at query time, with guardrails against
+   hallucination and a per-query API cost.
+
+Minor debts identified, none blocking the result:
+
+- The holistic surface's narrative is not seed-anchored (unlike the per-PO surface, which does use
+  `seed=42`).
+- `scorecard_core.py` (the repo's only non-trivial statistical-adjustment logic: empirical-Bayes
+  shrinkage, Ridge regression, Gaussian mixture) has no dedicated test.
+- The `agente1_raw.txt` parser in the Network Intelligence view (`parse_informe_completo`) is
+  Phase 4's most fragile piece —a regex parser over LLM-generated text, with no schema shared with
+  its producer— and has zero test coverage.
+- The Telegram bot's "Ravi only" profile check is implemented twice (a decorator + a manual check
+  in the text-menu dispatch), with a risk of future divergence if one is updated without the other.
+- There is no standardized logging strategy across phases: Phase 3's batch process reports progress
+  with `print()` to stdout, with no `logging` module with levels or file persistence (detail in
+  [SAD.md](SAD.en.md) §5).
+- `_ridge_weight_adjustment()` (Phase 3, `scorecard_core.py`) uses `Ridge(alpha=1.0,
+  random_state=42)` and `MAX_WEIGHT_ADJUST=0.30` with no comment citing an ADR or issue — unlike
+  Phase 2's thresholds, which do have an ADR and a full sensitivity analysis.
+- LLM text escaping is inconsistent between Phase 4's two pages: `Exception_Workbench` explicitly
+  escapes tier-2 text before interpolating it into HTML (`_t2()`, with a comment explaining why);
+  `Network_Intelligence` never uses `html.escape` despite interpolating LLM text
+  (`analisis`/`accion`) via `unsafe_allow_html`. The real risk is low given the synthetic dataset
+  and the controlled output format, but it is a hygiene inconsistency between two pages of the same
+  system.
+- Three stage-label dictionaries coexist on purpose, one per channel: `STAGE_DISPLAY`
+  (`04_app/config.py`), `STAGE_LABELS` (`telegram_bot/config.py`), and `_STAGE_ALIASES`
+  (`llm_integration.py`, for text comparison in the action checks, not for UI). This is a conscious
+  pattern —one data source, multiple presentations per channel— not an inconsistency, but if the
+  stage taxonomy changed, all three places would need updating.
+- `_REASON_DSC_MAP` (Phase 2) requires an exact text match against `REASON_DSC`, with no
+  normalization; an unseen wording variant silently falls into `"Unknown"`. It is not an active
+  risk on the current, already-audited dataset, but it is fragile if the source changed.
 
 ### Documentary Consistency with SRS and SAD
 
-Upon closing this document, its relationship with the two formal specifications of the repository was reviewed, and two statements that had become outdated were corrected. The SAD described `llm_integration_network_intelligence_view.py` as an experimental component without references from the rest of the code; in reality it generates `agente1_raw.txt`, consumed in production by the Network Intelligence view (ADR-19, ARD-21), and the description was corrected to reflect that real dependency. The SRS and root README cited 4.75/5 as the figure of LLM Explanation Quality —the result of the benchmark that selected configuration C3, not the deliverable’s headline figure—; it was updated to 5/5 (20/20), the figure in force after revalidation at production temperature. Separately, `documentation/validacion-y-qa.md` cited an outdated test count; it was also synchronized.
+Checked against the actual text of [SRS.md](SRS.en.md) and [SAD.md](SAD.en.md):
+
+- **Neither document cites an outdated test count.** Neither `SRS.md` nor `SAD.md` mentions "251";
+  that old figure was historically confined to this document and the root `README.md`, both
+  already corrected.
+- **`SAD.md` already corrects** the characterization of
+  `llm_integration_network_intelligence_view.py` as a real Phase 3→Phase 4 dependency (§3.3),
+  explicitly citing [ADR-21](decisiones/ARD-21.en.md) and clarifying that an earlier version of the
+  SAD itself described it —incorrectly— as an isolated component.
+- **`SRS.md` already corrects** the LLM Explanation Quality figure to 5/5 (20/20), with an explicit
+  note that 4.75/5 was the benchmark figure that selected C3 over C1/C2, not the final
+  deliverable's figure.
+- **`SRS.md` and `SAD.md` already formally document the Telegram bot**: `SRS.md` declares it as
+  RF-17 (§3.1), integrates it into the use-case diagram (§2.4) and the RF→test traceability table
+  (§3.4); `SAD.md` includes it in the layer diagram (§2.1), as the `TelegramBot` class in the
+  logical view (§3.1), in the development view (§3.3), and, most significantly, in the deployment
+  view (§3.4): it distinguishes the dashboard as a local single-user process from the bot as a
+  remote multi-user process, with no process supervision. This coverage was added in a correction
+  session subsequent to earlier versions of this same document, which flagged this as a gap — it no
+  longer is.
 
 ### Divergences Verified Between ADR and Code
 
@@ -319,3 +888,11 @@ here and in `02_clasif_reglas_negocio/README.md` and `documentation/metricas-pro
 their propagation to the remaining ~25-28 files that cite them (SRS, data dictionary,
 hallazgos-ai-vs-humano, final presentation, model cards, Phase 3 evaluation reports) is
 deferred as an explicit follow-up.)*
+
+Separately, two Draft ADRs cite their own follow-up which has since become obsolete due to
+later work —not a code divergence, but ADR text left unupdated after a later closure—:
+[ADR-20](decisiones/ARD-20.en.md) says that `04_app/telegram_bot/README.md` is "currently
+nonexistent"; it now exists, added the same day in a later commit.
+[ADR-21](decisiones/ARD-21.en.md) says under Consequences (negative) that
+`03_llm_integration/README.md` "still has the outdated contract (16/33 columns)"; it was
+already synchronized to 33 columns in a later commit the same day.

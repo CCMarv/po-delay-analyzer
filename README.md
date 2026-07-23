@@ -69,7 +69,7 @@ cp .env.example .env                                 # Windows: Copy-Item .env.e
 # Correr el pipeline y la suite:
 python 01_data_pipeline_and_eda/pipeline_core.py     # F1 — limpieza + validación
 python 02_clasif_reglas_negocio/classifier_core.py   # F2 — clasificación por etapa
-pytest                                                # 266 tests, sin API
+pytest                                                # 267 tests, sin API
 
 # Abrir la app (Fase 4). Sin correr Fase 3 localmente, cae a la muestra
 # versionada (data/samples/); el artefacto completo vive en
@@ -150,7 +150,7 @@ Resultados cabecera (población, umbral y fuente reproducible de cada cifra en
 │   ├── SAD.md · SRS.md           #   especificaciones de arquitectura y requisitos
 │   ├── exports/                  #   copias .docx/.pptx para entrega (no son la fuente)
 │   └── kickoff_po_root_cause.html
-├── tests/                        # suite pytest (266 tests): F1/F2/F3, handoff, few-shot, evals, app, bot
+├── tests/                        # suite pytest (267 tests): F1/F2/F3, handoff, few-shot, evals, app, bot
 ├── CONTRIBUTING.md               # setup, reproducibilidad, flujo, qué no se commitea, tests/CI
 ├── requirements.txt
 ├── pyproject.toml                # config de pytest (pythonpath, testpaths)
@@ -212,7 +212,7 @@ el porqué y qué resuelve una tarea.
 - LLM: el entregable (`po_output.csv`) se genera con `gpt-4o-mini` (OpenAI, backend oficial);
   `claude-sonnet-4-6` (Anthropic), `deepseek-chat` (DeepSeek) y `qwen2.5:7b` (local vía Ollama)
   son backends alternos con la misma interfaz de prompt y parseo.
-- Pruebas: `pytest` (266 tests) en CI (GitHub Actions), en cada push y cada PR.
+- Pruebas: `pytest` (267 tests) en CI (GitHub Actions), en cada push y cada PR.
 - Las variables y columnas del dominio (`IS_LATE`, `REASON_DSC`, `HOT_PO_FLAG`, los timestamps
   del lifecycle, …) se documentan en el [data dictionary](documentation/data_dictionary.md).
 

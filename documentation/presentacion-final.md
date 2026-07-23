@@ -67,7 +67,7 @@ presentación y el guion de demo las citan por separado para no confundirlas:
   calcula `metrics_core.py` en la Fase 2 comparando `stage_primary` (el cómputo) contra
   `reason_group_manual` (una agrupación curada de `REASON_DSC`). Es la cifra que cita la
   slide de Validación y Métricas.
-- **La KPI "Tasa de Desacuerdo AI" que se ve en vivo en la vista Ravi:** hoy 38.5% (95/247,
+- **La KPI "Tasa de Desacuerdo AI" que se ve en vivo en la vista Ravi:** hoy 39.7% (98/247,
   verificado contra el CSV real). Es `llm_coincide_con_reason`, un juicio binario que el
   propio LLM emite por PO al redactar su explicación —uno de los cinco campos del JSON que
   produce la Fase 3—, no el mismo cálculo que el anterior. Está correlacionada con la cifra

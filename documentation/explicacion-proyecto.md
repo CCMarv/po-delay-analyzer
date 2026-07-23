@@ -48,7 +48,7 @@ Las cifras que resumen el estado validado del proyecto, todas trazables a su art
 - Reason agreement 88.7% (180/203 clasificables): el <100% es esperado y deseado.
 - LLM Explanation Quality 5/5 (20/20) en el benchmark de calidad, few-shot C3 a temperatura 0.9.
 - Severity ranking 100% (14/14) frente al umbral de >95%.
-- Suite de pruebas: 266 casos que recolecta `pytest --collect-only -q` — 230 funciones `def test_` en
+- Suite de pruebas: 267 casos que recolecta `pytest --collect-only -q` — 231 funciones `def test_` en
   13 archivos bajo [`tests/`](../tests/), algunas parametrizadas.
 - Registro de decisiones: 28 ADR ([ADR-01](decisiones/ARD-01.md) a [ADR-25](decisiones/ARD-25.md), con
   tres números que llevan dos variantes encadenadas: 03a/03b, 04a/04b, 06a/06b), de los cuales 17 están
@@ -264,6 +264,32 @@ umbral de vendor variable, sin tocar el clasificador real, y recorre una malla d
 subir el umbral migran todos a `sin_causa_dominante`, nunca a Carrier ni DC — el umbral no reasigna
 culpa, solo aísla los push que no alcanzan a ser señal.
 
+Dos tablas resumen esa malla para las dos sensibilidades que sostienen los umbrales del mentor:
+
+**Sensibilidad del umbral carrier (4/6/8/12h)** — reparto Vendor/Carrier/DC/Indeterminado en % de
+tardíos, con `vendor_gap_hrs`=24 activo:
+
+| Umbral carrier | `flag_carrier_calc` | Reparto Vendor / Carrier / DC / Indeterminado |
+|---|---|---|
+| 4 h | 25.8% (103) | 56.3 / 17.4 / 15.0 / 11.3 |
+| 6 h | 12.8% (51) | 56.3 / 16.2 / 15.0 / 12.6 |
+| 8 h | 12.8% (51) | 56.3 / 16.2 / 15.0 / 12.6 |
+| 12 h | 11.2% (45) | 56.3 / 14.6 / 15.0 / 14.2 |
+
+El umbral carrier mueve mucho la flag bruta pero apenas mueve `stage_primary`, porque la señal de
+vendor domina el argmax y el umbral carrier solo reordena los pocos casos donde carrier compite de
+cerca.
+
+**Sensibilidad del umbral vendor (0/6/12/18/24/48/72h)** — conteos sobre los 247 tardíos:
+
+| Umbral vendor | Vendor | % Vendor | Reparto Vendor / Carrier / DC / sin_datos / sin_causa_dominante |
+|---|---|---|---|
+| 0 (sin umbral) | 151 | 61.1 | 151 / 40 / 37 / 5 / 14 |
+| 6–18 h | 141 | 57.1 | 141 / 40 / 37 / 7 / 22 |
+| 24 h | 139 | 56.3 | 139 / 40 / 37 / 7 / 24 |
+| 48 h | 121 | 49.0 | 121 / 40 / 37 / 8 / 41 |
+| 72 h | 81 | 32.8 | 81 / 40 / 37 / 10 / 79 |
+
 El contraste con la anotación humana es la tesis del proyecto en su forma más medible: reason
 agreement 88.7% sobre 203 clasificables. `select_mismatches()` extrae los mismatches ordenados por
 "fuerza de señal" (el exceso de la etapa que el cómputo eligió), con un modo `stratify=True` que
@@ -291,7 +317,7 @@ cuando hay STA push ese tramo es de días (domina la duración) y a la vez es la
 vendor, pero un desacuerdo sería multicausalidad, no un error del método.
 
 El módulo produce `data/processed/df_classified.csv` (contrato dual, todas las columnas). La cobertura
-está en [`tests/test_classifier_core.py`](../tests/test_classifier_core.py) (30 funciones) y
+está en [`tests/test_classifier_core.py`](../tests/test_classifier_core.py) (31 funciones) y
 [`tests/test_metrics_core.py`](../tests/test_metrics_core.py) (14 funciones).
 
 ## Fase 3 — Integración LLM
@@ -306,7 +332,7 @@ superficies** que conviene distinguir con precisión:
 
 Es, con mucho, el bloque de código más grande del repositorio:
 [`llm_integration.py`](../03_llm_integration/llm_integration.py) supera las 2500 líneas y concentra 98
-de las 230 funciones de test de la suite (42.6%).
+de las 231 funciones de test de la suite (42.4%).
 
 ### Superficie por PO — el entregable evaluado
 
@@ -386,8 +412,8 @@ escalando —30 casos LOW→MEDIUM y 4 MEDIUM→HIGH—, ninguna desescala.
 
 Existe una segunda métrica de desacuerdo AI-vs-humano, distinta del reason agreement de Fase 2.
 `llm_coincide_con_reason` es un juicio binario que el propio LLM emite por PO comparando su
-diagnóstico contra `REASON_DSC`. Sobre las 247 filas de `po_output.csv`: 152 `True` / 95 `False`,
-38.5% de desacuerdo. Es una cifra correlacionada pero no intercambiable con el reason agreement de
+diagnóstico contra `REASON_DSC`. Sobre las 247 filas de `po_output.csv`: 149 `True` / 98 `False`,
+39.7% de desacuerdo. Es una cifra correlacionada pero no intercambiable con el reason agreement de
 Fase 2 (88.7% sobre 203 clasificables): distinto método (juicio del LLM vs. regla determinística de
 `metrics_core.py`), distinto denominador (247 vs. 203) y distinta fuente.
 
@@ -663,7 +689,7 @@ El proyecto garantiza sus resultados en cuatro capas (detalle completo en
 [`validacion-y-qa.md`](validacion-y-qa.md)):
 
 **Capa A — tests unitarios por fase.** [`test_pipeline_core.py`](../tests/test_pipeline_core.py) (31),
-[`test_classifier_core.py`](../tests/test_classifier_core.py) (30),
+[`test_classifier_core.py`](../tests/test_classifier_core.py) (31),
 [`test_metrics_core.py`](../tests/test_metrics_core.py) (14),
 [`test_llm_integration.py`](../tests/test_llm_integration.py) (98),
 [`test_fewshot.py`](../tests/test_fewshot.py) (8) prueban cada función aislada con fixtures sintéticos
@@ -696,7 +722,7 @@ Python importables por nombre. Después corre la suite completa (`pytest`, que t
 ausencia de un gate de lint/formato/type-check (`ruff`/`black`/`mypy`) es una **decisión consciente**,
 no un olvido: el estándar de estilo se sostiene por convención interna revisada en self-review del PR.
 
-La suite de pruebas son 266 casos que recolecta `pytest --collect-only -q`, sobre 230 funciones
+La suite de pruebas son 267 casos que recolecta `pytest --collect-only -q`, sobre 231 funciones
 `def test_` en los 13 archivos de [`tests/`](../tests/) que las definen — la diferencia son los casos
 que expanden `@pytest.mark.parametrize` en `test_pipeline_core.py`, `test_telegram_auth.py` y
 `test_app_smoke.py`.
@@ -706,7 +732,7 @@ que expanden `@pytest.mark.parametrize` en `test_pipeline_core.py`, `test_telegr
 | Fase | Decisiones (ADR/ARD) | Issues clave | Tests |
 |---|---|---|---|
 | F1 — Pipeline y calidad | [ADR-01](decisiones/ARD-01.md) | #4, #15, #16, #18 | `test_pipeline_core.py` (31) |
-| F2 — Clasificación | [ADR-01](decisiones/ARD-01.md), [ADR-02](decisiones/ARD-02.md), [ADR-03a](decisiones/ARD-03a.md)▷[ADR-03b](decisiones/ARD-03b.md), [ADR-04a](decisiones/ARD-04a.md)▷[ADR-04b](decisiones/ARD-04b.md), [ADR-05](decisiones/ARD-05.md), [ADR-06a](decisiones/ARD-06a.md)▷[ADR-06b](decisiones/ARD-06b.md), [ADR-07](decisiones/ARD-07.md), [ADR-08](decisiones/ARD-08.md) (superado, sin reemplazo directo), [ADR-24](decisiones/ARD-24.md) | #39-#49 | `test_classifier_core.py` (30), `test_metrics_core.py` (14) |
+| F2 — Clasificación | [ADR-01](decisiones/ARD-01.md), [ADR-02](decisiones/ARD-02.md), [ADR-03a](decisiones/ARD-03a.md)▷[ADR-03b](decisiones/ARD-03b.md), [ADR-04a](decisiones/ARD-04a.md)▷[ADR-04b](decisiones/ARD-04b.md), [ADR-05](decisiones/ARD-05.md), [ADR-06a](decisiones/ARD-06a.md)▷[ADR-06b](decisiones/ARD-06b.md), [ADR-07](decisiones/ARD-07.md), [ADR-08](decisiones/ARD-08.md) (superado, sin reemplazo directo), [ADR-24](decisiones/ARD-24.md) | #39-#49 | `test_classifier_core.py` (31), `test_metrics_core.py` (14) |
 | F3 — LLM por-PO | [ADR-10](decisiones/ARD-10.md), [ADR-11](decisiones/ARD-11.md), [ADR-12](decisiones/ARD-12.md), [ADR-13](decisiones/ARD-13.md), [ADR-14](decisiones/ARD-14.md), [ADR-15](decisiones/ARD-15.md) (superado por [ADR-16](decisiones/ARD-16.md)) | #67, #91, #94, #99, #121, #135, #137, #143, #144, #151 | `test_llm_integration.py` (98), `test_handoff_f3.py` (9) |
 | F3 — Holística / red | [ADR-16](decisiones/ARD-16.md) (borrador, carril 3), [ADR-19](decisiones/ARD-19.md) | — | *(sin test dedicado — brecha de cobertura, ver roadmap)* |
 | F3 — Tier-2 (acción) | [ADR-16](decisiones/ARD-16.md) (carril 1, cerrado), [ADR-21](decisiones/ARD-21.md) (borrador) | #158, #161 | incluido en `test_llm_integration.py` |

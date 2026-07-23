@@ -57,7 +57,7 @@ Actividades:
 - Objetivo (JTBD): convertir el histórico de POs tardíos en inteligencia accionable y auditable, separando el problema estructural del ruido de una sola vez, a través de las tres causas.
 - Pregunta a la herramienta: "¿Dónde está el patrón sistémico en la red —qué etapa, qué entidad—, con cuánta evidencia, y es reproducible para defenderlo?"
 - Disparador: ciclo de reporting (mensual/trimestral), preparación de una revisión ejecutiva, o una pregunta de gerencia ("¿por qué cayó el inbound reliability?"). Proactivo, baja frecuencia, nivel red.
-- Qué consume: agregados estructurados a través de las tres causas — distribución de `stage` (Vendor / Carrier / DC / Indeterminado; hoy 53.0 / 16.2 / 15.0 / 15.8 % sobre 247 tardíos), conteos por entidad (proveedor, carrier, DC), distribución de severidad, tasa de desacuerdo vs. `REASON_DSC`, y tendencia temporal. La prosa del LLM es casi irrelevante; lo que importa es que la atribución sea consistente y reproducible desde timestamps. El lote es agregación determinística.
+- Qué consume: agregados estructurados a través de las tres causas — distribución de `stage` (Vendor / Carrier / DC / Indeterminado; hoy 56.3 / 16.2 / 15.0 / 12.6 % sobre 247 tardíos), conteos por entidad (proveedor, carrier, DC), distribución de severidad, tasa de desacuerdo vs. `REASON_DSC`, y tendencia temporal. La prosa del LLM es casi irrelevante; lo que importa es que la atribución sea consistente y reproducible desde timestamps. El lote es agregación determinística.
 
 Actividades:
 

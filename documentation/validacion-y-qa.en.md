@@ -64,12 +64,12 @@ A reviewer reproduces the live figures in a clean environment (a `venv` from `re
 ```
 python 01_data_pipeline_and_eda/pipeline_core.py      # F1 → df_clean
 python 02_clasif_reglas_negocio/classifier_core.py    # F2 → breakdown + df_classified
-pytest                                                 # 266 passed
+pytest                                                 # 267 passed
 ```
 
 The anchor figures that must be obtained:
 
-- Test suite: 266 passing. The suite grew with each phase (from 57 to 99 to 114 to 244 to 251 to 266); the current value is 266.
+- Test suite: 267 passing. The suite grew with each phase (from 57 to 99 to 114 to 244 to 251 to 267); the current value is 267.
 - Stage accuracy 100% (216/216), reason agreement 88.7% (180/203), severity ranking 100% (14/14, severity = LLM).
 - Breakdown of stages over the 247 late: Vendor 139 (56.3%), Carrier 40 (16.2%), DC 37 (15.0%), Indeterminate 31 (12.6%).
 - LLM Explanation Quality 5/5 (20/20), few-shot C3 at temperature 0.9 (production configuration; requires API — see detail and progression in `documentation/metricas-proyecto.md`).
