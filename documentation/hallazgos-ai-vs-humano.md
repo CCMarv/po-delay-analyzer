@@ -77,6 +77,14 @@ ingeniería del prompt, no el modelo. Esto implica un riesgo operativo: cambiar 
 puede degradar la calidad sin aviso, y las explicaciones de baja confianza siguen requiriendo
 criterio humano.
 
+Un segundo límite vive en la recomendación de acción del tier-2 (#151): cuando varios POs de
+la misma etapa comparten evidencia similar, es correcto que converjan en la misma
+recomendación — pero 65 de 247 POs (26.3%) reciben la hipótesis modal de su etapa aunque su
+firma de evidencia (short-ship, hot PO, coincidencia con `REASON_DSC`) difiera de esa modal, y
+51/247 (20.6%) lo mismo en la acción inmediata. Es evidencia ignorada, no un error de cómputo:
+la etapa y la severidad siguen siendo correctas — lo que se homogeniza es el mecanismo narrado.
+Detalle completo en `03_llm_integration/eval_differentiation.md`.
+
 Referencias: desglose de Indeterminado (7 `sin_datos` + 24 `sin_causa_dominante`) y los 216
 evaluables en `documentation/metricas-proyecto.md` (filas 1 y 5, sección de poblaciones); la
 regla Vendor por STA push y los 27 sin hora de tráiler en
@@ -135,4 +143,5 @@ prompt puede degradar la calidad de las explicaciones sin que nadie lo note.
 - Registro de decisiones: `documentation/decisiones/` — en particular `ARD-10.md` (severidad
   = LLM), referenciado en la sección 3.
 - Método de validación y QA del cierre (#85): `documentation/validacion-y-qa.md`.
+- Medición de diferenciación intra-etapa (#151): `03_llm_integration/eval_differentiation.md`.
 - Consume este documento: presentación final (#106).

@@ -1,6 +1,6 @@
 # Métricas del proyecto
 
-Tabla única de las cinco métricas cabecera del entregable. Cada cifra es trazable a su
+Tabla única de las seis métricas cabecera del entregable. Cada cifra es trazable a su
 artefacto en disco (columna "Reproducción (fuente)") y cada fila declara su población: los
 denominadores difieren entre métricas y no deben mezclarse. Este documento compila cifras ya
 medidas; no recalcula nada ni ejecuta el LLM. Alimenta la presentación (#106) y el reporte
@@ -12,11 +12,12 @@ final (#105).
 | Reason agreement | 88.7% (180/203) | — (referencia, no umbral) | 203 clasificables (tardíos con `reason_group_manual` no nulo; nulos→"Unknown" fuera) | `metrics_core.py`; `02_clasif_reglas_negocio/README.md` §5.4; 8 de los 23 mismatches narrados en `03_llm_integration/mismatches_ai_vs_humano.md` | hallazgo |
 | LLM Explanation Quality | 5/5 (20/20), few-shot C3 @ temp 0.9 (producción) | 4/5 (80%) | 20 POs (muestra estratificada 8/4/4/4, semilla 42) | `eval_quality.py`, backend oficial; `03_llm_integration/fixtures/eval_quality_20pos_C3_t09.md` (validación humana) | ✅ cumple |
 | Severity Ranking | 100% (14/14) | > 95% | 14 POs con `HOT_PO_FLAG=1 & delay_days_calc>3`, sobre `po_output.csv` (severidad = LLM) | `eval_severity_ranking.py` (sin API); `po_output.csv` generado por `llm_integration.py --mode full`; `03_llm_integration/eval_severity_ranking.md`; divergencia vs regla F2 en nota abajo | ✅ cumple |
+| Diferenciación intra-etapa (#151) | Hipótesis 26.3% fuera de firma (65/247) · Acción 20.6% fuera de firma (51/247) | N/A (hallazgo, no umbral) | 247 tardíos con tier-2 poblado (`llm_hipotesis`/`llm_accion_inmediata`, solo si la corrida usó `--action-call`) | `eval_differentiation.py` (sin API); `03_llm_integration/eval_differentiation.md` | hallazgo |
 | Reparto de etapas | Vendor 139 (56.3%) · Carrier 40 (16.2%) · DC 37 (15.0%) · Indeterminado 31 (12.6%) | N/A (descriptivo) | 247 tardíos | `classifier_core.py` imprime el reparto; `02_clasif_reglas_negocio/README.md` "Reparto resultante" | descriptivo |
 
 ## Poblaciones (no mezclar denominadores)
 
-Los cinco denominadores responden a preguntas distintas y no son intercambiables:
+Los seis denominadores responden a preguntas distintas y no son intercambiables:
 
 - 216 evaluables (Stage accuracy) = los 247 tardíos menos los 31 Indeterminados, que no tienen
   gap dominante medible.
@@ -25,6 +26,8 @@ Los cinco denominadores responden a preguntas distintas y no son intercambiables
 - 20 muestreados (LLM Explanation Quality) = muestra estratificada 8/4/4/4
   (Vendor/Carrier/Indeterminado/DC), semilla 42, reproducible.
 - 14 hot-late (Severity Ranking) = POs con `HOT_PO_FLAG=1` y `delay_days_calc > 3`.
+- 247 tardíos con tier-2 poblado (Diferenciación) = subconjunto de los 247 tardíos con
+  `llm_hipotesis`/`llm_accion_inmediata` calculados (requiere corrida `--action-call`).
 - 247 tardíos (Reparto) = población completa de POs tardíos.
 
 El Indeterminado del reparto (31) se desglosa en 7 `sin_datos` (sin hora de tráiler) + 24
@@ -59,3 +62,9 @@ condición propia; el fix movió 8 POs de `sin_datos` a Vendor. Ver
   comparar la columna `severity` de `po_output.csv` (o `llm_severidad` en
   `df_with_llm_full_openai.csv`) contra la `severity` de `df_classified.csv` (F2), por
   `PO_NBR`. Detalle narrativo en `documentation/validacion-y-qa.md`.
+- Diferenciación intra-etapa (#151): hallazgo, no umbral del mentor. Sobre los 247 tardíos
+  con tier-2 poblado, 65 (26.3%) reciben la hipótesis modal de su etapa aunque su firma de
+  evidencia (short-ship, hot PO, coincidencia con REASON_DSC) difiera de esa modal, y 51
+  (20.6%) lo mismo en la acción inmediata. Es evidencia ignorada, no error de cómputo: la
+  etapa y la severidad siguen siendo correctas. Detalle en
+  `03_llm_integration/eval_differentiation.md`.

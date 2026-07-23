@@ -30,6 +30,8 @@ The consequence is that stage accuracy of 100% is measured over 216 evaluable PO
 
 On the LLM side, the quality of explanations is not free: it depends on the prompt design. The baseline zero-shot achieved 3.25/5 (13/20), and the winning few-shot variant (C3) rose to 4.75/5 (19/20) against the same benchmark; the subsequent hardening of the prompt (#143) and the re-validation at production temperature (ADR-13) brought that same configuration to 5/5 (20/20), the headline figure of the deliverable today. The difference lies in prompt engineering, not in the model. This implies an operational risk: changing the prompt may degrade quality without notice, and low-confidence explanations still require human judgment.
 
+A second limit lives in the tier-2 action recommendation (#151): when several POs in the same stage share similar evidence, it is correct for them to converge on the same recommendation — but 65 of 247 POs (26.3%) receive their stage's modal hypothesis even though their evidence signature (short-ship, hot PO, match with `REASON_DSC`) differs from that mode, and 51/247 (20.6%) the same for immediate action. This is ignored evidence, not a computation error: stage and severity remain correct — what gets homogenized is the narrated mechanism. Full detail in `03_llm_integration/eval_differentiation.md`.
+
 References: breakdown of Indeterminate (7 `sin_datos` + 24 `sin_causa_dominante`) and the 216 evaluable in `documentation/metricas-proyecto.md` (rows 1 and 5, population section); the Vendor rule by STA push and the 27 without trailer time in `02_clasif_reglas_negocio/README.md`; the zero-shot comparison against few-shot C3 in `documentation/metricas-proyecto.md` (row 3).
 
 ## 3. What It Implies for Business Decisions
@@ -60,4 +62,5 @@ Prompt governance. The improvement from zero-shot to few-shot C3 was a measured 
 - Metrics and sources table: `documentation/metricas-proyecto.md` (#104).
 - Decision log: `documentation/decisiones/` — in particular `ARD-10.md` (severity = LLM), referenced in section 3.
 - Validation and QA closure method (#85): `documentation/validacion-y-qa.md`.
+- Intra-stage differentiation measurement (#151): `03_llm_integration/eval_differentiation.md`.
 - Consume this document: final presentation (#106).
