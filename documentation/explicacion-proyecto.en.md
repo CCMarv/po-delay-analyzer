@@ -12,9 +12,9 @@ The solution combines deterministic rules and a language model, with a strict di
 
 The figures that summarize the validated state of the project, all traceable to the documentation of metrics and validation:
 
-- Breakdown of the 247 late POs by responsible stage: Vendor 53.0% (131), Carrier 16.2% (40), DC 15.0% (37), Indeterminate 15.8% (39).
-- Stage accuracy 100% (208/208 evaluable) against the mentor's threshold of >80%.
-- Reason agreement 88.8% (174/196 classifiable): the <100% is expected and desired, as it measures where the computation corrects human annotation.
+- Breakdown of the 247 late POs by responsible stage: Vendor 56.3% (139), Carrier 16.2% (40), DC 15.0% (37), Indeterminate 12.6% (31).
+- Stage accuracy 100% (216/216 evaluable) against the mentor's threshold of >80%.
+- Reason agreement 88.7% (180/203 classifiable): the <100% is expected and desired, as it measures where the computation corrects human annotation.
 - LLM Explanation Quality 5/5 (20/20) in the quality benchmark.
 - Severity ranking 100% (14/14) against the threshold of >95%.
 - Test suite: 251 tests in green as a merge gate.
@@ -98,32 +98,32 @@ The thresholds are read by name from `rules_config.json`, never from the code; r
 
 Severity is deterministic and auditable, separate from what the LLM later issues. It is HIGH when the PO is hot and arrived late (`HOT_PO_FLAG=1` and `IS_LATE`) and the delay exceeds 3 days; LOW when the delay is less than 1 day (borderline, almost on time); MEDIUM in the rest of the late cases. The aggravating factors `is_short_lead` or `is_short_ship` raise a level (LOW→MEDIUM, MEDIUM→HIGH), without exceeding HIGH: the actual HIGH gate remains hot plus strong delay.
 
-The resulting breakdown over the 247 late POs is Vendor 131 (53.0%), Carrier 40 (16.2%), DC 37 (15.0%), and Indeterminate 39 (15.8%), where those 39 are broken down into 15 `sin_datos` and 24 `sin_causa_dominante`. The severity allocates MEDIUM 131, LOW 82, and HIGH 34.
+The resulting breakdown over the 247 late POs is Vendor 139 (56.3%), Carrier 40 (16.2%), DC 37 (15.0%), and Indeterminate 31 (12.6%), where those 31 are broken down into 7 `sin_datos` and 24 `sin_causa_dominante`. The severity allocates MEDIUM 131, LOW 82, and HIGH 34.
 
-That Vendor dominates with 53% —well above the ~20% anticipated at kickoff— is supported by the data, not the trigger rule. The distribution of the push is bimodal: 12 POs with almost no push (≤6h) and 141 with days' push (median 3.1 days), with an empty gap between 6 and 18 hours where no PO falls. Late orders are almost always late because the appointment was approved late. The correlation between push and total delay is high by construction —an early delay propagates— and for this reason is not used as evidence of causality; what it attributes is the excess by segment.
+That Vendor dominates with 56% —well above the ~20% anticipated at kickoff— is supported by the data, not the trigger rule. The distribution of the push is bimodal: 12 POs with almost no push (≤6h) and 141 with days' push (median 3.1 days), with an empty gap between 6 and 18 hours where no PO falls. Late orders are almost always late because the appointment was approved late. The correlation between push and total delay is high by construction —an early delay propagates— and for this reason is not used as evidence of causality; what it attributes is the excess by segment.
 
 The two sensitivity analyses are the traceability that supports the thresholds. The carrier analysis shows that moving the threshold changes the raw flag significantly but hardly the stage distribution, because the vendor signal dominates the argmax:
 
 | Carrier Threshold | `flag_carrier_calc` | Vendor / Carrier / DC / Indeterminate Distribution |
 |-------------------|----------------------|----------------------------------------------------|
-| 4 h               | 25.8% (103)          | 53.0 / 17.4 / 15.0 / 14.6                           |
-| 6 h               | 12.8% (51)           | 53.0 / 16.2 / 15.0 / 15.8                           |
-| 8 h               | 12.8% (51)           | 53.0 / 16.2 / 15.0 / 15.8                           |
-| 12 h              | 11.2% (45)           | 53.0 / 14.6 / 15.0 / 17.4                           |
+| 4 h               | 25.8% (103)          | 56.3 / 17.4 / 15.0 / 11.3                           |
+| 6 h               | 12.8% (51)           | 56.3 / 16.2 / 15.0 / 12.6                           |
+| 8 h               | 12.8% (51)           | 56.3 / 16.2 / 15.0 / 12.6                           |
+| 12 h              | 11.2% (45)           | 56.3 / 14.6 / 15.0 / 14.2                           |
 
 The vendor analysis justifies the 24 hours and, above all, shows that raising the threshold does not reattribute delays to other stages; it only separates the diffuse pushes:
 
 | Vendor Threshold | Vendor | Vendor / Carrier / DC / sin_datos / sin_causa_dominante Distribution |
 |-------------------|--------|----------------------------------------------------|
-| 0 (no threshold)   | 141 (57.1%) | 141 / 40 / 37 / 15 / 14                               |
-| 6–18 h            | 133 (53.8%) | 133 / 40 / 37 / 15 / 22                               |
-| 24 h              | 131 (53.0%) | 131 / 40 / 37 / 15 / 24                               |
-| 48 h              | 114 (46.2%) | 114 / 40 / 37 / 15 / 41                               |
-| 72 h              | 76 (30.8%)  | 76 / 40 / 37 / 15 / 79                                |
+| 0 (no threshold)   | 151 (61.1%) | 151 / 40 / 37 / 5 / 14                               |
+| 6–18 h            | 141 (57.1%) | 141 / 40 / 37 / 7 / 22                               |
+| 24 h              | 139 (56.3%) | 139 / 40 / 37 / 7 / 24                               |
+| 48 h              | 121 (49.0%) | 121 / 40 / 37 / 8 / 41                               |
+| 72 h              | 81 (32.8%)  | 81 / 40 / 37 / 10 / 79                                |
 
-24 hours are chosen for three reasons: it is the natural granularity of the data, since `STA_DT` is at the day level and measuring the push against a whole day is the unit in which the problem is expressed; it falls in the empty zone of the distribution, which makes it robust to perturbations; and it does not force the distribution towards the ~20% of kickoff, which the mentor advised against. The POs that cease being Vendor upon raising the threshold all migrate to `sin_causa_dominante`, none to Carrier or DC: the threshold does not reassign blame, it only isolates the pushes that do not reach to be signals.
+24 hours are chosen for three reasons: it is the natural granularity of the data, since `STA_DT` is at the day level and measuring the push against a whole day is the unit in which the problem is expressed; it falls in the empty zone of the distribution, which makes it robust to perturbations; and it does not force the distribution towards the ~20% of kickoff, which the mentor advised against. The POs that cease being Vendor upon raising the threshold migrate to `sin_causa_dominante` (most of them) or to `sin_datos` (those without trailer whose push falls below the new threshold), none to Carrier or DC: the threshold does not reassign blame, it only isolates the pushes that do not reach to be signals.
 
-The contrast with human annotation is the thesis of the project. The reason agreement is 88.8% over 196 classifiable; the 22 mismatched cases are evidence that the temporal computation surpasses the inherited annotation. Eight defensible cases covering two patterns are selected. In the star pattern, the operator blamed the visible link —carrier or yard— while the appointment had been approved days late and that segment had no excess at all. In the internal pattern, the computation detects a segment excess that the annotation confused. The stratified selection distributes the examples among the three attributable stages instead of taking the strongest ones outright, which would almost all be Vendor.
+The contrast with human annotation is the thesis of the project. The reason agreement is 88.7% over 203 classifiable; the 23 mismatched cases are evidence that the temporal computation surpasses the inherited annotation. Eight defensible cases covering two patterns are selected. In the star pattern, the operator blamed the visible link —carrier or yard— while the appointment had been approved days late and that segment had no excess at all. In the internal pattern, the computation detects a segment excess that the annotation confused. The stratified selection distributes the examples among the three attributable stages instead of taking the strongest ones outright, which would almost all be Vendor.
 
 ### Implementation
 
@@ -233,17 +233,17 @@ The project guarantees its results in four layers, each with its own what it gua
 
 | Metric              | Value           | Mentor Threshold | Denominator                                           |
 |---------------------|-----------------|------------------|------------------------------------------------------|
-| Stage accuracy       | 100% (208/208)  | > 80%            | 208 evaluable (247 late − 39 Indeterminates with no measurable gap) |
-| Reason agreement      | 88.8% (174/196) | reference, not threshold | 196 classifiable (late with non-null human annotation) |
+| Stage accuracy       | 100% (216/216)  | > 80%            | 216 evaluable (247 late − 31 Indeterminates with no measurable gap) |
+| Reason agreement      | 88.7% (180/203) | reference, not threshold | 203 classifiable (late with non-null human annotation) |
 | Severity ranking      | 100% (14/14)    | > 95%            | 14 hot-late, on `po_output.csv` (severity = LLM)    |
 
 Stage accuracy compares the stage by excess over threshold against the dominant gap —the segment of greatest raw duration—: it validates that the attribution does not stray from where time was physically spent, without forcing them to match by construction. Reason agreement, as established in Phase 2, has its <100% expected and desired: it measures where the computation corrects human annotation, not where the method fails.
 
 **Layer D — CI as merge gate.** The workflow runs on each PR and on each push to main a smoke test of imports from the three core modules followed by the complete suite. The team merges without blocking human review, so the merge gate is the green check.
 
-The anchor figures that a reviewer obtains in a clean environment: test suite at 251 (grew from 57 to 251 with each phase); stage accuracy 100% (208/208); reason agreement 88.8% (174/196); severity ranking 100% (14/14); LLM Explanation Quality 5/5 (20/20); LLM severity divergence versus rule 213/247 (86.2%) agree, 34/247 (13.8%) diverge —always scaling—.
+The anchor figures that a reviewer obtains in a clean environment: test suite at 251 (grew from 57 to 251 with each phase); stage accuracy 100% (216/216); reason agreement 88.7% (180/203); severity ranking 100% (14/14); LLM Explanation Quality 5/5 (20/20); LLM severity divergence versus rule 213/247 (86.2%) agree, 34/247 (13.8%) diverge —always scaling—.
 
-Validation also covers limit cases where the data is partial or anomalous. Of the 27 POs without `TRAILER_ARRIVE_DT`, the vendor's STA push rule rescues 12 —because it measures late approval without needing the trailer—, and the remaining 15 are left as `sin_datos`. Of the 12 time investments, the pipeline truncates the affected segment to zero instead of propagating a negative duration. The figure 39 appears in two distinct populations that should not be confused: in F1 it is 39 unreliable POs (12 investments + 27 without trailer, out of 400); in F2 it is 39 Indeterminate POs (15 `sin_datos` + 24 `sin_causa_dominante`, out of 247 late). They match in number, not in set.
+Validation also covers limit cases where the data is partial or anomalous. Of the 27 POs without `TRAILER_ARRIVE_DT`, the vendor's STA push rule rescues 20 —because it measures late approval without needing the trailer—, and the remaining 7 are left as `sin_datos`. *(Before the `decidible` gate fix from ADR-03b, 2026-07-22, only 12 were rescued; see the Divergences subsection below.)* Of the 12 time investments, the pipeline truncates the affected segment to zero instead of propagating a negative duration. The figure 39 (F1's unreliable POs: 12 time inversions + 27 without trailer, out of 400) and F2's Indeterminate count (31: 7 `sin_datos` + 24 `sin_causa_dominante`, out of 247 late) come from distinct populations; before the ADR-03b fix they numerically coincided at 39, which made them easier to conflate — that coincidence is gone, but they still should not be mixed.
 
 ## Traceability Map
 
@@ -275,3 +275,47 @@ Additionally, a minor debt recorded in ADR-19 remains: the narrative of the holi
 ### Documentary Consistency with SRS and SAD
 
 Upon closing this document, its relationship with the two formal specifications of the repository was reviewed, and two statements that had become outdated were corrected. The SAD described `llm_integration_network_intelligence_view.py` as an experimental component without references from the rest of the code; in reality it generates `agente1_raw.txt`, consumed in production by the Network Intelligence view (ADR-19, ARD-21), and the description was corrected to reflect that real dependency. The SRS and root README cited 4.75/5 as the figure of LLM Explanation Quality —the result of the benchmark that selected configuration C3, not the deliverable’s headline figure—; it was updated to 5/5 (20/20), the figure in force after revalidation at production temperature. Separately, `documentation/validacion-y-qa.md` cited an outdated test count; it was also synchronized.
+
+### Divergences Verified Between ADR and Code
+
+Audit of the 23 non-superseded decisions (🟢 Current + 🔵 Draft) against the repo's actual
+behavior: the complete Decision section of each `ARD-NN.md` was read and each claim was
+verified against code/config/tests, not against other documentation. 20 of 23 comply without
+nuance, or —in the case of [ADR-25](decisiones/ARD-25.en.md), a prospective roadmap— correctly
+describe the current state they contrast against. Three have a real divergence between what
+was decided or claimed and the verified behavior of the code:
+
+- [ADR-03b](decisiones/ARD-03b.en.md) (Vendor stage by direct STA push signal) claimed that
+  the measurement **works for the 27 POs without trailer time**. The `decidible` gate in
+  `02_clasif_reglas_negocio/classifier_core.py` excluded from Vendor attribution any PO
+  without `TRAILER_ARRIVE_DT`, even though the vendor gap (`excess_vendor_hrs`) does not
+  depend on that column. Of the 15 late POs without trailer, 8 (53%) had a clear excess
+  (22.6-92.5h, well above the 24h threshold) and fell into `Indeterminado/sin_datos` all the
+  same instead of `Vendor`. **Fixed** (ARD-03b closing note, 2026-07-22): the gate now
+  recognizes vendor excess on its own; updated distribution over 247 late POs: Vendor 139
+  (56.3%), Indeterminate 31 = 7 `sin_datos` + 24 `sin_causa_dominante` (previously
+  131/39/15/24). See `02_clasif_reglas_negocio/README.md` §2/§5.
+- [ADR-06b](decisiones/ARD-06b.en.md) (vendor threshold = 24h) has the threshold well
+  implemented and verified (recomputed bimodal distribution: 12 POs ≤6h, empty 6h-18h gap,
+  141 POs ≥18h), but cited in Consequences a Reason agreement improvement from **88.7% to
+  89.7%** upon adopting it. Recalculating the metric on the real dataset, the 24h threshold
+  actually adopted gives 88.7% (matches `02_clasif_reglas_negocio/README.md` §5.4, figure
+  recalculated the same day after the `decidible` gate fix from ADR-03b — before that fix it
+  gave 88.8%); 89.7% corresponds to the 72h scenario, which the ADR itself rejects in favor of
+  24h. **Fixed** (ARD-06b closing note, 2026-07-22, without reopening the threshold decision).
+- [ADR-17](decisiones/ARD-17.en.md) (visual language and taxonomy color) claimed to have
+  **verified via relative luminance calculation** that the background/brand combinations meet
+  the 3:1 contrast ratio required by WCAG 2.1 §1.4.11. Calculating that same ratio against the
+  three real backgrounds in `04_app/assets/styles.css`, the Carrier swatch (`#E69F00`) and the
+  Low severity/confidence swatch (`#A8A8A8`) gave 2.05-2.38:1 — below the threshold, on all
+  three backgrounds. **Fixed** (ARD-17 closing note, 2026-07-22): recolored to `#B88000`
+  (Carrier) and `#8A8A8A` (Low), ≈3.1-3.5:1 on all three backgrounds; the timeline's text pill
+  was also fixed, previously limited to a PO's first highlighted segment.
+
+*(Note: all three reflect figures and values already corrected in the corresponding code/ADRs
+as of this same audit's closing, 2026-07-22. The figures that depend on Vendor classification
+—stage distribution, Reason agreement, Stage accuracy, vendor/carrier sensitivity— are updated
+here and in `02_clasif_reglas_negocio/README.md` and `documentation/metricas-proyecto.md`;
+their propagation to the remaining ~25-28 files that cite them (SRS, data dictionary,
+hallazgos-ai-vs-humano, final presentation, model cards, Phase 3 evaluation reports) is
+deferred as an explicit follow-up.)*
