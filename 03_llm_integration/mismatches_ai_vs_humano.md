@@ -17,7 +17,7 @@ corrida como artefacto versionado. El detalle de excesos por tramo remite a
 |---|---|---|---|---|---|
 | 100280 | Vendor | Carrier — "Missed appointment window" | STA push 124.6 h (exceso 100.6 h sobre umbral 24h); exceso carrier = 0 | Vendor, 5.54 d; el LLM marca coincidencia con el REASON_DSC | La aprobación se retrasó 124.6 h antes de que el PO llegara al carrier; el tramo carrier no tiene exceso medido — "ventana de cita perdida" es un síntoma corriente abajo, no la causa |
 | 100236 | Vendor | Carrier — "Equipment/trailer issue" | STA push 118.5 h (exceso 94.5 h); exceso carrier = 0 | Vendor, 5.26 d; el LLM marca NO-coincidencia y nota hot PO | Mismo patrón: el push de aprobación antecede a cualquier tramo del carrier; "problema de equipo/tráiler" no tiene respaldo temporal |
-| 100382 | Vendor | DC — "Yard congestion - no available door" | STA push 111.0 h (exceso 87.0 h); exceso yard/dock = 0 | Vendor, 5.01 d; el LLM marca coincidencia y nota hot PO | La aprobación llegó tarde antes de que el PO llegara al patio; sin exceso medido en yard/dock |
+| 100382 | Vendor | DC — "Yard congestion - no available door" | STA push 111.0 h (exceso 87.0 h); exceso yard/dock = 0 | Vendor, 5.01 d; el LLM marca NO-coincidencia y nota hot PO | La aprobación llegó tarde antes de que el PO llegara al patio; sin exceso medido en yard/dock |
 | 100024 | Carrier | DC — "Dock processing backlog" | Exceso carrier 25.7 h; exceso dock = 0 | Carrier, 1.07 d; el LLM marca NO-coincidencia | El exceso vive en tránsito, no en el procesamiento del dock, que no muestra backlog medido |
 | 100244 | Carrier | DC — "Yard congestion - no available door" | Exceso carrier 30.8 h; exceso yard/dock = 0 | Carrier, 1.63 d; el LLM marca NO-coincidencia | Igual que 100024: la señal está en tránsito, no en patio/puerta del DC |
 | 100138 | Carrier | DC — "Dock processing backlog" | Exceso carrier 1.9 h (señal más débil del lote, apenas sobre el umbral de 8h); exceso dock = 0 | Carrier, 0.43 d; el LLM marca NO-coincidencia | Aun con retraso menor, el exceso identificable sigue en carrier, no en dock |
@@ -34,14 +34,24 @@ Fase 2. En los cinco casos restantes (Carrier↔DC) el humano confunde dos etapa
 contiguas —tránsito vs. procesamiento en el DC— mientras el cómputo aísla el exceso en una sola
 de las dos.
 
-Un matiz honesto: en 4 de los 8 casos (100280, 100382, 100058, 100230) el propio LLM marcó
-coincidencia con el REASON_DSC pese al mismatch categórico entre `stage_primary` y
-`reason_group_manual`. Esto no debilita la tesis: ocurre porque el texto del REASON_DSC es
-temáticamente compatible con la etapa que el cómputo señala, no con la etapa a la que quedó
-archivado — es decir, incluso la redacción humana del motivo es ambigua frente a la taxonomía de
-tres etapas que usa el clasificador.
+Un matiz honesto: en 3 de los 8 casos (100280, 100058, 100230) el propio LLM marcó coincidencia
+con el REASON_DSC pese al mismatch categórico entre `stage_primary` y `reason_group_manual`. Esto
+no debilita la tesis: ocurre porque el texto del REASON_DSC es temáticamente compatible con la
+etapa que el cómputo señala, no con la etapa a la que quedó archivado — es decir, incluso la
+redacción humana del motivo es ambigua frente a la taxonomía de tres etapas que usa el
+clasificador.
 
 ## Uso posterior
 
 Este documento es insumo del documento de hallazgos del reporte final (#105) y de la validación
 de cierre (#85). No abre trabajo de ninguno de los dos issues.
+
+*(Nota de cierre, 2026-07-22: se regeneró el artefacto `fixtures/mismatches_llm_zeroshot.csv`
+(8 llamadas reales a gpt-4o-mini vía `eval_mismatches.py --backend openai`) tras el fix del gate
+`decidible` de [ADR-03b](../documentation/decisiones/ARD-03b.md). La selección de 8 PO_NBR no
+cambió — ninguno de los 8 estaba entre los 8 POs reclasificados de Indeterminado a Vendor por ese
+fix, y sus valores de exceso por tramo son idénticos a la corrida anterior (commit `3d8e1297`,
+2026-07-13). El único cambio sustantivo es que el LLM, en esta nueva corrida, marcó
+`llm_coincide_con_reason=False` para 100382 (antes True) — un caso de no-determinismo entre
+corridas zero-shot a temperatura 0.9, no un efecto del fix. Se actualizó la tabla y el conteo de
+"matiz honesto" (4→3 casos con coincidencia marcada) en consecuencia.)*

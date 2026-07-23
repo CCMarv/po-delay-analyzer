@@ -191,20 +191,35 @@ They cover the three types of discrepancy. ("STA push" = raw push `APPROVED − 
 
 | PO | Computation | Human (REASON_DSC) | Temporal Evidence |
 |----|-------------|---------------------|--------------------|
-| 100280 | Vendor | Carrier ("Missed appointment window") | STA push 124.6 h; carrier/DC excess = 0 |
-| 100382 | Vendor | DC ("Yard congestion") | STA push 111.0 h; yard/dock excess = 0 |
+| 100280 | Vendor | Carrier ("Missed appointment window") | STA push 124.6 h; carrier excess = 0 |
 | 100236 | Vendor | Carrier ("Equipment/trailer issue") | STA push 118.5 h; carrier excess = 0 |
-| 100262 | Vendor | DC ("Dock processing backlog") | STA push 81.0 h; dock excess = 0 |
-| 100073 | Vendor | Carrier ("Weather/road conditions") | STA push 93.5 h; carrier excess = 0 |
+| 100382 | Vendor | DC ("Yard congestion - no available door") | STA push 111.0 h; yard/dock excess = 0 |
+| 100244 | Carrier | DC ("Yard congestion - no available door") | carrier excess 30.8 h; yard/dock excess = 0 |
 | 100024 | Carrier | DC ("Dock processing backlog") | carrier excess 25.7 h; dock excess = 0 |
 | 100058 | DC (Yard) | Carrier ("Equipment/trailer issue") | yard excess 19.3 h; carrier excess = 0 |
-| 100204 | DC (Dock) | Vendor ("Vendor delayed shipment") | dock excess 9.0 h; STA push = 0 |
+| 100230 | DC (Yard) | Carrier ("Equipment/trailer issue") | yard excess 19.0 h; carrier excess = 0 |
+| 100138 | Carrier | DC ("Dock processing backlog") | carrier excess 1.9 h; dock excess = 0 |
 
-Star pattern (the first five): the human blamed the visible link (carrier/yard) while the
-appointment had been approved days late, and that segment had no excess at all. Internal pattern (last three): the computation detects an excess segment that human annotation confused.
+Star pattern (the first three): the human blamed the visible link (carrier/DC) while the
+appointment had been approved days late, and that segment had no excess at all. Internal
+pattern (the remaining five): the computation detects an excess segment (carrier or DC) that
+human annotation confused with another link.
 
-`metrics_core.select_mismatches(df, n)` returns this ranking by signal strength. With
-`stratify=True`, it distributes `n` among the present stages (Vendor/Carrier/DC) and takes the strongest from each, instead of the `n` strongest in raw form: since the universe of mismatches is dominated by Vendor, the flat ranking tends to be almost all Vendor, and stratified selection ensures that the few-shot (#99) and mismatch narrative (#95) cover all three stages. The default (`stratify=False`) preserves the historical flat ranking.
+This table is generated with `metrics_core.select_mismatches(df, n=8, stratify=True)`: it
+distributes `n` among the present stages (Vendor/Carrier/DC) and takes the strongest from each,
+instead of the `n` strongest in raw form. Since the universe of mismatches is dominated by
+Vendor, the flat ranking (`stratify=False`, the code default and the criterion this table used
+until 2026-07-22) tends to be almost all Vendor; stratified selection ensures that the few-shot
+(#99) and mismatch narrative (#95) cover all three stages. It is also the criterion that
+`mismatches_ai_vs_humano.en.md` already used — both tables now cite the same selection of 8
+PO_NBR.
+
+*(Closing note, 2026-07-22: the previous table was frozen at commit `a1650f7` (2026-06-18),
+even before the `stratify` parameter existed (added 10 days later) and before the fix to the
+`decidible` gate in [ADR-03b](../documentation/decisiones/ARD-03b.en.md). It was regenerated
+against the real post-fix dataset and the criterion was switched to `stratify=True` so it
+matches `mismatches_ai_vs_humano.en.md` — they previously used different selections and only
+shared 5 of 8 PO_NBR.)*
 
 > **Status of the few-shot (at the end of Phase 2).** These mismatches are **available** as
 > possible few-shot, but **the Phase 3 prompt is currently zero-shot**: it still does NOT consume them. The

@@ -203,25 +203,34 @@ altera la atribución: todos superan el día con holgura.)
 
 | PO | Cómputo | Humano (REASON_DSC) | Evidencia temporal |
 |----|---------|---------------------|--------------------|
-| 100280 | Vendor | Carrier ("Missed appointment window") | STA push 124.6 h; exceso carrier/DC = 0 |
-| 100382 | Vendor | DC ("Yard congestion") | STA push 111.0 h; exceso yard/dock = 0 |
+| 100280 | Vendor | Carrier ("Missed appointment window") | STA push 124.6 h; exceso carrier = 0 |
 | 100236 | Vendor | Carrier ("Equipment/trailer issue") | STA push 118.5 h; exceso carrier = 0 |
-| 100262 | Vendor | DC ("Dock processing backlog") | STA push 81.0 h; exceso dock = 0 |
-| 100073 | Vendor | Carrier ("Weather/road conditions") | STA push 93.5 h; exceso carrier = 0 |
+| 100382 | Vendor | DC ("Yard congestion - no available door") | STA push 111.0 h; exceso yard/dock = 0 |
+| 100244 | Carrier | DC ("Yard congestion - no available door") | exceso carrier 30.8 h; exceso yard/dock = 0 |
 | 100024 | Carrier | DC ("Dock processing backlog") | exceso carrier 25.7 h; exceso dock = 0 |
 | 100058 | DC (Yard) | Carrier ("Equipment/trailer issue") | exceso yard 19.3 h; exceso carrier = 0 |
-| 100204 | DC (Dock) | Vendor ("Vendor delayed shipment") | exceso dock 9.0 h; STA push = 0 |
+| 100230 | DC (Yard) | Carrier ("Equipment/trailer issue") | exceso yard 19.0 h; exceso carrier = 0 |
+| 100138 | Carrier | DC ("Dock processing backlog") | exceso carrier 1.9 h; exceso dock = 0 |
 
-Patrón estrella (los 5 primeros): el humano culpó al eslabón visible (carrier/yard) mientras la
-cita se había aprobado días tarde y ese tramo no tenía exceso alguno. Patrón interno (3
-últimos): el cómputo detecta un exceso de tramo que la anotación humana confundió.
+Patrón estrella (los 3 primeros): el humano culpó al eslabón visible (carrier/DC) mientras la
+cita se había aprobado días tarde y ese tramo no tenía exceso alguno. Patrón interno (los 5
+restantes): el cómputo detecta un exceso de tramo (carrier o DC) que la anotación humana
+confundió con otro eslabón.
 
-`metrics_core.select_mismatches(df, n)` devuelve este ranking por fuerza de señal. Con
-`stratify=True` reparte `n` entre las etapas presentes (Vendor/Carrier/DC) y toma el más
-fuerte de cada una, en vez de los `n` más fuertes en bruto: como el universo de mismatches
-está dominado por Vendor, el ranking plano tiende a ser casi todo Vendor, y la selección
-estratificada asegura que el few-shot (#99) y la narración de mismatches (#95) cubran las
-tres etapas. El default (`stratify=False`) conserva el ranking plano histórico.
+Esta tabla se genera con `metrics_core.select_mismatches(df, n=8, stratify=True)`: reparte `n`
+entre las etapas presentes (Vendor/Carrier/DC) y toma el más fuerte de cada una, en vez de los
+`n` más fuertes en bruto. Como el universo de mismatches está dominado por Vendor, el ranking
+plano (`stratify=False`, el default del código y el criterio que usaba esta tabla hasta
+2026-07-22) tiende a ser casi todo Vendor; la selección estratificada asegura que el few-shot
+(#99) y la narración de mismatches (#95) cubran las tres etapas. Es también el criterio que ya
+usaba `mismatches_ai_vs_humano.md` — ambas tablas citan hoy la misma selección de 8 PO_NBR.
+
+*(Nota de cierre, 2026-07-22: la tabla anterior quedó congelada en el commit `a1650f7`
+(2026-06-18), previa incluso a la existencia del parámetro `stratify` (añadido 10 días
+después) y al fix del gate `decidible` de [ADR-03b](../documentation/decisiones/ARD-03b.md).
+Se regeneró sobre el dataset real post-fix y se cambió el criterio a `stratify=True` para que
+coincida con el de `mismatches_ai_vs_humano.md` — antes usaban selecciones distintas y solo
+compartían 5 de 8 PO_NBR.)*
 
 > **Estado del few-shot (al cierre de Fase 2).** Estos mismatches están **disponibles** como
 > posible few-shot, pero **el prompt de Fase 3 es hoy zero-shot**: todavía NO los consume. El
