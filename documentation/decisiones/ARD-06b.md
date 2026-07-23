@@ -31,3 +31,5 @@ El cálculo de la variable `_etapa_primaria` se normalizó a `max(0, push − 24
 ## Nota de cierre (2026-07-22)
 La auditoría ADR↔repo detectó que la cifra citada arriba ("del 88.7% al 89.7%") corresponde al escenario de 72h de la malla de sensibilidad, no al umbral de 24h efectivamente adoptado. Recalculando `agreement_por_umbral()` sobre el dataset real, el umbral de 24h da **88.7%** (coincide con `02_clasif_reglas_negocio/README.md` §5.4; cifra recalculada tras el fix del gate `decidible` de [ADR-03b](ARD-03b.md), aplicado el mismo día — antes de ese fix daba 88.8%). El umbral definitivo de 24h no cambia; se corrige solo la cifra de refuerzo citada en Consecuencias — no se reabre ninguna opción.
 
+Adicionalmente, el mismo fix del gate `decidible` que corrigió la cifra de agreement arriba también desactualizó la cifra de reparto del punto 3 de "Decisión Definitiva": "Vendor al 53.0% (131 POs)" pasa a **56.3% (139 POs)**. El umbral de 24h no cambia — es una consecuencia downstream del fix de clasificación de [ADR-03b](ARD-03b.md), no una revisión del umbral.
+

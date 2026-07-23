@@ -30,3 +30,5 @@ The calculation of the variable `_primary_stage` was normalized to `max(0, push 
 
 ## Closing Note (2026-07-22)
 The ADR↔repo audit found that the figure cited above ("from 88.7% to 89.7%") corresponds to the 72h scenario of the sensitivity grid, not the 24h threshold actually adopted. Recalculating `agreement_por_umbral()` on the real dataset, the 24h threshold yields **88.7%** (matching `02_clasif_reglas_negocio/README.md` §5.4; figure recalculated after the `decidible` gate fix from [ADR-03b](ARD-03b.en.md), applied the same day — before that fix it was 88.8%). The definitive 24h threshold does not change; only the reinforcing figure cited in Consequences is corrected — no option is reopened.
+
+Additionally, the same `decidible` gate fix that corrected the agreement figure above also made the distribution figure in item 3 of "Final Decision" stale: "Vendor at 53.0% (131 POs)" becomes **56.3% (139 POs)**. The 24h threshold does not change — this is a downstream consequence of the classification fix in [ADR-03b](ARD-03b.en.md), not a revision of the threshold.
